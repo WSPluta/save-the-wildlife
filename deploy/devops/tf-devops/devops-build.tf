@@ -93,7 +93,7 @@ resource "oci_devops_deploy_artifact" "ws_server_image" {
   deploy_artifact_source {
     deploy_artifact_source_type = "OCIR"
 
-    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/${local.repo_name}/server:$${WS_SERVER_VERSION}"
+    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/server:$${WS_SERVER_VERSION}"
     repository_id = oci_devops_repository.github_mirrored_repository.id
   }
 
@@ -110,7 +110,7 @@ resource "oci_devops_deploy_artifact" "web_image" {
   deploy_artifact_source {
     deploy_artifact_source_type = "OCIR"
 
-    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/${local.repo_name}/web:$${WEB_VERSION}"
+    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/web:$${WEB_VERSION}"
     repository_id = oci_devops_repository.github_mirrored_repository.id
   }
 
@@ -127,7 +127,7 @@ resource "oci_devops_deploy_artifact" "score_image" {
   deploy_artifact_source {
     deploy_artifact_source_type = "OCIR"
 
-    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/${local.repo_name}/score:$${SCORE_VERSION}"
+    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/score:$${SCORE_VERSION}"
     repository_id = oci_devops_repository.github_mirrored_repository.id
   }
 
