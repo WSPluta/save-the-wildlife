@@ -14,12 +14,8 @@ steps:
   - type: Command
     name: "Install libraries"
     command: |
-      rm -rf /etc/yum.repos.d/oci-included-ol7.repo
-      (echo -e '[ol8_oci_included]' && echo 'name=Oracle Software for OCI users on Oracle Linux '$releasever' ('$basearch')' && echo "baseurl=https://yum-$OCI_RESOURCE_PRINCIPAL_REGION.oracle.com/repo/OracleLinux/OL8/oci/included/x86_64/" && echo 'gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-oracle' && echo 'gpgcheck=1' && echo 'enabled=1') > /etc/yum.repos.d/oci-included-ol8.repo
       yum update -y
       yum install jq -y
-      dnf module enable -y nodejs:16
-      dnf module install -y nodejs
   - type: Command
     name: "Set up server versions"
     command: |
