@@ -39,8 +39,8 @@ resource "oci_devops_build_pipeline_stage" "build_github_stage" {
   stage_execution_timeout_in_seconds = "900"
   build_runner_shape_config {
     build_runner_type = "CUSTOM"
-    memory_in_gbs     = 4
-    ocpus             = 1
+    memory_in_gbs     = 256
+    ocpus             = 4
   }
   build_source_collection {
     items {
