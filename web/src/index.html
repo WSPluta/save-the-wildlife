@@ -51,6 +51,21 @@
       </div>
     </div>
     <canvas class="Game"></canvas>
-    <button id="restart-btn" style="display: none">Restart</button>
+    <!-- <button id="restart-btn" style="display: none">Restart</button> -->
+    <div class="pause-screen">
+      <h3>ACTIONS</h3>
+      <button id="resume-btn">Resume</button>
+      <button id="restart-btn">Restart</button>
+    </div>
+    <div class="in-game-overlay">
+      <div class="top-left">
+        <div id="score-display">0</div>
+        <figure id="time-display" class="donut">
+          <span class="display">sec</span>
+        </figure>
+        <figure id="speed-display">
+        </figure>
+      </div>
+    </div>
   </body>
 </html>
