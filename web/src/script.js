@@ -389,7 +389,7 @@ function startGame(gameDuration, [boat, turtle], sounds, waternormals) {
 
   //scene lights
   const ambientLight = new THREE.AmbientLight(0x404040, 13);
-  player.add(ambientLight);
+  // player.add(ambientLight);
 
   //background music
   const listener = new THREE.AudioListener();
