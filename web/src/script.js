@@ -8,7 +8,6 @@ import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { throttle } from "throttle-debounce";
 import "./style.css";
 import * as lobby from "./lobby";
-import * as utils from "./utils";
 
 MathUtils.seededRandom(Date.now);
 
@@ -51,8 +50,6 @@ let worker;
 let remainingTime;
 
 let keyboard = {};
-
-let isMenuVisible = false;
 
 lobby.getLeaderBoard();
 
@@ -389,7 +386,7 @@ function startGame(gameDuration, [boat, turtle], sounds, waternormals) {
 
   //scene lights
   const ambientLight = new THREE.AmbientLight(0x404040, 13);
-  // player.add(ambientLight);
+  player.add(ambientLight);
 
   //background music
   const listener = new THREE.AudioListener();
@@ -509,8 +506,14 @@ function startGame(gameDuration, [boat, turtle], sounds, waternormals) {
 
   // Create a variable to store the remaining time
   remainingTime = gameDuration;
-  var timerFigure = document.querySelector("#time-display");
-  setTimeDisplay(remainingTime)
+  var timerDiv = document.createElement("div");
+  timerDiv.style.position = "absolute";
+  timerDiv.style.top = "45px";
+  timerDiv.style.left = "10px";
+  timerDiv.style.color = "white";
+  timerDiv.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+  timerDiv.innerHTML = "Time: " + remainingTime;
+  document.body.appendChild(timerDiv);
 
   var versionsDiv = document.createElement("div");
   versionsDiv.style.position = "absolute";
@@ -518,7 +521,6 @@ function startGame(gameDuration, [boat, turtle], sounds, waternormals) {
   versionsDiv.style.right = "10px";
   versionsDiv.style.color = "white";
   versionsDiv.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
-  versionsDiv.style.display = 'none';
   versionsDiv.innerHTML = "Server: " + serverVersion;
   document.body.appendChild(versionsDiv);
 
@@ -529,28 +531,14 @@ function startGame(gameDuration, [boat, turtle], sounds, waternormals) {
   speedElement.style.color = "white";
   speedElement.style.fontSize = "13px";
   speedElement.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
-  speedElement.style.display = 'none';
   speedElement.innerHTML = "Speed: ";
   document.body.appendChild(speedElement);
-
-  var instructionsElement = document.createElement("div");
-  instructionsElement.style.position = "absolute";
-  instructionsElement.style.bottom = "65px";
-  instructionsElement.style.right = "10px";
-  instructionsElement.style.color = "white";
-  instructionsElement.style.fontSize = "13px";
-  instructionsElement.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
-  instructionsElement.innerHTML = "Arrow Up/W - Accelerate<br/>Arrow Down/S - Brake<br/>Left/A or Right/D - Steer<br/>ESC - Show Menu"
-  document.body.appendChild(instructionsElement);
-
-  const inGameOverlay = document.querySelector('.in-game-overlay');
-  inGameOverlay.style.display = 'block';
 
   function updateTimer() {
     if (remainingTime > 0) {
       remainingTime--;
     }
-    setTimeDisplay(remainingTime)
+    timerDiv.innerHTML = "Time: " + remainingTime;
     setTimeout(updateTimer, 1000);
   }
 
@@ -568,7 +556,6 @@ function startGame(gameDuration, [boat, turtle], sounds, waternormals) {
     localScore = 0;
 
     scoreElement.innerHTML = "Score: " + localScore;
-    setScoreDisplay(localScore);
 
     remainingTime = remainingTime;
     timerDiv.innerHTML = "Time: " + remainingTime;
@@ -586,8 +573,6 @@ function startGame(gameDuration, [boat, turtle], sounds, waternormals) {
   scoreElement.style.fontSize = "24px";
   scoreElement.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
   scoreElement.innerHTML = "Score: " + localScore;
-  scoreElement.style.display = 'none';
-
   document.body.appendChild(scoreElement);
 
   const floatAmplitude = 0.1;
@@ -606,17 +591,10 @@ function startGame(gameDuration, [boat, turtle], sounds, waternormals) {
 
   document.addEventListener("keydown", function (event) {
     keyboard[event.code] = true;
-    if (event.code == "Escape") {
-      toggleMenu();
-    }
   });
   document.addEventListener("keyup", function (event) {
-    console.log(event.code)
     keyboard[event.code] = false;
   });
-
-  document.querySelector("#resume-btn").addEventListener("click", resumeGame)
-  document.querySelector(".pause-screen #restart-btn").addEventListener("click", restartGame)
 
   let playerSpeed = 0;
 
@@ -652,7 +630,6 @@ function startGame(gameDuration, [boat, turtle], sounds, waternormals) {
         scene.remove(mesh);
         isMarineLife(mesh.itemType) ? localScore-- : localScore++;
         scoreElement.innerHTML = "Score: " + localScore;
-        setScoreDisplay(localScore);
         delete itemMeshes[key];
       }
     }
@@ -682,28 +659,28 @@ function startGame(gameDuration, [boat, turtle], sounds, waternormals) {
     // console.log("Current time: ", currentTime);
     // console.log("Delta time: ", deltaTime);
 
-    if (utils.isForwardKeyPressed(keyboard)) {
+    if (keyboard["ArrowUp"]) {
       playerSpeed += ACCELERATION * deltaTime;
-    } else if (utils.isReverseKeyPressed(keyboard)) {
+    } else if (keyboard["ArrowDown"]) {
       playerSpeed -= BRAKE;
     }
 
-    if (utils.isLeftKeyPressed(keyboard)) {
+    if (keyboard["ArrowLeft"]) {
       player.rotation.y += TURN_SPEED;
-      if (utils.isForwardKeyPressed(keyboard)) {
+      if (keyboard["ArrowUp"]) {
         playerSpeed *= 1 - FRICTION;
         lateralVelocity.y += DRIFT_FACTOR;
       }
     }
-    if (utils.isRightKeyPressed(keyboard)) {
+    if (keyboard["ArrowRight"]) {
       player.rotation.y -= TURN_SPEED;
-      if (utils.isForwardKeyPressed(keyboard)) {
+      if (keyboard["ArrowUp"]) {
         playerSpeed *= 1 - FRICTION;
         lateralVelocity.y -= DRIFT_FACTOR;
       }
     }
 
-    if (!utils.isForwardKeyPressed(keyboard) && !utils.isReverseKeyPressed(keyboard)) {
+    if (!keyboard["ArrowUp"] && !keyboard["ArrowDown"]) {
       playerSpeed *= 1 - FRICTION;
     }
 
@@ -712,7 +689,6 @@ function startGame(gameDuration, [boat, turtle], sounds, waternormals) {
 
     playerSpeed = Math.max(Math.min(playerSpeed, MAX_SPEED), -MAX_SPEED);
     speedElement.innerHTML = `Speed: ${playerSpeed.toFixed(2) * 100}`;
-    setSpeedDisplay(playerSpeed / MAX_SPEED);
 
     const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(
       player.quaternion
@@ -810,7 +786,6 @@ function endGame() {
   scoreOverlay.innerHTML = "Game Over";
   scoreOverlay.innerHTML += "<br>Name: " + playerName;
   scoreOverlay.innerHTML += "<br>Score: " + localScore;
-  setScoreDisplay(localScore);
   document.body.appendChild(scoreOverlay);
 
   // Create a restart button
@@ -819,7 +794,9 @@ function endGame() {
   restartBtn.style.position = "absolute";
   restartBtn.style.top = "100px";
   restartBtn.style.left = "10px";
-  restartBtn.addEventListener("click", restartGame);
+  restartBtn.addEventListener("click", function () {
+    window.location.reload();
+  });
   document.body.appendChild(restartBtn);
 
   clearTimeout(timerId);
@@ -828,63 +805,4 @@ function endGame() {
 // Create a function to start the timer
 function startTimer() {
   timerId = setTimeout(function () {}, remainingTime * 1000);
-}
-
-function resumeGame() {
-  document.querySelector(".pause-screen").style.display = "none";
-  const inGameOverlay = document.querySelector('.in-game-overlay');
-  inGameOverlay.style.display = 'block';
-  isMenuVisible = false;
-}
-
-function restartGame() {
-  worker.postMessage({ type: "close" });
-  gameOverFlag = true; // Set the game over flag to true
-  keyboard = {};
-  clearTimeout(timerId);
-  window.location.reload();
-}
-
-function toggleMenu() {
-  document.querySelector(".pause-screen").style.display = (isMenuVisible)?"none":"block";
-  const inGameOverlay = document.querySelector('.in-game-overlay');
-  inGameOverlay.style.display = 'none';
-  isMenuVisible = !isMenuVisible;
-}
-
-function setTimeDisplay(value) {
-  var timerFigure = document.getElementById("time-display")
-  if (timerFigure) {
-    const percent = value / gameDuration * 360;
-    const gradient = `conic-gradient(#307dfc 0deg, #307dfc ${percent}deg, #d1dee5 ${percent}deg, white 360deg)`
-    timerFigure.style.backgroundImage = gradient;
-    const timerText = document.querySelector("#time-display .display")
-    timerText.innerHTML = `${value} sec`;
-  }
-}
-
-let speedSelectorRule = null;
-
-function setSpeedDisplay(value) {
-  if (!speedSelectorRule) {
-    const speedFigure = document.querySelector("#speed-display");
-    if (speedFigure) {
-      const stylesheet = document.styleSheets[0]; 
-      for (let i = 0; i < stylesheet.cssRules.length; i++) {
-        const rule = stylesheet.cssRules[i];
-        if (rule.selectorText === '#speed-display::before') {
-          speedSelectorRule = rule;
-          rule.style.width = `${value * 100}%`;
-          break;
-        }
-      }
-    }
-  } else {
-    speedSelectorRule.style.width = `${value * 100}%`;
-  }
-}
-
-function setScoreDisplay(value) {
-  const speedFigure = document.querySelector("#score-display");
-    speedFigure.innerHTML = value;
 }
