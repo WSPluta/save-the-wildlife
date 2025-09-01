@@ -4,7 +4,21 @@ let socket;
 
 function init(wsURL, yourId, yourName) {
   logger(`WebWorker commsWorker start on ${wsURL}`);
-  socket = io(wsURL, { transports: ["websocket"] });
+  socket = io(wsURL, { 
+    transports: ["websocket"],
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 5000
+  });
+
+  // Socket.IO Manager-level diagnostics (connection lifecycle)
+  socket.io.on("reconnect_attempt", (attempt) => logger(`reconnect_attempt #${attempt}`));
+  socket.io.on("reconnect_error", (error) => postMessage({ type: "error", body: `reconnect_error: ${error && error.message ? error.message : error}` }));
+  socket.io.on("reconnect_failed", () => logger("reconnect_failed"));
+  socket.io.on("open", () => logger("manager open"));
+  socket.io.on("close", (reason) => logger(`manager close: ${reason}`));
+  socket.io.on("error", (error) => postMessage({ type: "error", body: `manager error: ${error && error.message ? error.message : error}` }));
 
   logger(`I am ${yourName} with id ${yourId} joining the game`);
   socket.emit("player.info.joining", { id: yourId, name: yourName });
@@ -14,12 +28,13 @@ function init(wsURL, yourId, yourName) {
   socket.on("connect_error", (error) => postMessage({ error }));
 
   socket.on("connect", () => {
+    logger("connect");
     postMessage({ type: "connect" });
   });
 
-  socket.on("disconnect", () => {
-    logger("disconnect event");
-    postMessage({ type: "disconnect" });
+  socket.on("disconnect", (reason) => {
+    logger(`disconnect: ${reason}`);
+    postMessage({ type: "disconnect", body: { reason } });
   });
 
   socket.on("player.trace.all", (data) => {
@@ -47,6 +62,24 @@ function init(wsURL, yourId, yourName) {
     postMessage({ type: "server.info", body: data });
   });
 
+  // Forward authoritative game state and shared timer from server to UI
+  socket.on("game.state", (data) => {
+    postMessage({ type: "game.state", body: data });
+  });
+
+  socket.on("game.time", (data) => {
+    postMessage({ type: "game.time", body: data });
+  });
+
+  // New: synchronized pre-start countdown and player counts
+  socket.on("startingGame", (data) => {
+    postMessage({ type: "startingGame", body: data });
+  });
+
+  socket.on("player.count", (data) => {
+    postMessage({ type: "player.count", body: data });
+  });
+
   socket.on("player.info.all", (data) => {
     delete data[yourId];
     postMessage({ type: "player.info.all", body: data });
@@ -57,15 +90,22 @@ function init(wsURL, yourId, yourName) {
   });
 
   socket.on("player.info.joined", (data) => {
-    // FIXME debugging only, remove one line
-    data[yourId] && logger(`ERROR "player.info.joined" for myself`);
     postMessage({ type: "player.info.joined", body: data });
   });
 
   socket.on("player.info.left", (data) => {
-    // FIXME debugging only, remove one line
-    logger(`"player.info.left" ${JSON.stringify(data)}`);
     postMessage({ type: "player.info.left", body: data });
+  });
+
+  // Lobby chat and players list
+  socket.on("chat.history", (data) => {
+    postMessage({ type: "chat.history", body: data });
+  });
+  socket.on("chat.message", (data) => {
+    postMessage({ type: "chat.message", body: data });
+  });
+  socket.on("lobby.players", (data) => {
+    postMessage({ type: "lobby.players", body: data });
   });
 }
 
@@ -85,9 +125,25 @@ onmessage = ({ data }) => {
     case "items.collision":
       socket.emit("items.collision", data.body);
       break;
+    case "chat.send":
+      // data.body: { text }
+      socket.emit("chat.send", data.body);
+      break;
+    case "player.info.joining":
+      // allow updating name while in lobby
+      socket.emit("player.info.joining", data.body);
+      break;
     case "init":
       const { wsURL, yourId, yourName } = data.body;
       init(wsURL, yourId, yourName);
+      break;
+    case "admin.start":
+      logger("admin.start");
+      socket.emit("admin.start");
+      break;
+    case "admin.end":
+      logger("admin.end");
+      socket.emit("admin.end");
       break;
     default:
       break;
@@ -95,8 +151,9 @@ onmessage = ({ data }) => {
 };
 
 function logger(message) {
+  const ts = new Date().toISOString();
   postMessage({
     type: "log",
-    body: `Comms Worker: ${JSON.stringify(message)}`,
+    body: `[${ts}] Comms Worker: ${typeof message === "string" ? message : JSON.stringify(message)}`,
   });
 }

@@ -1,6 +1,6 @@
 version: 0.1
 component: command
-timeoutInSeconds: 3600
+timeoutInSeconds: 900
 failImmediatelyOnError: true
 shell: bash
 

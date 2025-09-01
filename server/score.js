@@ -33,15 +33,18 @@ export async function postCurrentScore(playerId, playerName, operationType) {
       operationType: operationType,
       name: playerName,
     });
-    // FIXME thrown exceptions will kill the process!
     const urlRequest = `http://${scoreServiceUrl}/api/score/${playerId}`;
-    await fetch(urlRequest, {
+    const response = await fetch(urlRequest, {
       method: "PUT",
       headers: { "Content-type": "application/json" },
       body: stringifyBody,
     });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
   } catch (error) {
-    logger.error(error.message);
+    logger.error(`Error in postCurrentScore: ${error.message}`);
     return { score: 0 };
   }
 }
@@ -49,12 +52,14 @@ export async function postCurrentScore(playerId, playerName, operationType) {
 export async function deleteCurrentScore(playerId) {
   if (!scoreFeatureFlag) return;
   try {
-    await fetch(`http://${scoreServiceUrl}/api/score/${playerId}`, {
+    const response = await fetch(`http://${scoreServiceUrl}/api/score/${playerId}`, {
       method: "DELETE",
       headers: { "Content-type": "application/json" },
     });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
   } catch (error) {
-    logger.error(error.message);
-    return;
+    logger.error(`Error in deleteCurrentScore: ${error.message}`);
   }
 }

@@ -1,0 +1,66 @@
+<context>
+  <source id="1" type="specification" title="Save The Wildlife - Performance Optimization" date="2024-06-10" version="latest">
+    <section heading="Object Pooling System">
+      Create pool managers for boats, wildlife, particle effects, and UI elements. Pools should have dynamic sizes based on player count, track memory usage, and ensure performance targets of &lt; 1ms for object recycling. Graceful fallback to new object creation is required.
+    </section>
+    <section heading="Level of Detail (LOD) System">
+      Define four LOD thresholds (High: 0-50 units, Medium: 50-100, Low: 100-200, Very Low: 200+). Use Quadric Error Metrics for mesh simplification with 50% reduction per LOD level and maintain UV coordinates. Transition smoothly between LODs, preload and cache levels.
+    </section>
+    <section heading="Frustum Culling">
+      Implement camera frustum calculation using Three.js. Add object bounding box system and spatial partitioning. Enable debug visualization. Update every frame with target performance under 0.1ms.
+    </section>
+    <section heading="Network Optimization">
+      Use message compression (LZ4 for large messages), delta compression for positions, batching, and monitor bandwidth. Target &lt;100ms latency, &lt;50KB/s bandwidth per client.
+    </section>
+  </source>
+  <source id="2" type="gameplay" title="Save The Wildlife - Gameplay Requirements" date="2024-06-10" version="latest">
+    <section heading="Waiting Room & Game State">
+      Implement server-side game states (WAITING, STARTING, RUNNING, ENDED). Hold players in WAITING until admin triggers start. Clients show "Waiting for game..." until receiving start signal. Centralize timing on server, broadcasting duration and world size at start.
+    </section>
+    <section heading="Minimum Player Bots">
+      Add server mechanism to track and broadcast player/bot count. Auto-spawn bots if fewer than four players are present, with bots correctly handling game start and end signals.
+    </section>
+    <section heading="Boat Types & Movement">
+      Define three boat types (Speed, Fishing, Rescue) with differing speeds, handling, and capacities. Use server-authoritative movement and client-side interpolation. Enforce FPS- and latency-independent speed, with server reconciliation and strict position correction.
+    </section>
+    <section heading="Power-up System">
+      Define types and spawn logic (e.g., Speed Boost, Shield). Spawn rate is 1/minute/player. Synchronize state every 100ms.
+    </section>
+  </source>
+  <source id="3" type="uiux" title="Save The Wildlife - UI/UX and Audio" date="2024-06-10" version="latest">
+    <section heading="Audio System">
+      Implement using Web Audio API. Include ambient (waves, wind), effects (collisions, power-ups), and UI sounds.
+    </section>
+    <section heading="Visual Effects">
+      WebGL-based particle system via object pooling; optimize for &lt;2ms per frame. Provide mobile-specific optimizations as needed.
+    </section>
+    <section heading="Accessibility">
+      Plans include color-blind modes, text scaling, high contrast, and screen reader support for an inclusive experience.
+    </section>
+    <section heading="Navigation & Tutorial">
+      To add: minimap, waypoint, progress tutorial, dynamic UI scaling, and responsive layouts (mobile/tablet).
+    </section>
+  </source>
+  <source id="4" type="deployment" title="Save The Wildlife - Deployment & DevOps" date="2024-06-10" version="latest">
+    <section heading="Kubernetes Base Configuration">
+      Web frontend: 3 replicas, CPU 500m, Memory 512Mi. WebSocket server as StatefulSet (3 replicas, CPU 1Gi). Health checks, autoscaling (min 3, max 10, 70% CPU), NGINX ingress with TLS and rate limiting configured.
+    </section>
+    <section heading="Environment-Specific Configs">
+      Development overlays halve resource limits, enable debug logging, and use local storage with dev-only environment variables. Production overlays maximize limits and reliability.
+    </section>
+    <section heading="Monitoring, Logging, Security">
+      Prometheus and Grafana for metrics. Structured logging, alerts for errors and resource spikes. Strong RBAC, TLS, image scanning, and persistent backup strategies.
+    </section>
+  </source>
+  <source id="5" type="testing" title="Save The Wildlife - Testing & Quality Targets" date="2024-06-10" version="latest">
+    <section heading="Testing Requirements">
+      Aim for &gt;80% unit/integration test coverage using Jest. E2E/game-flow tests and performance benchmarks required. Support Chrome, Firefox, Safari, iOS, and Android.
+    </section>
+    <section heading="Performance Objectives">
+      Maintain &gt;60 FPS; &lt;500MB heap usage; initial load &lt;3 seconds; server memory &lt;1GB per 100 players. Network: &lt;100KB/s per client.
+    </section>
+    <section heading="Code Quality and Cleanup">
+      Regularly review and resolve FIXME/TODOs; refactor for maintainability. Ensure documentation and guidelines are up to date.
+    </section>
+  </source>
+</context>
