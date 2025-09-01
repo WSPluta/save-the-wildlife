@@ -1,184 +1,273 @@
 import { io } from "socket.io-client";
 import * as dotenv from "dotenv";
-import short from "shortid";
+import shortid from "shortid";
 import pino from "pino";
 import * as THREE from "three";
 import { throttle } from "throttle-debounce";
 
 dotenv.config({ path: "./config/.env" });
-const logger = pino();
+const logger = pino({ level: process.env.NODE_ENV === "production" ? "info" : "debug" });
 
-const NODE_ENV = process.env.NODE_ENV || "development";
-logger.info(`NODE_ENV: ${NODE_ENV}`);
+/**
+ * Bot Orchestrator
+ * - Keeps at least MIN_PLAYERS players in the match by spawning/removing bots.
+ * - Each bot connects with its own socket, joins the match, and periodically sends position traces.
+ * - Movement is simple wandering with boundary constraints.
+ *
+ * Network fields match server expectations:
+ * - player.info.joining { id, name }
+ * - game.start { playerId, playerName }
+ * - player.trace.change { id, x, z, rotY }
+ */
 
-const TRACE_RATE_IN_MILLIS = parseInt(process.env.TRACE_RATE_IN_MILLIS) || 10;
-logger.info(`TRACE_RATE_IN_MILLIS: ${TRACE_RATE_IN_MILLIS} ms`);
+const MIN_PLAYERS = 4;
 
-const yourId = short();
-const yourName = `Bot ${yourId}`;
-logger.info(`Name: ${yourName}`);
-
-const BOUNDARY_WIDTH = parseInt(process.env.BOUNDARY_WIDTH) || 89;
-const BOUNDARY_HEIGHT = parseInt(process.env.BOUNDARY_HEIGHT) || 23;
-const boundaries = { width: BOUNDARY_WIDTH, height: BOUNDARY_HEIGHT };
-logger.info(`Boundaries: ${JSON.stringify(boundaries)}`);
-
-const WS_SERVER_SERVICE_HOST = process.env.WS_SERVER_SERVICE_HOST;
-if (!WS_SERVER_SERVICE_HOST) {
-  logger.error(`WS_SERVER_SERVICE_HOST not defined`);
-  process.exit(1);
-}
-const WS_SERVER_SERVICE_PORT = process.env.WS_SERVER_SERVICE_PORT;
-if (!WS_SERVER_SERVICE_PORT) {
-  logger.error(`WS_SERVER_SERVICE_PORT not defined`);
-  process.exit(1);
-}
-
-let items = {};
-let players = {};
-
-const logTrace = throttle(1000, (message) => logger.info(message));
-
+// WS server
+const WS_SERVER_SERVICE_HOST = process.env.WS_SERVER_SERVICE_HOST || "localhost";
+const WS_SERVER_SERVICE_PORT = process.env.WS_SERVER_SERVICE_PORT || "3000";
 const webSocketServerUrl = `ws://${WS_SERVER_SERVICE_HOST}:${WS_SERVER_SERVICE_PORT}`;
-logger.info(`Connecting to WS Server on ${webSocketServerUrl}`);
-const socket = io(webSocketServerUrl);
 
-socket.on("server.info", (data) => {
-  logger.info(`Server Info: ${JSON.stringify(data)}`);
-});
+logger.info(`WS server: ${webSocketServerUrl}`);
 
-socket.on("items.all", (data) => {
-  // FIXME measure lag
-  const itemIdToDestroy = data;
-  delete items[itemIdToDestroy];
-});
+const TRACE_RATE_IN_MILLIS = parseInt(process.env.TRACE_RATE_IN_MILLIS || "50", 10);
 
-socket.on("item.new", (data) => {
-  // FIXME measure lag
-  items = data;
-});
-
-socket.on("item.destroy", (data) => {
-  // FIXME measure lag
-  items = data;
-});
-
-socket.on("player.trace.all", (data) => {
-  // FIXME measure lag
-  for (const [key, traceData] of Object.entries(data)) {
-    players[key] = players[key] ? { ...players[key], ...traceData } : traceData;
-  }
-});
-
-socket.on("player.info.joined", (data) => {
-  // FIXME measure lag
-  const { id: joinedId, name: joinedName } = data;
-  players[joinedId] = players[joinedId]
-    ? { ...players[joinedId], name: joinedName }
-    : { name: joinedName };
-});
-
-socket.on("player.info.left", (data) => {
-  // FIXME measure lag
-  const playerId = data;
-  delete players[playerId];
-});
-
-socket.on("connect", () => {
-  logger.info(`Connected to ${webSocketServerUrl}`);
-});
-
-socket.on("disconnect", () => {
-  logger.info(`Disconnected from ${webSocketServerUrl}`);
-});
-
-socket.on("error", (error) => {
-  logger.error(error);
-});
-
-socket.emit("player.info.joining", { id: yourId, name: yourName });
-
-const ACCELERATION = 0.005;
-const BRAKE = 0.1;
-const MAX_SPEED = 0.05;
-const TURN_SPEED = Math.PI / 180;
-
-const player = new THREE.Mesh();
-let playerSpeed = 0;
-
-let keyboard = {
-  ArrowUp: false,
-  ArrowDown: false,
-  ArrowLeft: false,
-  ArrowRight: false,
+// Boundaries (fallback defaults overridden by server.info if provided)
+let boundaries = {
+  width: parseInt(process.env.BOUNDARY_WIDTH || "89", 10),
+  height: parseInt(process.env.BOUNDARY_HEIGHT || "23", 10),
 };
 
-setInterval(() => {
-  animateBot();
-  const { x, y } = player.position;
-  const { z: rotZ } = player.rotation;
-  const trace = {
-    id: yourId,
-    x: x.toFixed(5),
-    y: y.toFixed(5),
-    rotZ: rotZ.toFixed(5), // add rotation Z value
+let latestCounts = null;
+
+// Global state observed from the server (humans + anyone sending traces)
+// We maintain a separate set of bot ids to exclude our own bots from the human count.
+const players = {};
+const botIds = new Set();
+
+// One control socket to observe server state and decide how many bots to run
+const controlSocket = io(webSocketServerUrl, {
+  transports: ["websocket"],
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 500,
+  reconnectionDelayMax: 5000,
+});
+
+controlSocket.io.on("reconnect_attempt", (a) => logger.info(`reconnect_attempt #${a}`));
+controlSocket.io.on("reconnect_error", (err) => logger.error(`reconnect_error: ${err?.message || err}`));
+controlSocket.io.on("reconnect_failed", () => logger.error("reconnect_failed"));
+controlSocket.on("connect_error", (err) => logger.error(`connect_error: ${err?.message || err}`));
+
+controlSocket.on("connect", () => {
+  logger.info(`Control socket connected`);
+});
+controlSocket.on("disconnect", () => {
+  logger.warn(`Control socket disconnected`);
+});
+
+// Update boundaries and any server config
+controlSocket.on("server.info", (data) => {
+  logger.info(`server.info: ${JSON.stringify(data)}`);
+  if (typeof data.worldSizeX === "number" && typeof data.worldSizeZ === "number") {
+    boundaries.width = data.worldSizeX;
+    boundaries.height = data.worldSizeZ;
+    logger.info(`Boundaries updated from server: ${boundaries.width} x ${boundaries.height}`);
+  }
+});
+
+/**
+ * Server aggregated counts (humans, bots, total)
+ * Prefer these for orchestration if available.
+ */
+controlSocket.on("player.count", (data) => {
+  latestCounts = data;
+  try {
+    logger.debug ? logger.debug(`player.count: ${JSON.stringify(data)}`) : logger.info(`player.count: ${JSON.stringify(data)}`);
+  } catch {}
+});
+
+// Track players from traces (includes bots and humans)
+controlSocket.on("player.trace.all", (data) => {
+  for (const [id, trace] of Object.entries(data)) {
+    players[id] = { ...(players[id] || {}), ...trace };
+  }
+});
+
+// Newly joined player info
+controlSocket.on("player.info.joined", ({ id, name }) => {
+  players[id] = { ...(players[id] || {}), name };
+});
+
+// Player left
+controlSocket.on("player.info.left", (id) => {
+  delete players[id];
+});
+
+// Full snapshot of players info
+controlSocket.on("player.info.all", (data) => {
+  Object.assign(players, data || {});
+});
+
+// Maintain bots up/down to ensure minimum players
+const managedBots = []; // [{ id, name, socket, timerId, state, position, rotation }]
+function totalHumanCount() {
+  // Prefer server authoritative humans count
+  if (latestCounts && typeof latestCounts.humans === "number") {
+    return latestCounts.humans;
+  }
+  // Fallback: Players minus bots we manage
+  let count = 0;
+  for (const id of Object.keys(players)) {
+    if (!botIds.has(id)) count++;
+  }
+  return count;
+}
+
+function ensureMinPlayers() {
+  const humans = totalHumanCount();
+  const currentBotCount = managedBots.length;
+  const desiredTotal = Math.max(MIN_PLAYERS, 0);
+  const need = Math.max(desiredTotal - humans, 0);
+
+  if (currentBotCount < need) {
+    const toAdd = need - currentBotCount;
+    logger.info(`Need ${need} bots (have ${currentBotCount}); spawning ${toAdd}`);
+    for (let i = 0; i < toAdd; i++) spawnBot();
+  } else if (currentBotCount > need) {
+    const toRemove = currentBotCount - need;
+    logger.info(`Too many bots (${currentBotCount}); removing ${toRemove}`);
+    for (let i = 0; i < toRemove; i++) despawnLastBot();
+  }
+}
+
+setInterval(ensureMinPlayers, 3000);
+
+// Bot lifecycle
+function spawnBot() {
+  const id = shortid.generate();
+  const name = `Bot ${id}`;
+  const socket = io(webSocketServerUrl, {
+    transports: ["websocket"],
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 5000,
+  });
+
+  const bot = {
+    id,
+    name,
+    socket,
+    state: "WAITING",
+    position: { x: 0, y: 0, z: 0 },
+    rotation: new THREE.Euler(0, 0, 0, "YXZ"),
+    speed: 0,
+    timerId: null,
   };
-  logTrace(`Trace: ${JSON.stringify(trace)}`);
-  socket.emit("player.trace.change", trace);
-}, TRACE_RATE_IN_MILLIS);
 
-setInterval(() => {
-  keyboard["ArrowUp"] = true;
-  setTimeout(() => {
-    keyboard["ArrowUp"] = false;
-  }, 300);
-}, 3 * 1000);
+  socket.on("connect", () => {
+    logger.info(`Bot ${id} connected`);
+    botIds.add(id);
+    // Join and start
+    socket.emit("player.info.joining", { id, name });
+    socket.emit("game.start", { playerId: id, playerName: name });
+  });
 
-setInterval(() => {
-  keyboard["ArrowLeft"] = true;
-  setTimeout(() => {
-    keyboard["ArrowLeft"] = false;
-  }, 300);
-}, 3 * 1000);
+  socket.on("disconnect", () => {
+    logger.info(`Bot ${id} disconnected`);
+    cleanupBot(bot);
+  });
 
-function animateBot() {
-  let movement = new THREE.Vector3(0, 0, 0);
+  socket.on("game.state", (state) => {
+    bot.state = state;
+  });
 
-  if (keyboard["ArrowUp"]) {
-    playerSpeed += ACCELERATION;
-  } else if (keyboard["ArrowDown"]) {
-    playerSpeed -= BRAKE;
-  } else {
-    playerSpeed *= 0.98; // Decelerate if no acceleration or braking input
-  }
+  socket.on("game.on", ({ startPosition }) => {
+    if (startPosition) {
+      bot.position.x = startPosition.x || 0;
+      bot.position.y = startPosition.y || 0;
+      bot.position.z = startPosition.z || 0;
+    }
+  });
 
-  playerSpeed = Math.max(Math.min(playerSpeed, MAX_SPEED), -MAX_SPEED);
+  socket.on("game.end", () => {
+    bot.state = "ENDED";
+    bot.speed = 0;
+  });
 
-  if (keyboard["ArrowLeft"]) {
-    player.rotation.z += TURN_SPEED;
-  }
-  if (keyboard["ArrowRight"]) {
-    player.rotation.z -= TURN_SPEED;
-  }
+  // Very simple wandering controller
+  const MAX_SPEED = 0.035;
+  const TURN_RATE = Math.PI / 180; // per update tick
+  const DRIFT = 0.98;
 
-  const direction = new THREE.Vector3(0, 1, 0).applyQuaternion(
-    player.quaternion
-  );
+  bot.timerId = setInterval(() => {
+    if (bot.state !== "RUNNING") return;
 
-  movement.copy(direction).multiplyScalar(playerSpeed);
+    // Random turn and speed
+    bot.rotation.y += (Math.random() - 0.5) * TURN_RATE;
+    const accel = 0.0005 + Math.random() * 0.0005;
+    bot.speed = Math.min(MAX_SPEED, bot.speed * DRIFT + accel);
 
-  player.position.add(movement);
+    // Forward vector in XZ from Euler Y
+    const dir = new THREE.Vector3(0, 0, 1).applyEuler(bot.rotation);
+    bot.position.x += dir.x * bot.speed * 100; // scale for server expectations (client scales similarly)
+    bot.position.z += dir.z * bot.speed * 100;
+
+    // Keep in bounds; if near edges, bias turn inward
+    const halfW = boundaries.width / 2 - 1;
+    const halfH = boundaries.height / 2 - 1;
+    if (bot.position.x < -halfW || bot.position.x > halfW || bot.position.z < -halfH || bot.position.z > halfH) {
+      // Flip direction quickly to head back in
+      bot.rotation.y += Math.PI * 0.75 * (Math.random() > 0.5 ? 1 : -1);
+      bot.position.x = Math.max(-halfW, Math.min(halfW, bot.position.x));
+      bot.position.z = Math.max(-halfH, Math.min(halfH, bot.position.z));
+    }
+
+    socket.emit("player.trace.change", {
+      id,
+      x: bot.position.x,
+      z: bot.position.z,
+      rotY: bot.rotation.y,
+    });
+  }, TRACE_RATE_IN_MILLIS);
+
+  managedBots.push(bot);
+  return bot;
 }
 
+function cleanupBot(bot) {
+  if (!bot) return;
+  if (bot.timerId) {
+    clearInterval(bot.timerId);
+    bot.timerId = null;
+  }
+  if (bot.socket && bot.socket.connected) {
+    bot.socket.disconnect();
+  }
+  botIds.delete(bot.id);
+  const idx = managedBots.findIndex((b) => b.id === bot.id);
+  if (idx >= 0) managedBots.splice(idx, 1);
+}
+
+function despawnLastBot() {
+  const bot = managedBots.pop();
+  if (!bot) return;
+  cleanupBot(bot);
+}
+
+// Graceful shutdown
 async function terminate() {
-  await socket.close();
-  process.exit(0);
+  logger.info("Shutting down bots...");
+  try {
+    managedBots.forEach((b) => cleanupBot(b));
+    if (controlSocket && controlSocket.connected) controlSocket.disconnect();
+  } finally {
+    process.exit(0);
+  }
 }
 
-process.on("SIGTERM", async () => {
-  await terminate();
-});
+process.on("SIGTERM", terminate);
+process.on("SIGINT", terminate);
 
-process.on("SIGINT", async () => {
-  await terminate();
-});
+// Initial tick to evaluate needed bots ASAP
+setTimeout(ensureMinPlayers, 500);

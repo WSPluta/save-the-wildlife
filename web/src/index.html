@@ -18,7 +18,7 @@
         <input name="name" autofocus />
         <button id="startButton">Play</button>
       </div>
-      <div id="lobby">
+      <div id="lobby" style="display: none;">
         <h1>Top Scores</h1>
         <div id="games-container">
           <table id="playerTable">
@@ -31,6 +31,20 @@
             <tbody></tbody>
           </table>
         </div>
+
+        <h2>Waiting Players</h2>
+        <ul id="waiting-list" style="margin: 6px 0 12px 18px;"></ul>
+
+        <h2>Lobby Chat</h2>
+        <div
+          id="chat-log"
+          style="height: 160px; overflow-y: auto; padding: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.35); margin-bottom: 6px;"
+        ></div>
+        <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 12px;">
+          <input id="chat-text" maxlength="300" placeholder="Message..." style="flex: 1;" />
+          <button id="chat-send">Send</button>
+        </div>
+
         <button id="create-game-button">Create New Game</button>
       </div>
       <div id="instructions">
@@ -52,5 +66,12 @@
     </div>
     <canvas class="Game"></canvas>
     <button id="restart-btn" style="display: none">Restart</button>
+
+    <div id="admin-controls" style="position: fixed; top: 10px; right: 10px; z-index: 1000;">
+      <button id="admin-start">Start Game</button>
+      <button id="admin-end">End Game</button>
+    </div>
+
+    
   </body>
 </html>

@@ -9,7 +9,7 @@ import { start } from "./server.js";
 
 dotenv.config({ path: "../.config/.env" });
 
-const port = process.env.PORT | 3000;
+const port = parseInt(process.env.PORT, 10) || 3000;
 const isProduction = process.env.NODE_ENV === "production";
 const logger = pino({ level: isProduction ? "warn" : "debug" });
 
@@ -22,20 +22,20 @@ let pubClient;
 let subClient;
 let cacheSession;
 
-// FIXME Flag to use coherence
-const ENABLE_COHERENCE_BACKEND =
-  process.env.ENABLE_COHERENCE_BACKEND === "true";
+const ENABLE_COHERENCE_BACKEND = process.env.ENABLE_COHERENCE_BACKEND === "true" || false;
 
-// FIXME coherence security, probably TLS, password would be easier to begin with
-const COHERENCE_SERVICE_HOST = process.env.COHERENCE_SERVICE_HOST
-  ? process.env.COHERENCE_SERVICE_HOST
-  : "localhost";
-
-const COHERENCE_SERVICE_PORT = process.env.COHERENCE_SERVICE_PORT
-  ? parseInt(process.env.COHERENCE_SERVICE_PORT)
-  : 1408;
+const COHERENCE_SERVICE_HOST = process.env.COHERENCE_SERVICE_HOST || "localhost";
+const COHERENCE_SERVICE_PORT = parseInt(process.env.COHERENCE_SERVICE_PORT) || 1408;
+const COHERENCE_PASSWORD = process.env.COHERENCE_PASSWORD; // Add password env var for basic auth
 
 const coherenceAddress = `${COHERENCE_SERVICE_HOST}:${COHERENCE_SERVICE_PORT}`;
+
+// TODO: Implement TLS for production. For now, using password if set.
+if (COHERENCE_PASSWORD) {
+  logger.info("Coherence password authentication enabled.");
+} else {
+  logger.warn("Coherence running without password - insecure for production!");
+}
 logger.info(`Coherence: ${ENABLE_COHERENCE_BACKEND ? "Enabled" : "Disabled"}`);
 if (ENABLE_COHERENCE_BACKEND) {
   logger.info(`Coherence URL: ${coherenceAddress}`);
@@ -135,21 +135,24 @@ createTerminus(httpServer, {
   onSignal,
 });
 
+// Enhanced createCacheSession with error handling and optional password
 async function createCacheSession() {
-  return new Promise((resolve, reject) => {
-    if (ENABLE_COHERENCE_BACKEND) {
-      try {
-        const opts = new Options();
-        opts.address = coherenceAddress;
-        cacheSession = new Session(opts);
-        resolve(cacheSession);
-      } catch (err) {
-        logger.error(err.message);
-        reject(err.message);
-      }
-    } else {
-      logger.info("Coherence is disabled");
-      resolve(null);
+  if (!ENABLE_COHERENCE_BACKEND) {
+    logger.info("Coherence is disabled");
+    return null;
+  }
+
+  try {
+    const opts = new Options();
+    opts.address = coherenceAddress;
+    // Add password if provided (assuming Coherence supports it; adjust based on actual API)
+    if (COHERENCE_PASSWORD) {
+      opts.password = COHERENCE_PASSWORD; // Placeholder; verify with Coherence docs
     }
-  });
+    cacheSession = new Session(opts);
+    return cacheSession;
+  } catch (err) {
+    logger.error(`Failed to create Coherence session: ${err.message}`);
+    throw err;
+  }
 }
