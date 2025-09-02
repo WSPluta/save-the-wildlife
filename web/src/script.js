@@ -59,6 +59,13 @@ let gameState = "WAITING";
 let startingIntervalId = null;
 let startingTargetTs = null;
 
+let serverAuthEnabled = false;
+let serverPhysics = null;
+let inputSeq = 0;
+let authStates = null;
+let authStatesTime = 0;
+let startPosition = null;
+
 // Tron-like trail settings and state
 let trails = {};
 const TRAIL_POINT_DISTANCE = 0.5;
@@ -238,18 +245,24 @@ async function init() {
         gameDuration = body.gameDuration;
         boundaries.width = body.worldSizeX;
         boundaries.height = body.worldSizeZ;
+        serverAuthEnabled = !!body.serverAuthEnabled;
+        serverPhysics = body.physics || null;
         break;
       case "game.on":
-        worker.postMessage({
-          type: "game.start",
-          body: { playerId: yourId, playerName },
-        });
-        startGame(
-          gameDuration,
-          [boatModel, turtleModel, boxModel],
-          sounds,
-          waternormals
-        );
+        {
+          const sp = body && body.startPosition ? body.startPosition : null;
+          startPosition = sp;
+          worker.postMessage({
+            type: "game.start",
+            body: { playerId: yourId, playerName },
+          });
+          startGame(
+            gameDuration,
+            [boatModel, turtleModel, boxModel],
+            sounds,
+            waternormals
+          );
+        }
         break;
       case "game.end":
         endGame();
@@ -343,6 +356,12 @@ async function init() {
       case "game.time":
         remainingTime = body;
         if (timerDivRef) timerDivRef.innerHTML = "Time: " + remainingTime;
+        break;
+      case "player.state":
+        if (body && body.states) {
+          authStates = body.states;
+          authStatesTime = body.t || performance.now();
+        }
         break;
       default:
         break;
@@ -682,6 +701,9 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
   scene.add(boat);
   player = boat;
+  if (startPosition && typeof startPosition.x === "number" && typeof startPosition.z === "number") {
+    player.position.set(startPosition.x, (startPosition.y || 0), startPosition.z);
+  }
   // No local name tag (only show names above other boats)
 
   // lights
@@ -1040,7 +1062,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     }
   }
 
-  let speedLimitation = performance.now();
 
   function updatePlayerPosition() {
     if (!player || !water || gameOverFlag) return;
@@ -1077,42 +1098,47 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const ACCELERATION = ACCELERATION_BASE * powerUpState.speedMultiplier;
     const MAX_SPEED = MAX_SPEED_BASE * powerUpState.speedMultiplier;
 
-    const currentTime = performance.now();
+    const dt = frameDt || 0.016;
     const movement = new THREE.Vector3(0, 0, 0);
     const lateralVelocity = new THREE.Vector3(0, 0, 0);
-    const deltaTime = (currentTime - speedLimitation) / 10000;
-    speedLimitation = currentTime;
-
-    if (keyboard["ArrowUp"]) {
-      playerSpeed += ACCELERATION * deltaTime;
-    } else if (keyboard["ArrowDown"]) {
-      playerSpeed -= BRAKE;
+    const throttle = (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0);
+    const steer = (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0);
+    if (serverAuthEnabled) {
+      inputSeq++;
+      worker.postMessage({
+        type: "player.input",
+        body: { id: yourId, seq: inputSeq, throttle, steer, brake: throttle < 0 }
+      });
     }
 
-    if (keyboard["ArrowLeft"]) {
-      player.rotation.y += TURN_SPEED;
-      if (keyboard["ArrowUp"]) {
-        playerSpeed *= 1 - FRICTION;
-        lateralVelocity.y += DRIFT_FACTOR;
-      }
-    }
-    if (keyboard["ArrowRight"]) {
-      player.rotation.y -= TURN_SPEED;
-      if (keyboard["ArrowUp"]) {
-        playerSpeed *= 1 - FRICTION;
-        lateralVelocity.y -= DRIFT_FACTOR;
+    if (!serverAuthEnabled) {
+      if (throttle > 0) {
+        playerSpeed += ACCELERATION * throttle * dt;
+      } else if (throttle < 0) {
+        playerSpeed -= BRAKE * (-throttle) * dt;
       }
     }
 
-    if (!keyboard["ArrowUp"] && !keyboard["ArrowDown"]) {
-      playerSpeed *= 1 - FRICTION;
+    if (!serverAuthEnabled && steer !== 0) {
+      player.rotation.y += TURN_SPEED * steer * dt;
+      if (keyboard["ArrowUp"]) {
+        playerSpeed *= Math.exp(-FRICTION * dt);
+      }
     }
 
-    player.position.x += lateralVelocity.x;
-    lateralVelocity.x *= 1 - FRICTION;
+    if (!serverAuthEnabled && !keyboard["ArrowUp"] && !keyboard["ArrowDown"]) {
+      playerSpeed *= Math.exp(-FRICTION * dt);
+    }
 
-    playerSpeed = Math.max(Math.min(playerSpeed, MAX_SPEED), -MAX_SPEED);
-    speedElement.innerHTML = `Speed: ${(playerSpeed * 100).toFixed(2)}`;
+
+    if (!serverAuthEnabled) {
+      playerSpeed = Math.max(Math.min(playerSpeed, MAX_SPEED), -MAX_SPEED);
+      speedElement.innerHTML = `Speed: ${(playerSpeed * 100).toFixed(2)}`;
+    } else {
+      const s = authStates && authStates[yourId];
+      const shown = s && typeof s.speed === "number" ? Math.abs(s.speed) : 0;
+      speedElement.innerHTML = `Speed: ${(shown * 100).toFixed(2)}`;
+    }
 
     const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(
       player.quaternion
@@ -1122,9 +1148,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const CAMERA_HEIGHT = 0.5;
     const SPRING_STRENGTH = 0.1;
 
-    movement.copy(direction).multiplyScalar(playerSpeed);
     const lastPosition = player.position.clone();
-    player.position.add(movement);
+    if (!serverAuthEnabled) {
+      player.position.addScaledVector(direction, playerSpeed * dt);
+    }
 
     const playerBoundingBox = new THREE.Box3().setFromObject(player);
     if (!playerBoundingBox.intersectsBox(navmeshBoundingBox)) {
@@ -1144,6 +1171,15 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     camera.lookAt(player.position);
 
 
+    // Reconcile local player to authoritative server state (smoothly)
+    if (serverAuthEnabled && authStates && authStates[yourId]) {
+      const s = authStates[yourId];
+      const target = new THREE.Vector3(s.x, player.position.y, s.z);
+      player.position.lerp(target, 0.2);
+      // shortest-angle lerp for yaw
+      const delta = ((s.rotY - player.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
+      player.rotation.y += delta * 0.2;
+    }
     // Leave a trail point for the local player
     addTrailPoint(yourId, player.position);
     // Emit engine particles based on speed
@@ -1159,6 +1195,24 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
   function animateOtherPlayers(playerMeshes) {
     if (!playerMeshes) return;
+    if (serverAuthEnabled && authStates) {
+      Object.keys(playerMeshes).forEach((id) => {
+        if (id === yourId) return;
+        const s = authStates[id];
+        if (!s) return;
+        const m = playerMeshes[id];
+        if (!m) return;
+        // Smoothly approach authoritative state
+        m.position.x = THREE.MathUtils.lerp(m.position.x, s.x, 0.35);
+        m.position.z = THREE.MathUtils.lerp(m.position.z, s.z, 0.35);
+        const delta = ((s.rotY - m.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
+        m.rotation.y += delta * 0.35;
+        // Trail for remote players
+        addTrailPoint(id, m.position);
+      });
+      return;
+    }
+    // Fallback to legacy traces
     Object.keys(playerMeshes).forEach((id) => {
       if (otherPlayers[id]) {
         playerMeshes[id].position.x = otherPlayers[id].x;
@@ -1185,7 +1239,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     render();
     updateSun();
     animateItems();
-    sendYourPosition();
+    if (!serverAuthEnabled && sendYourPosition) sendYourPosition();
     animateOtherPlayers(otherPlayersMeshes);
   }
 

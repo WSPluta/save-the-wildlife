@@ -71,6 +71,11 @@ function init(wsURL, yourId, yourName) {
     postMessage({ type: "game.time", body: data });
   });
 
+  // Authoritative server state snapshots (optional feature)
+  socket.on("player.state", (data) => {
+    postMessage({ type: "player.state", body: data });
+  });
+
   // New: synchronized pre-start countdown and player counts
   socket.on("startingGame", (data) => {
     postMessage({ type: "startingGame", body: data });
@@ -124,6 +129,10 @@ onmessage = ({ data }) => {
       break;
     case "items.collision":
       socket.emit("items.collision", data.body);
+      break;
+    case "player.input":
+      // data.body: { id, seq, throttle, steer, brake }
+      socket.emit("player.input", data.body);
       break;
     case "chat.send":
       // data.body: { text }

@@ -58,6 +58,14 @@ const PHYSICS_CONFIG = {
   driftFactor: parseFloat(process.env.PHYS_DRIFT ?? "0")
 };
 
+const SERVER_AUTH_ENABLED = process.env.SERVER_AUTH_ENABLED === "true";
+const SIM_TPS = parseInt(process.env.SIM_TPS ?? "60");
+const STATE_BROADCAST_HZ = parseInt(process.env.STATE_BROADCAST_HZ ?? "20");
+const COLLISION_VALIDATE_RADIUS = parseFloat(process.env.COLLISION_VALIDATE_RADIUS ?? "1.0");
+const POWERUP_SPEED_MULTIPLIER = parseFloat(process.env.POWERUP_SPEED_MULTIPLIER ?? "2");
+const POWERUP_SPEED_DURATION_MS = parseInt(process.env.POWERUP_SPEED_DURATION_MS ?? "10000");
+const POWERUP_SHIELD_DURATION_MS = parseInt(process.env.POWERUP_SHIELD_DURATION_MS ?? "5000");
+
 // Lobby chat (server-side buffer) and settings
 const CHAT_HISTORY_LIMIT = 100;
 const chatHistory = [];
@@ -74,6 +82,9 @@ let mapTrash;
 let mapMarineLife;
 let mapPowerUps;
 let mapPlayerSockets;
+
+const playersState = new Map();
+const playersInput = new Map();
 
 function createObject() {
   const x = Math.round((Math.random() - 0.5) * (WORLD_SIZE_X - 1));
@@ -148,6 +159,7 @@ export async function start(
       gameDuration: GAME_DURATION_IN_SECONDS,
       worldSizeX: WORLD_SIZE_X,
       worldSizeZ: WORLD_SIZE_Z,
+      serverAuthEnabled: SERVER_AUTH_ENABLED,
       physics: PHYSICS_CONFIG,
     });
 
@@ -217,6 +229,23 @@ export async function start(
         name: playerName,
       });
       await emitPlayerCount();
+
+      // Initialize authoritative state for late joiners when a match is already RUNNING
+      if (SERVER_AUTH_ENABLED && gameState === 'RUNNING' && !playersState.has(playerId)) {
+        const startX = Math.round((Math.random() - 0.5) * (WORLD_SIZE_X - 1));
+        const startZ = Math.round((Math.random() - 0.5) * (WORLD_SIZE_Z - 1));
+        playersState.set(playerId, {
+          x: startX,
+          y: 0,
+          z: startZ,
+          rotY: 0,
+          vel: 0,
+          speedMul: 1,
+          shield: false,
+          effects: { speedUntil: 0, shieldUntil: 0 }
+        });
+        playersInput.set(playerId, { throttle: 0, steer: 0, brake: false, lastSeq: -1 });
+      }
     });
 
     socket.on("player.trace.change", async ({ id, ...traceData }) => {
@@ -228,42 +257,126 @@ export async function start(
       }
     });
 
+    // Server-authoritative input stream (optional; gated by env flag)
+    socket.on("player.input", ({ id, seq, throttle = 0, steer = 0, brake = false }) => {
+      try {
+        if (!SERVER_AUTH_ENABLED) return;
+        // Bind to this socket's player id if present, drop spoofed ids
+        if (playerIdForSocket && id !== playerIdForSocket) return;
+        const prev = playersInput.get(id) || { lastSeq: -1 };
+        if (typeof seq !== "number" || seq <= (prev.lastSeq ?? -1)) return;
+        const t = Math.max(-1, Math.min(1, Number(throttle) || 0));
+        const s = Math.max(-1, Math.min(1, Number(steer) || 0));
+        playersInput.set(id, { throttle: t, steer: s, brake: !!brake, lastSeq: seq });
+      } catch (e) {
+        logger.error(`player.input error: ${e && e.message ? e.message : e}`);
+      }
+    });
+
     socket.on("items.collision", async ({ itemId, playerId, playerName }) => {
-      const existTrash = ENABLE_COHERENCE_BACKEND
-        ? await mapTrash.has(itemId)
-        : mapTrash[itemId];
-      const existMarineLife = ENABLE_COHERENCE_BACKEND
-        ? await mapMarineLife.has(itemId)
-        : mapMarineLife[itemId];
-      const existPowerUp = ENABLE_COHERENCE_BACKEND
-        ? await mapPowerUps.has(itemId)
-        : mapPowerUps[itemId];
-      if (existTrash) {
-        ENABLE_COHERENCE_BACKEND
-          ? await deleteCache(mapTrash, itemId)
-          : delete mapTrash[itemId];
-        io.emit("item.destroy", itemId);
-        const jsonResponse = await postCurrentScore(
-          playerId,
-          playerName,
-          "INCREMENT"
-        );
-      } else if (existMarineLife) {
-        ENABLE_COHERENCE_BACKEND
-          ? await deleteCache(mapMarineLife, itemId)
-          : delete mapMarineLife[itemId];
-        io.emit("item.destroy", itemId);
-        const jsonResponse = await postCurrentScore(
-          playerId,
-          playerName,
-          "DECREMENT"
-        );
-      } else if (existPowerUp) {
-        ENABLE_COHERENCE_BACKEND
-          ? await deleteCache(mapPowerUps, itemId)
-          : delete mapPowerUps[itemId];
-        io.emit("item.destroy", itemId);
-        // Power-ups do not affect score server-side
+      try {
+        // Locate the item and its type
+        let item = null;
+        let itemType = null;
+        if (ENABLE_COHERENCE_BACKEND) {
+          if (await mapTrash.has(itemId)) {
+            itemType = "trash";
+            item = await readCache(mapTrash, itemId);
+          } else if (await mapMarineLife.has(itemId)) {
+            itemType = "turtle";
+            item = await readCache(mapMarineLife, itemId);
+          } else if (await mapPowerUps.has(itemId)) {
+            itemType = "powerup";
+            item = await readCache(mapPowerUps, itemId);
+          }
+        } else {
+          if (mapTrash[itemId]) {
+            itemType = "trash";
+            item = mapTrash[itemId];
+          } else if (mapMarineLife[itemId]) {
+            itemType = "turtle";
+            item = mapMarineLife[itemId];
+          } else if (mapPowerUps[itemId]) {
+            itemType = "powerup";
+            item = mapPowerUps[itemId];
+          }
+        }
+
+        if (!item) return;
+
+        // If server-authoritative, validate proximity using authoritative state
+        if (SERVER_AUTH_ENABLED) {
+          const st = playersState.get(playerId);
+          if (!st) return;
+          const ipos = item.position || { x: 0, z: 0 };
+          const dx = (st.x || 0) - ipos.x;
+          const dz = (st.z || 0) - ipos.z;
+          const dist = Math.hypot(dx, dz);
+          if (dist > COLLISION_VALIDATE_RADIUS) {
+            // Ignore spoofed/late collisions
+            return;
+          }
+        }
+
+        // Remove the item, update score/effects accordingly
+        if (itemType === "trash") {
+          if (ENABLE_COHERENCE_BACKEND) {
+            await deleteCache(mapTrash, itemId);
+          } else {
+            delete mapTrash[itemId];
+          }
+          io.emit("item.destroy", itemId);
+          if (item) itemPool.returnObject(item);
+          await postCurrentScore(playerId, playerName, "INCREMENT");
+        } else if (itemType === "turtle") {
+          if (ENABLE_COHERENCE_BACKEND) {
+            await deleteCache(mapMarineLife, itemId);
+          } else {
+            delete mapMarineLife[itemId];
+          }
+          io.emit("item.destroy", itemId);
+          if (item) itemPool.returnObject(item);
+          // If shielded under authority, do not decrement
+          if (!SERVER_AUTH_ENABLED || !(playersState.get(playerId)?.shield)) {
+            await postCurrentScore(playerId, playerName, "DECREMENT");
+          }
+        } else {
+          // Power-ups
+          if (ENABLE_COHERENCE_BACKEND) {
+            await deleteCache(mapPowerUps, itemId);
+          } else {
+            delete mapPowerUps[itemId];
+          }
+          io.emit("item.destroy", itemId);
+          if (item) itemPool.returnObject(item);
+
+          if (SERVER_AUTH_ENABLED) {
+            const st = playersState.get(playerId) || {
+              x: 0,
+              y: 0,
+              z: 0,
+              rotY: 0,
+              vel: 0,
+              speedMul: 1,
+              shield: false,
+              effects: { speedUntil: 0, shieldUntil: 0 }
+            };
+            // Distinguish type by stored item.type if present
+            const typeName = (item.type && String(item.type)) || "";
+            if (typeName === "powerup_speed") {
+              st.speedMul = POWERUP_SPEED_MULTIPLIER;
+              st.effects = st.effects || {};
+              st.effects.speedUntil = Date.now() + POWERUP_SPEED_DURATION_MS;
+            } else if (typeName === "powerup_shield") {
+              st.shield = true;
+              st.effects = st.effects || {};
+              st.effects.shieldUntil = Date.now() + POWERUP_SHIELD_DURATION_MS;
+            }
+            playersState.set(playerId, st);
+          }
+        }
+      } catch (e) {
+        logger.error(`items.collision error: ${e && e.message ? e.message : e}`);
       }
     });
     
@@ -307,6 +420,10 @@ export async function start(
       if (playerIdForSocket && mapPlayerSockets[playerIdForSocket]) {
         delete mapPlayerSockets[playerIdForSocket];
       }
+      // Remove authoritative state/input if present
+      playersState.delete(playerIdForSocket);
+      playersInput.delete(playerIdForSocket);
+
       // Broadcast updated lobby roster after removal
       io.emit(
         "lobby.players",
@@ -329,6 +446,7 @@ export async function start(
         gameDuration: GAME_DURATION_IN_SECONDS,
         worldSizeX: WORLD_SIZE_X,
         worldSizeZ: WORLD_SIZE_Z,
+        serverAuthEnabled: SERVER_AUTH_ENABLED,
         physics: PHYSICS_CONFIG,
       });
       io.emit("startingGame", { startsAt: gameStartingAt, countdownMs: 10000 });
@@ -341,6 +459,20 @@ export async function start(
           const startX = Math.round((Math.random() - 0.5) * (WORLD_SIZE_X - 1));
           const startZ = Math.round((Math.random() - 0.5) * (WORLD_SIZE_Z - 1));
           socket.emit("game.on", { startPosition: { x: startX, y: 0, z: startZ } });
+          // Initialize authoritative state and inputs
+          if (SERVER_AUTH_ENABLED) {
+            playersState.set(playerId, {
+              x: startX,
+              y: 0,
+              z: startZ,
+              rotY: 0,
+              vel: 0,
+              speedMul: 1,
+              shield: false,
+              effects: { speedUntil: 0, shieldUntil: 0 }
+            });
+            playersInput.set(playerId, { throttle: 0, steer: 0, brake: false, lastSeq: -1 });
+          }
         });
         gameStartTime = Date.now();
 
@@ -446,6 +578,74 @@ export async function start(
   io.engine.on("connection_error", async (err) => {
     logger.error(`ERROR ${err.code}: ${err.message}; ${err.context}`);
   });
+
+  // Server-authoritative simulation and state broadcast (optional)
+  if (SERVER_AUTH_ENABLED) {
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const WORLD_HALF_X = WORLD_SIZE_X / 2;
+    const WORLD_HALF_Z = WORLD_SIZE_Z / 2;
+
+    const step = (dt) => {
+      const now = Date.now();
+      for (const [id, state] of playersState.entries()) {
+        const input = playersInput.get(id) || { throttle: 0, steer: 0, brake: false };
+
+        // effects expiry
+        if (state.effects) {
+          if (state.effects.speedUntil && now > state.effects.speedUntil) {
+            state.speedMul = 1;
+            state.effects.speedUntil = 0;
+          }
+          if (state.effects.shieldUntil && now > state.effects.shieldUntil) {
+            state.shield = false;
+            state.effects.shieldUntil = 0;
+          }
+        }
+
+        // integrate
+        const acc = PHYSICS_CONFIG.acceleration;
+        const brakeAcc = PHYSICS_CONFIG.brake;
+        const friction = PHYSICS_CONFIG.friction;
+        const turnSpeed = PHYSICS_CONFIG.turnSpeed;
+        const maxSpeed = PHYSICS_CONFIG.maxSpeed * (state.speedMul || 1);
+
+        state.vel = (state.vel || 0) + (input.throttle || 0) * acc * dt;
+        if (input.brake) state.vel -= brakeAcc * dt;
+
+        state.vel *= Math.exp(-friction * dt);
+        state.vel = clamp(state.vel, -maxSpeed, maxSpeed);
+
+        state.rotY = (state.rotY || 0) + (input.steer || 0) * turnSpeed * dt;
+
+        const dx = Math.sin(state.rotY) * state.vel * dt;
+        const dz = Math.cos(state.rotY) * state.vel * dt;
+        state.x = clamp((state.x ?? 0) + dx, -WORLD_HALF_X, WORLD_HALF_X);
+        state.z = clamp((state.z ?? 0) + dz, -WORLD_HALF_Z, WORLD_HALF_Z);
+
+        playersState.set(id, state);
+      }
+    };
+
+    const snapshot = () => {
+      const states = {};
+      for (const [id, s] of playersState.entries()) {
+        states[id] = { x: s.x || 0, z: s.z || 0, rotY: s.rotY || 0, speed: s.vel || 0 };
+      }
+      return { t: Date.now(), states };
+    };
+
+    let lastTick = Date.now();
+    setInterval(() => {
+      const now = Date.now();
+      const dt = Math.max(0.001, (now - lastTick) / 1000);
+      lastTick = now;
+      step(dt);
+    }, Math.max(1, Math.round(1000 / Math.max(1, SIM_TPS))));
+
+    setInterval(() => {
+      io.emit("player.state", snapshot());
+    }, Math.max(1, Math.round(1000 / Math.max(1, STATE_BROADCAST_HZ))));
+  }
 
   // broadcast all players traces
   setInterval(async () => {

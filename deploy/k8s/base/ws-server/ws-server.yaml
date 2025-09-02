@@ -29,10 +29,20 @@ spec:
         - image: ws-server
           name: ws-server
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              scheme: HTTP
+              path: /healthz
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              scheme: HTTP
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
           ports:
             - containerPort: 3000
           resources:

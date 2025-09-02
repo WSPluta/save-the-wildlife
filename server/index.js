@@ -7,6 +7,14 @@ import pino from "pino";
 import * as dotenv from "dotenv";
 import { start } from "./server.js";
 
+/**
+ * Load env in this order (later calls don't override existing):
+ * 1) default .env (if present)
+ * 2) config/.env (mounted by K8s ConfigMap in container at /usr/src/app/config/.env)
+ * 3) ../.config/.env (legacy path)
+ */
+dotenv.config();
+dotenv.config({ path: "config/.env" });
 dotenv.config({ path: "../.config/.env" });
 
 const port = parseInt(process.env.PORT, 10) || 3000;
