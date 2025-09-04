@@ -286,3 +286,386 @@ body
   button:hover {
     background-color: #ccc;
   }
+
+/* HUD styles */
+.hud {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  backdrop-filter: blur(8px);
+  background: linear-gradient(to bottom, rgba(0,25,40,0.65), rgba(0,25,40,0.35));
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+  color: #e7f6ff;
+  z-index: 1000;
+}
+
+.hud-left, .hud-center, .hud-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hud-center {
+  flex: 1;
+  justify-content: center;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.hud-item {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.hud-debug {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* Compact HUD (prod view: top-right) */
+.hud-compact {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  z-index: 1000;
+}
+
+.hud-compact .hud-item {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #ffffff;
+  font-size: 13px;
+  backdrop-filter: blur(4px);
+}
+
+/* Button system */
+.btn {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #e7f6ff;
+  background: rgba(255,255,255,0.08);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.05s ease, border-color 0.2s ease;
+}
+
+.btn:hover {
+  background: rgba(255,255,255,0.18);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, #1ea7fd, #177ddc);
+  border-color: rgba(30,167,253,0.45);
+  color: white;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+.btn-danger {
+  background: linear-gradient(180deg, #ff4d4f, #d9363e);
+  border-color: rgba(255,77,79,0.45);
+  color: white;
+}
+
+.btn-danger:hover {
+  filter: brightness(1.05);
+}
+
+/* HUD Monitor panel (visible only in full debug HUD) */
+.hud-monitor {
+  margin-left: 8px;
+}
+.hud-monitor > summary {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #e7f6ff;
+}
+.monitor-grid {
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: 10px;
+  max-width: 520px;
+}
+.monitor-section {
+  padding: 6px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  font-size: 12px;
+  color: #e7f6ff;
+}
+.monitor-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  opacity: 0.9;
+}
+.monitor-section input,
+.monitor-section select {
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.08);
+  color: #e7f6ff;
+}
+/* Monitor side panel layout (right sidebar in debug mode) */
+.monitor-panel {
+  position: fixed;
+  top: 56px; /* match .hud height */
+  right: 0;
+  bottom: 0;
+  width: min(420px, 34vw);
+  z-index: 1001; /* above top HUD (1000) */
+  background: linear-gradient(180deg, rgba(0,25,40,0.86), rgba(0,25,40,0.72));
+  border-left: 1px solid rgba(255,255,255,0.15);
+  backdrop-filter: blur(8px);
+  padding: 10px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+
+@media (max-width: 1100px) {
+  .monitor-panel {
+    width: min(380px, 40vw);
+  }
+}
+
+@media (max-width: 900px) {
+  /* Convert to bottom sheet on small screens */
+  .monitor-panel {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    height: 45vh;
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid rgba(255,255,255,0.15);
+  }
+}
+
+@media (max-width: 720px) {
+  .monitor-grid {
+    grid-template-columns: 1fr;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .hud {
+    height: 48px;
+    padding: 6px 8px;
+  }
+  .hud-center {
+    display: none;
+  }
+  .brand {
+    font-size: 14px;
+  }
+}
+
+/* Screen system: ensure only one screen shows and avoid flicker */
+#overlay {
+  /* Keep overlay below HUD (1000) but above canvas */
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.screen {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 150ms ease-in-out;
+}
+
+.screen.active {
+  display: flex;
+  opacity: 1;
+}
+
+/* Tables within screens scale sanely */
+#playerTable {
+  width: 100%;
+}
+#playerTable thead th, #playerTable tbody td {
+  text-align: center;
+}
+
+/* =========================
+   Ocean / Nature Theme Overrides
+   ========================= */
+
+/* Design tokens */
+:root {
+  --ocean-900: #061a2b;
+  --ocean-800: #082238;
+  --ocean-700: #0a3350;
+  --ocean-600: #0c4570;
+  --ocean-500: #0f5480;
+  --ocean-300: #1b86b3;
+  --foam: #e6f7ff;
+  --text: #eaf6fb;
+  --muted: #b8d4e3;
+  --kelp: #2f8f83;
+  --kelp-700: #23746a;
+  --coral: #ff7a66;
+  --coral-700: #d45a46;
+  --sand: #e3d7b5;
+  --glass: rgba(12, 33, 54, 0.55);
+  --glass-strong: rgba(12, 33, 54, 0.70);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  --radius: 14px;
+}
+
+/* Background and base text */
+body {
+  background: linear-gradient(180deg, var(--ocean-900), var(--ocean-700));
+  color: var(--text);
+}
+
+/* Top HUD refinements */
+.hud {
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.00));
+  border-bottom: 1px solid var(--glass-border);
+  color: var(--text);
+}
+.brand { color: var(--foam); }
+.hud-item {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--glass-border);
+}
+.hud-debug { color: var(--muted); }
+
+/* Monitor panel theme */
+.monitor-panel {
+  background: linear-gradient(180deg, rgba(0,25,40,0.86), rgba(0,25,40,0.72));
+  border-left: 1px solid rgba(255,255,255,0.15);
+}
+
+/* Panels and containers */
+.panel {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+#screen-lobby {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+/* Buttons */
+.btn {
+  border: 1px solid rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+}
+.btn:hover { background: rgba(255,255,255,0.16); }
+.btn-primary {
+  background: linear-gradient(180deg, var(--kelp), var(--kelp-700));
+  border-color: rgba(255,255,255,0.25);
+  color: #ffffff;
+}
+.btn-danger {
+  background: linear-gradient(180deg, var(--coral-700), var(--coral));
+  border-color: rgba(255,255,255,0.25);
+  color: #ffffff;
+}
+
+/* Inputs */
+input, select, textarea {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--glass-border);
+  color: var(--text);
+  border-radius: 10px;
+}
+input::placeholder, textarea::placeholder {
+  color: var(--muted);
+}
+
+/* Tables (Leaderboard) */
+#playerTable {
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+  box-shadow: var(--shadow);
+}
+#playerTable thead {
+  background: rgba(255,255,255,0.06);
+}
+#playerTable th, #playerTable td {
+  border: 1px solid rgba(255,255,255,0.10);
+  color: var(--foam);
+}
+#playerTable tbody tr:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+/* Chat (IDs retained; light refinements) */
+#chat-log {
+  border-color: rgba(255,255,255,0.18);
+  background: rgba(0,0,0,0.35);
+  color: var(--foam);
+}
+
+/* Overlay sits below HUD and above canvas */
+#overlay {
+  z-index: 500;
+}
+
+/* Responsive tweaks */
+@media (max-width: 720px) {
+  #screen-lobby { padding: 12px; border-radius: 12px; }
+  .hud { height: 48px; }
+}

@@ -6,20 +6,153 @@
     <title>OCI Multiplayer</title>
   </head>
   <body>
+    <!-- Top HUD -->
+    <div id="hud" class="hud">
+      <div class="hud-left">
+        <span class="brand">Save the Wildlife</span>
+        <span id="hud-debug" class="hud-debug"></span>
+      </div>
+      <div class="hud-center">
+        <span id="hud-time" class="hud-item">Time: --</span>
+        <span id="hud-score" class="hud-item">Score: 0</span>
+        <span id="hud-speed" class="hud-item">Speed: 0</span>
+        <span id="hud-version" class="hud-item">Version: -</span>
+        <span id="hud-players" class="hud-item">Players: -</span>
+        <span id="hud-room" class="hud-item">Room: -</span>
+      </div>
+      <div class="hud-right">
+        <!-- Distinct lifecycle controls -->
+        <button id="btn-main-menu" class="btn">Menu</button>
+        <button id="btn-create-room" class="btn btn-primary">Create Room</button>
+        <button id="btn-join-room" class="btn">Join Room</button>
+        <button id="btn-start-match" class="btn btn-primary">Start Match</button>
+        <button id="btn-end-match" class="btn btn-danger">End Match</button>
+        <button id="btn-restart-match" class="btn">Restart</button>
+        <button id="btn-grant-admin" class="btn" title="Grant admin to player by ID">Grant Admin</button>
+        <button id="btn-toggle-debug" class="btn" title="Toggle Debug HUD (F2)">Debug</button>
+        <button id="hud-sound-toggle" class="btn">Sound: On</button>
+      </div>
+    </div>
+
+    <!-- Monitor side panel (debug/admin) -->
+    <aside id="monitor-panel" class="monitor-panel" style="display: none;">
+      <div class="monitor-grid">
+        <div class="monitor-section">
+          <div class="monitor-title">Players</div>
+          <div>Humans: <span id="mon-humans">-</span></div>
+          <div>Bots: <span id="mon-bots">-</span></div>
+          <div>Total: <span id="mon-total">-</span></div>
+        </div>
+        <div class="monitor-section">
+          <div class="monitor-title">World</div>
+          <div>Width: <span id="mon-world-x">-</span></div>
+          <div>Height: <span id="mon-world-z">-</span></div>
+          <div>Mode: <span id="mon-mode">-</span></div>
+        </div>
+        <div class="monitor-section">
+          <div class="monitor-title">Counts</div>
+          <div>Trash: <span id="mon-trash">-</span> / <span id="mon-target-trash">-</span></div>
+          <div>Marine: <span id="mon-marine">-</span> / <span id="mon-target-marine">-</span></div>
+          <div>PowerUps: <span id="mon-power">-</span> / <span id="mon-target-power">-</span></div>
+          <div>Next spawn in: <span id="mon-next-spawn">-</span> ms</div>
+        </div>
+        <div class="monitor-section">
+          <div class="monitor-title">Admin Controls</div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap: wrap;">
+            <label for="mon-mode-select">Spawn:</label>
+            <select id="mon-mode-select">
+              <option value="proportional">Proportional</option>
+              <option value="fibonacci">Fibonacci</option>
+            </select>
+            <label for="mon-k">k</label>
+            <input id="mon-k" type="number" step="0.1" value="1" style="width:64px" />
+            <label for="mon-tr">TR</label>
+            <input id="mon-tr" type="number" step="0.1" value="1" style="width:64px" />
+            <label for="mon-mr">MR</label>
+            <input id="mon-mr" type="number" step="0.1" value="2" style="width:64px" />
+            <label for="mon-pr">PR</label>
+            <input id="mon-pr" type="number" step="0.1" value="0.2" style="width:64px" />
+            <button id="mon-apply" class="btn btn-primary">Apply</button>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap: wrap; margin-top:6px;">
+            <label for="mon-minx">MinX</label>
+            <input id="mon-minx" type="number" step="1" value="44" style="width:64px" />
+            <label for="mon-minz">MinZ</label>
+            <input id="mon-minz" type="number" step="1" value="11" style="width:64px" />
+            <label for="mon-maxx">MaxX</label>
+            <input id="mon-maxx" type="number" step="1" value="176" style="width:64px" />
+            <label for="mon-maxz">MaxZ</label>
+            <input id="mon-maxz" type="number" step="1" value="88" style="width:64px" />
+            <button id="mon-apply-world" class="btn">Apply World</button>
+          </div>
+        </div>
+        <div class="monitor-section" id="monitor-events">
+          <div class="monitor-title">Events</div>
+          <details open>
+            <summary>Recent</summary>
+            <div id="event-console" style="max-height:200px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;"></div>
+          </details>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Compact HUD (prod) -->
+    <div id="hud-compact" class="hud-compact" style="display: none;">
+      <span id="compact-time" class="hud-item">Time: --</span>
+      <span id="compact-score" class="hud-item">Score: 0</span>
+      <span id="compact-speed" class="hud-item">Speed: 0</span>
+    </div>
+
     <video id="video-background" autoplay muted loop>
       <!-- <source src="assets/menu/videoBack.m4v" type="video/mp4" /> -->
     </video>
+
+    <!-- Overlay with distinct screens: only one visible at a time -->
     <div id="overlay">
-      <div id="logo">
-        <!-- <img src="web/static/assets/menu/logoPlusOCI.png"> -->
-      </div>
-      <div id="input">
+      <!-- ACCESS: Optional name entry -->
+      <section id="screen-access" class="screen" style="display: none; flex-direction: column; align-items: center;">
         <p>Your Name:</p>
-        <input name="name" autofocus />
-        <button id="startButton">Play</button>
-      </div>
-      <div id="lobby" style="display: none;">
-        <h1>Top Scores</h1>
+        <input id="name-input" name="name" autofocus />
+        <div style="height:10px"></div>
+        <button id="btn-access-continue" class="btn btn-primary">Continue</button>
+      </section>
+
+      <!-- MENU: Main actions -->
+      <section id="screen-menu" class="screen" style="display: none; flex-direction: column; align-items: center;">
+        <h2 style="color: white; margin-bottom: 10px;">Main Menu</h2>
+        <div class="menu-buttons" style="display:flex; gap:10px; flex-wrap: wrap; justify-content: center;">
+          <button id="btn-quick-match" class="btn btn-primary">Quick Match</button>
+          <button id="btn-create-room-menu" class="btn btn-primary">Create Room</button>
+          <button id="btn-join-room-menu" class="btn">Join Room</button>
+          <button id="btn-options" class="btn">Options</button>
+          <button id="btn-exit-to-access" class="btn">Change Name</button>
+        </div>
+        <div style="height:12px"></div>
+        <div id="menu-instructions" style="color: #fff; text-align: center;">
+          <p style="font-size: 20px; font-weight: bold;">Instructions</p>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li>Collect <span style="color: brown">trash</span>, avoid <span style="color: green">animals</span></li>
+            <li style="height:8px"></li>
+            <li><b>Arrow Up</b> - Accelerate, <b>Arrow Down</b> - Brake</li>
+            <li><b>Left</b> / <b>Right</b> - Steer</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- LOBBY: Scores, players, chat -->
+      <section id="screen-lobby" class="screen" style="display: none; flex-direction: column; align-items: stretch; width: min(1024px, 92vw);">
+        <div style="display:flex; align-items:center; justify-content: space-between; margin-bottom: 8px;">
+          <h2 style="color: white; margin: 0;">Lobby</h2>
+          <div id="lobby-room-code" class="hud-item">Room: -</div>
+        </div>
+
+        <div class="invite-row" style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+          <label for="invite-link" style="color:white;">Invite:</label>
+          <input id="invite-link" readonly placeholder="Invite link will appear here" style="flex:1;" />
+          <button id="invite-copy" class="btn">Copy Link</button>
+        </div>
+
+        <h3 style="color:white; margin: 8px 0 4px 0;">Top Scores</h3>
         <div id="games-container">
           <table id="playerTable">
             <thead>
@@ -32,46 +165,52 @@
           </table>
         </div>
 
-        <h2>Waiting Players</h2>
+        <h3 style="color:white; margin: 10px 0 4px 0;">Waiting Players</h3>
         <ul id="waiting-list" style="margin: 6px 0 12px 18px;"></ul>
 
-        <h2>Lobby Chat</h2>
+        <h3 style="color:white; margin: 10px 0 4px 0;">Rooms</h3>
+        <div id="rooms-default" class="hud-item" style="margin: 4px 0 6px 0;">Default: -</div>
+        <ul id="rooms-list" style="margin: 6px 0 12px 18px; list-style: none; padding: 0;"></ul>
+
+        <h3 style="color:white; margin: 10px 0 4px 0;">Lobby Chat</h3>
         <div
           id="chat-log"
           style="height: 160px; overflow-y: auto; padding: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.35); margin-bottom: 6px;"
         ></div>
         <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 12px;">
           <input id="chat-text" maxlength="300" placeholder="Message..." style="flex: 1;" />
-          <button id="chat-send">Send</button>
+          <button id="chat-send" class="btn">Send</button>
         </div>
 
-        <button id="create-game-button">Create New Game</button>
-      </div>
-      <div id="instructions">
-        <p style="font-size: 24px; font-weight: bold; text-align: center">
-          Instructions:
-        </p>
-        <ul>
-          <li>
-            Collect <span style="color: brown">trash</span>, avoid
-            <span style="color: green">animals</span>
-          </li>
-          <li><br /></li>
-          <p>Controls:</p>
-          <li><b>Arrow Up </b>- Accelerate</li>
-          <li><b>Arrow Down </b> - Brake</li>
-          <li><b>Left</b> or <b>Right Arrow</b> to Steer</li>
-        </ul>
-      </div>
+        <div class="lobby-actions" style="display:flex; gap:10px; align-items:center; justify-content:flex-end;">
+          <button id="btn-lobby-start" class="btn btn-primary">Start Match</button>
+          <button id="btn-lobby-leave" class="btn">Back to Menu</button>
+        </div>
+      </section>
+
+      <!-- STARTING: Countdown -->
+      <section id="screen-starting" class="screen" style="display: none; flex-direction: column; align-items: center;">
+        <div id="starting-countdown" style="color: white; font-size: 24px; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 6px;">
+          Game starting...
+        </div>
+      </section>
+
+      <!-- RESULTS / POST-GAME -->
+      <section id="screen-results" class="screen" style="display: none; flex-direction: column; align-items: center;">
+        <div id="results-summary" style="color:white; text-align:center; background: rgba(0,0,0,0.5); padding: 10px 14px; border-radius: 8px;">
+          <h2 style="margin: 4px 0 8px 0;">Results</h2>
+          <div id="results-name" style="margin: 4px 0;">Name: -</div>
+          <div id="results-score" style="margin: 4px 0;">Score: -</div>
+        </div>
+        <div class="results-actions" style="display:flex; gap:10px; margin-top: 12px;">
+          <button id="btn-results-rematch" class="btn btn-primary">Rematch</button>
+          <button id="btn-results-menu" class="btn">Back to Menu</button>
+        </div>
+      </section>
     </div>
+
+    <!-- Canvas (renderer will append its own if unset) -->
     <canvas class="Game"></canvas>
     <button id="restart-btn" style="display: none">Restart</button>
-
-    <div id="admin-controls" style="position: fixed; top: 10px; right: 10px; z-index: 1000;">
-      <button id="admin-start">Start Game</button>
-      <button id="admin-end">End Game</button>
-    </div>
-
-    
   </body>
 </html>

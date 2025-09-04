@@ -38,6 +38,15 @@ module.exports = merge(commonConfiguration, {
         devServer.app.get("/some/path", function (req, res) {
           res.json({ custom: "response" });
         });
+
+        // Dev-only fallback to suppress noisy proxy ECONNREFUSED when Score service is disabled
+        // This serves an empty leaderboard and prevents /api/top/score from being proxied to :8082.
+        if (process.env.START_SCORE !== "1") {
+          devServer.app.get("/api/top/score", function (req, res) {
+            res.setHeader("Cache-Control", "no-store");
+            res.json([]);
+          });
+        }
       }
       return middlewares;
     },

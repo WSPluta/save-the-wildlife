@@ -30,6 +30,12 @@ const CLEANUP_STALE_IN_SECONDS = process.env.CLEANUP_STALE_IN_SECONDS
 const BROADCAST_ITEMS_IN_SECONDS = process.env.BROADCAST_ITEMS_IN_SECONDS
   ? parseInt(process.env.BROADCAST_ITEMS_IN_SECONDS)
   : 2;
+const ITEMS_REFRESH_MS = parseInt(process.env.ITEMS_REFRESH_MS ?? "250");
+const SPAWN_REFILL_HORIZON_SEC = parseFloat(process.env.SPAWN_REFILL_HORIZON_SEC ?? "0.5");
+const SPAWN_MAX_PER_TICK_TRASH = parseInt(process.env.SPAWN_MAX_PER_TICK_TRASH ?? "50");
+const SPAWN_MAX_PER_TICK_MARINE = parseInt(process.env.SPAWN_MAX_PER_TICK_MARINE ?? "50");
+const POWERUP_REFRESH_MS = parseInt(process.env.POWERUP_REFRESH_MS ?? "1500");
+const METRICS_BROADCAST_MS = parseInt(process.env.METRICS_BROADCAST_MS ?? (isProduction ? "1000" : "300"));
 
 const ITEM_MAX_SIZE = process.env.ITEM_MAX_SIZE
   ? parseFloat(process.env.ITEM_MAX_SIZE)
@@ -44,6 +50,124 @@ const WORLD_SIZE_X = process.env.WORLD_SIZE_X
 const WORLD_SIZE_Z = process.env.WORLD_SIZE_Z
   ? parseInt(process.env.WORLD_SIZE_Z)
   : 22;
+
+let worldSizeX = WORLD_SIZE_X;
+let worldSizeZ = WORLD_SIZE_Z;
+
+const SPAWN_SPREAD = parseFloat(process.env.WORLD_SPAWN_SPREAD || "0.6");
+function randSpawnCoord(size) {
+  const spread = Math.max(0.1, Math.min(1, SPAWN_SPREAD));
+  return Math.round((Math.random() - 0.5) * (size * spread - 1));
+}
+
+/* Spawn scaler mode and params (runtime adjustable via admin.*)
+   Default to "fibonacci" as requested, unless overridden by env (SPAWN_SCALER). */
+let spawnMode = process.env.SPAWN_SCALER || "fibonacci";
+let spawnParams = {
+  k: parseFloat(process.env.SPAWN_PROP_K ?? "1"),
+  tr: parseFloat(process.env.SPAWN_PROP_R_TRASH ?? "1"),
+  mr: parseFloat(process.env.SPAWN_PROP_R_MARINE ?? "2"),
+  pr: parseFloat(process.env.SPAWN_PROP_R_PU ?? "0.2"),
+  fibTTrash: parseInt(process.env.SPAWN_FIB_T_TRASH ?? "3"),
+  fibTMarine: parseInt(process.env.SPAWN_FIB_T_MARINE ?? "4"),
+  fibTPU: parseInt(process.env.SPAWN_FIB_T_PU ?? "2"),
+  clampTrash: parseInt(process.env.SPAWN_CLAMP_TRASH ?? "500"),
+  clampMarine: parseInt(process.env.SPAWN_CLAMP_MARINE ?? "1000"),
+  clampPU: parseInt(process.env.SPAWN_CLAMP_PU ?? "50"),
+};
+
+// Difficulty scaler config
+const DIFFICULTY_INTERVAL_MS = parseInt(process.env.DIFFICULTY_INTERVAL_MS ?? "10000");
+const SPAWN_EXTRA_PER_STEP = parseInt(process.env.SPAWN_EXTRA_PER_STEP ?? "2");
+const SPAWN_EXTRA_PER_PLAYER = parseFloat(process.env.SPAWN_EXTRA_PER_PLAYER ?? "1");
+
+let difficultyLevel = 0;
+let lastDifficultyAt = Date.now();
+
+function computeEffectiveTargets(humans) {
+  const base = computeTargets(humans);
+  const perPlayer = Math.max(0, humans - 1) * SPAWN_EXTRA_PER_PLAYER;
+  const extra = Math.max(0, Math.floor(difficultyLevel * SPAWN_EXTRA_PER_STEP + perPlayer));
+  return {
+    trash: clampNum(base.trash + extra, 0, spawnParams.clampTrash || 500),
+    marine: clampNum(base.marine + Math.ceil(extra * 0.8), 0, spawnParams.clampMarine || 1000),
+    powerups: base.powerups
+  };
+}
+
+// Dynamic world scaling config
+let worldScaleCfg = {
+  minX: parseInt(process.env.WORLD_MIN_X ?? String(Math.round(WORLD_SIZE_X * 0.5))),
+  minZ: parseInt(process.env.WORLD_MIN_Z ?? String(Math.round(WORLD_SIZE_Z * 0.5))),
+  maxX: parseInt(process.env.WORLD_MAX_X ?? String(Math.round(WORLD_SIZE_X * 2))),
+  maxZ: parseInt(process.env.WORLD_MAX_Z ?? String(Math.round(WORLD_SIZE_Z * 4))),
+  baseX: parseInt(process.env.WORLD_BASE_X ?? String(WORLD_SIZE_X)),
+  baseZ: parseInt(process.env.WORLD_BASE_Z ?? String(WORLD_SIZE_Z)),
+  basePlayers: parseInt(process.env.WORLD_BASE_PLAYERS ?? "4"),
+};
+
+const clampNum = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function fib(n) {
+  let a = 0, b = 1;
+  for (let i = 0; i < n; i++) {
+    const t = a + b;
+    a = b;
+    b = t;
+  }
+  return a;
+}
+
+function computeTargets(humans) {
+  humans = Math.max(0, parseInt(humans || 0));
+  const p = humans;
+  let targetTrash = 0, targetMarine = 0, targetPU = 0;
+  if (spawnMode === "fibonacci") {
+    const baseAdd = 1;
+    targetTrash = baseAdd + fib(p + (spawnParams.fibTTrash || 0));
+    targetMarine = baseAdd + fib(p + (spawnParams.fibTMarine || 0));
+    targetPU = baseAdd + Math.min(p, fib(Math.max(0, p + (spawnParams.fibTPU || 0))));
+  } else {
+    const k = spawnParams.k || 1;
+    targetTrash = Math.ceil(k * p * (spawnParams.tr || 1));
+    targetMarine = Math.ceil(k * p * (spawnParams.mr || 2));
+    targetPU = Math.ceil(k * p * (spawnParams.pr || 0.2));
+  }
+  targetTrash = clampNum(targetTrash, 0, spawnParams.clampTrash || 500);
+  targetMarine = clampNum(targetMarine, 0, spawnParams.clampMarine || 1000);
+  targetPU = clampNum(targetPU, 0, spawnParams.clampPU || 50);
+  return { trash: targetTrash, marine: targetMarine, powerups: targetPU };
+}
+
+function recomputeWorldSize(humans) {
+  const p = Math.max(1, parseInt(humans || 1));
+  const scale = Math.sqrt(p / Math.max(1, worldScaleCfg.basePlayers));
+  const x = clampNum(Math.round(worldScaleCfg.baseX * scale), worldScaleCfg.minX, worldScaleCfg.maxX);
+  const z = clampNum(Math.round(worldScaleCfg.baseZ * scale), worldScaleCfg.minZ, worldScaleCfg.maxZ);
+  return { x, z };
+}
+
+let nextItemsSpawnAt = Date.now();
+
+function buildMetricsObject(playersInfo, counts, targets) {
+  const ids = Object.keys(playersInfo || {});
+  const total = ids.length;
+  let bots = 0;
+  ids.forEach((id) => {
+    const name = (playersInfo[id] && playersInfo[id].name) ? String(playersInfo[id].name) : "";
+    if (name.toLowerCase().startsWith("bot ")) bots++;
+  });
+  const humans = Math.max(0, total - bots);
+  return {
+    players: { total, humans, bots },
+    world: { x: worldSizeX, z: worldSizeZ },
+    items: counts,
+    targets,
+    spawn: { mode: spawnMode, params: spawnParams, nextTickMs: Math.max(0, nextItemsSpawnAt - Date.now()) },
+    serverAuthEnabled: SERVER_AUTH_ENABLED,
+    tps: SIM_TPS,
+    hz: STATE_BROADCAST_HZ
+  };
+}
 
 const GAME_DURATION_IN_SECONDS = process.env.GAME_DURATION_IN_SECONDS
   ? parseInt(process.env.GAME_DURATION_IN_SECONDS)
@@ -66,30 +190,113 @@ const POWERUP_SPEED_MULTIPLIER = parseFloat(process.env.POWERUP_SPEED_MULTIPLIER
 const POWERUP_SPEED_DURATION_MS = parseInt(process.env.POWERUP_SPEED_DURATION_MS ?? "10000");
 const POWERUP_SHIELD_DURATION_MS = parseInt(process.env.POWERUP_SHIELD_DURATION_MS ?? "5000");
 
-// Lobby chat (server-side buffer) and settings
-const CHAT_HISTORY_LIMIT = 100;
-const chatHistory = [];
-// We reuse mapPlayersInfo as the lobby roster; emit 'lobby.players' when it changes.
+ // Lobby chat (per-room buffer) and settings
+ const CHAT_HISTORY_LIMIT = 100;
+ const roomChats = new Map();
+ // We reuse mapPlayersInfo as the lobby roster; emit 'lobby.players' when it changes.
 
 let gameState = 'WAITING';
 let gameStartTime = null;
 let gameStartingAt = null;
 let gameTimer = null;
+const roomTimers = new Map(); // roomId -> { state, startTime, startingAt, timerId }
+const GLOBAL_ROOM = "__global__";
+
+// Default room and rooms directory (authoritative on server)
+const DEFAULT_ROOM_ID = (process.env.ROOM_DEFAULT_ID || "ROOM-0001").toUpperCase();
+
+// Normalize room identifiers consistently
+function normalizeRoom(r) {
+  if (!r) return null;
+  const s = String(r).trim().toUpperCase();
+  if (!s) return null;
+  // Keep A-Z 0-9 - _ and length clamp
+  const cleaned = s.replace(/[^A-Z0-9\-_]/g, "").slice(0, 24);
+  return cleaned || null;
+}
+
+// Directory cache (in-memory, optionally persisted via Coherence)
+const roomDirectory = new Map();
+let roomsUpdateTimer = null;
+
+async function buildRoomsPayload() {
+  // Discover rooms: default + any with timers + any where players are present
+  const set = new Set([DEFAULT_ROOM_ID]);
+  for (const k of roomTimers.keys()) set.add(k);
+  for (const [, r] of playerRooms.entries()) set.add(r || GLOBAL_ROOM);
+
+  const rooms = [];
+  for (const id of set.values()) {
+    const rs = roomTimers.get(id) || { state: 'WAITING', startTime: null, startingAt: null };
+    const humans = await humansInRoom(id);
+    const bots = 0; // optional: compute from player list if needed
+    rooms.push({
+      id,
+      default: id === DEFAULT_ROOM_ID,
+      state: rs.state,
+      humans,
+      bots,
+      capacity: null,
+      startsAt: rs.startingAt || null,
+      startTime: rs.startTime || null,
+      updatedAt: Date.now()
+    });
+  }
+  return {
+    default: DEFAULT_ROOM_ID,
+    rooms,
+    ts: Date.now()
+  };
+}
+
+function scheduleRoomsUpdate(ioRef) {
+  try { if (roomsUpdateTimer) clearTimeout(roomsUpdateTimer); } catch (_) {}
+  roomsUpdateTimer = setTimeout(async () => {
+    try {
+      const payload = await buildRoomsPayload();
+      ioRef.emit("rooms.update", payload);
+    } catch (e) {
+      logger.error(`rooms.update emit error: ${e && e.message ? e.message : e}`);
+    }
+  }, 250);
+}
 
 let mapPlayersTraces;
 let mapPlayersInfo;
 let mapTrash;
 let mapMarineLife;
 let mapPowerUps;
+let mapRooms;
 let mapPlayerSockets;
+
+const adminCmdSeen = new Map();
+const ADMIN_CMD_TTL_MS = 2 * 60 * 1000;
+function adminTrackDuplicate(id) {
+  if (!id) return false;
+  const now = Date.now();
+  try {
+    for (const [k, ts] of adminCmdSeen.entries()) {
+      if (now - ts > ADMIN_CMD_TTL_MS) adminCmdSeen.delete(k);
+    }
+  } catch (_) {}
+  if (adminCmdSeen.has(id)) return true;
+  adminCmdSeen.set(id, now);
+  return false;
+}
 
 const playersState = new Map();
 const playersInput = new Map();
+const playerRooms = new Map();
+// Per-room admin: the first human in a room becomes admin unless reassigned
+const roomAdmin = new Map();
 
 function createObject() {
-  const x = Math.round((Math.random() - 0.5) * (WORLD_SIZE_X - 1));
+  // Spawn nearer to the center by default so new players immediately see items.
+  // Tunable via WORLD_SPAWN_SPREAD (0.1..1.0); default 0.6 (60% of world span).
+  const spread = Math.max(0.1, Math.min(1, parseFloat(process.env.WORLD_SPAWN_SPREAD || "0.6")));
+  const x = Math.round((Math.random() - 0.5) * (worldSizeX * spread - 1));
   const y = 0;
-  const z = Math.round((Math.random() - 0.5) * (WORLD_SIZE_Z - 1));
+  const z = Math.round((Math.random() - 0.5) * (worldSizeZ * spread - 1));
   const size = (Math.random() * (ITEM_MAX_SIZE - ITEM_MIN_SIZE) + ITEM_MIN_SIZE).toFixed(2);
   return { 
     id: short.generate(), 
@@ -100,6 +307,20 @@ function createObject() {
 }
 const itemPool = new ObjectPool(createObject, 50, 1000);
 
+function reinitItem(obj, type) {
+  try {
+    obj.type = type;
+    obj.position = {
+      x: randSpawnCoord(worldSizeX),
+      y: 0,
+      z: randSpawnCoord(worldSizeZ),
+    };
+    obj.size = (Math.random() * (ITEM_MAX_SIZE - ITEM_MIN_SIZE) + ITEM_MIN_SIZE).toFixed(2);
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 export async function start(
   httpServer,
   port,
@@ -107,7 +328,15 @@ export async function start(
   pubClient,
   subClient
 ) {
-  const io = new Server(httpServer, {});
+  const io = new Server(httpServer, {
+    pingInterval: 25000,
+    pingTimeout: 20000,
+    perMessageDeflate: { threshold: 1024 },
+    connectionStateRecovery: {
+      maxDisconnectionDuration: 2 * 60 * 1000,
+      skipMiddlewares: true
+    }
+  });
 
   if (pubClient && subClient) {
     io.adapter(createAdapter(pubClient, subClient));
@@ -119,6 +348,7 @@ export async function start(
     mapTrash = await cacheSession.getMap("trash");
     mapMarineLife = await cacheSession.getMap("marineLife");
     mapPowerUps = await cacheSession.getMap("powerUps");
+    mapRooms = await cacheSession.getMap("rooms");
     mapPlayerSockets = {};
   } else {
     mapPlayersTraces = {};
@@ -126,11 +356,183 @@ export async function start(
     mapTrash = {};
     mapMarineLife = {};
     mapPowerUps = {};
+    mapRooms = {};
     mapPlayerSockets = {};
   }
 
   async function getPlayersInfoObject() {
     return ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo;
+  }
+
+  // Persist per-room timer state (document-like record)
+  async function persistRoomState(room, state) {
+    try {
+      if (ENABLE_COHERENCE_BACKEND && mapRooms && room) {
+        await writeCache(mapRooms, room, {
+          state: state.state,
+          startTime: state.startTime || null,
+          startingAt: state.startingAt || null,
+          updatedAt: Date.now(),
+        });
+      }
+    } catch (e) {
+      logger.error(`persistRoomState error: ${e && e.message ? e.message : e}`);
+    }
+  }
+
+  // Helpers for per-room worlds (items scoped by room)
+  function getSocketRoom(sock) {
+    try { return (sock && sock.data && sock.data.room) ? sock.data.room : GLOBAL_ROOM; } catch (_) { return GLOBAL_ROOM; }
+  }
+  function listActiveRooms() {
+    const rooms = new Set();
+    for (const [, room] of playerRooms.entries()) {
+      rooms.add(room || GLOBAL_ROOM);
+    }
+    return Array.from(rooms.values());
+  }
+  async function humansInRoom(room) {
+    const info = await getPlayersInfoObject();
+    const ids = Object.keys(info || {});
+    let humans = 0;
+    for (const id of ids) {
+      const r = playerRooms.get(id) || GLOBAL_ROOM;
+      if (r !== (room || GLOBAL_ROOM)) continue;
+      const name = (info[id] && info[id].name) ? String(info[id].name) : "";
+      if (!name.toLowerCase().startsWith("bot ")) humans++;
+    }
+    return Math.max(0, humans);
+  }
+  // Admin helpers
+  async function listHumansInRoom(room) {
+    const info = await getPlayersInfoObject();
+    const ids = Object.keys(info || {});
+    const want = room || GLOBAL_ROOM;
+    const humans = [];
+    for (const id of ids) {
+      const r = playerRooms.get(id) || GLOBAL_ROOM;
+      if (r !== want) continue;
+      const name = (info[id] && info[id].name) ? String(info[id].name) : "";
+      if (!name.toLowerCase().startsWith("bot ")) humans.push(id);
+    }
+    humans.sort(); // deterministic next-admin selection
+    return humans;
+  }
+  async function pickNextAdmin(room) {
+    const list = await listHumansInRoom(room);
+    return list.length ? list[0] : null;
+  }
+  async function readAllItemsObjects() {
+    const trash = ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapTrash) : mapTrash;
+    const marine = ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapMarineLife) : mapMarineLife;
+    const power = ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPowerUps) : mapPowerUps;
+    return { trash: trash || {}, marine: marine || {}, power: power || {} };
+  }
+  async function getItemsForRoom(room) {
+    const { trash, marine, power } = await readAllItemsObjects();
+    const want = room || GLOBAL_ROOM;
+    const filtered = {};
+    for (const [id, obj] of Object.entries(trash)) {
+      const r = obj && obj.room ? obj.room : GLOBAL_ROOM;
+      if (r === want) filtered[id] = obj;
+    }
+    for (const [id, obj] of Object.entries(marine)) {
+      const r = obj && obj.room ? obj.room : GLOBAL_ROOM;
+      if (r === want) filtered[id] = obj;
+    }
+    for (const [id, obj] of Object.entries(power)) {
+      const r = obj && obj.room ? obj.room : GLOBAL_ROOM;
+      if (r === want) filtered[id] = obj;
+    }
+    return filtered;
+  }
+  async function countItemsForRoom(room) {
+    const all = await getItemsForRoom(room);
+    let trash = 0, marine = 0, power = 0;
+    for (const obj of Object.values(all)) {
+      const t = String(obj.type || "");
+      if (t === "trash") trash++;
+      else if (t === "turtle") marine++;
+      else if (t.startsWith("powerup_")) power++;
+    }
+    return { trash, marine, powerups: power };
+  }
+
+  // Per-room match lifecycle: separate STARTING/RUNNING/ENDED timers per room (time only; items remain global)
+  function startRoomMatch(room) {
+    if (!room) return;
+    const existing = roomTimers.get(room) || { state: 'WAITING', startTime: null, startingAt: null, timerId: null };
+    if (existing.state !== 'WAITING') return;
+
+    existing.state = 'STARTING';
+    existing.startingAt = Date.now() + 10000;
+    roomTimers.set(room, existing);
+    persistRoomState(room, existing);
+
+    io.to(room).emit("game.state", 'STARTING');
+    scheduleRoomsUpdate(io);
+    io.to(room).emit("startingGame", { startsAt: existing.startingAt, countdownMs: 10000 });
+
+    setTimeout(() => {
+      const rs = roomTimers.get(room) || existing;
+      rs.state = 'RUNNING';
+      rs.startingAt = null;
+      rs.startTime = Date.now();
+      persistRoomState(room, rs);
+      // One shared start position for the room (simple + safe)
+      const startX = randSpawnCoord(worldSizeX);
+      const startZ = randSpawnCoord(worldSizeZ);
+      io.to(room).emit("game.state", 'RUNNING');
+      scheduleRoomsUpdate(io);
+      io.to(room).emit("game.on", { startPosition: { x: startX, y: 0, z: startZ } });
+      if (rs.timerId) clearInterval(rs.timerId);
+      rs.timerId = setInterval(() => {
+        const elapsed = Date.now() - (rs.startTime || Date.now());
+        const remaining = GAME_DURATION_IN_SECONDS * 1000 - elapsed;
+        io.to(room).emit("game.time", Math.max(0, Math.round(remaining / 1000)));
+        if (remaining <= 0) {
+          clearInterval(rs.timerId);
+          rs.timerId = null;
+          rs.state = 'ENDED';
+          persistRoomState(room, rs);
+          io.to(room).emit("game.state", 'ENDED');
+          scheduleRoomsUpdate(io);
+          io.to(room).emit("game.end");
+          setTimeout(() => {
+            const r2 = roomTimers.get(room) || rs;
+            r2.state = 'WAITING';
+            roomTimers.set(room, r2);
+            persistRoomState(room, r2);
+            io.to(room).emit("game.state", 'WAITING');
+            scheduleRoomsUpdate(io);
+          }, 10000);
+          roomTimers.set(room, rs);
+        }
+      }, 1000);
+      roomTimers.set(room, rs);
+    }, 10000);
+  }
+
+  function endRoomMatch(room) {
+    if (!room) return;
+    const rs = roomTimers.get(room);
+    if (!rs) return;
+    if (rs.timerId) clearInterval(rs.timerId);
+    rs.timerId = null;
+    rs.state = 'ENDED';
+    rs.startingAt = null;
+    rs.startTime = null;
+    roomTimers.set(room, rs);
+    persistRoomState(room, rs);
+    io.to(room).emit("game.state", 'ENDED');
+    io.to(room).emit("game.end");
+    setTimeout(() => {
+      const r2 = roomTimers.get(room) || { state: 'WAITING' };
+      r2.state = 'WAITING';
+      roomTimers.set(room, r2);
+      persistRoomState(room, r2);
+      io.to(room).emit("game.state", 'WAITING');
+    }, 10000);
   }
 
   async function emitPlayerCount() {
@@ -157,22 +559,14 @@ export async function start(
       id: serverId,
       version: version,
       gameDuration: GAME_DURATION_IN_SECONDS,
-      worldSizeX: WORLD_SIZE_X,
-      worldSizeZ: WORLD_SIZE_Z,
+      worldSizeX: worldSizeX,
+      worldSizeZ: worldSizeZ,
       serverAuthEnabled: SERVER_AUTH_ENABLED,
       physics: PHYSICS_CONFIG,
     });
 
-    const trashFromCache = ENABLE_COHERENCE_BACKEND
-      ? await readCacheEntries(mapTrash)
-      : mapTrash;
-    const marineLifeFromCache = ENABLE_COHERENCE_BACKEND
-      ? await readCacheEntries(mapMarineLife)
-      : mapMarineLife;
-    const powerUpsFromCache = ENABLE_COHERENCE_BACKEND
-      ? await readCacheEntries(mapPowerUps)
-      : mapPowerUps;
-    socket.emit("items.all", { ...trashFromCache, ...marineLifeFromCache, ...powerUpsFromCache });
+    const initialItems = await getItemsForRoom(DEFAULT_ROOM_ID);
+    socket.emit("items.all", initialItems);
 
     // TODO: Implement spatial scoping for players (e.g., using rooms based on grid positions)
     // For now, emitting to all - optimization needed for large player counts
@@ -183,21 +577,17 @@ export async function start(
         : mapPlayersInfo
     );
 
-    socket.emit("game.state", gameState);
-
-    if (gameState === 'RUNNING' && gameStartTime) {
-      const startX = Math.round((Math.random() - 0.5) * (WORLD_SIZE_X - 1));
-      const startZ = Math.round((Math.random() - 0.5) * (WORLD_SIZE_Z - 1));
-      socket.emit("game.on", { startPosition: { x: startX, y: 0, z: startZ } });
-      const elapsed = Date.now() - gameStartTime;
-      const remaining = GAME_DURATION_IN_SECONDS * 1000 - elapsed;
-      socket.emit("game.time", Math.max(0, Math.round(remaining / 1000)));
-    } else if (gameState === 'STARTING' && gameStartingAt) {
-      socket.emit("startingGame", { startsAt: gameStartingAt, countdownMs: Math.max(0, gameStartingAt - Date.now()) });
-    }
+    // Default assignment: put every new socket into DEFAULT_ROOM_ID immediately
+    const defRoom = DEFAULT_ROOM_ID;
+    socket.data = socket.data || {};
+    const prevRoom = socket.data.room || null;
+    if (prevRoom && prevRoom !== defRoom) { try { socket.leave(prevRoom); } catch (_) {} }
+    socket.data.room = defRoom;
+    try { socket.join(defRoom); } catch (_) {}
+    scheduleRoomsUpdate(io);
 
 
-    socket.on("player.info.joining", async ({ id, name }) => {
+    socket.on("player.info.joining", async ({ id, name, room }) => {
       // Track the playerId bound to this socket for chat attribution/throttling
       playerIdForSocket = id;
       if (ENABLE_COHERENCE_BACKEND) {
@@ -205,19 +595,213 @@ export async function start(
       } else {
         mapPlayersInfo[id] = { name };
       }
-      // Seed chat history to the newly joined lobby client
-      socket.emit("chat.history", chatHistory);
+      // Seed chat history for this socket's current room
+      try {
+        const r = getSocketRoom(socket);
+        const hist = roomChats.get(r) || [];
+        socket.emit("chat.history", hist);
+      } catch (_) {}
       // Broadcast updated lobby roster
       io.emit(
         "lobby.players",
         ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo
       );
       await emitPlayerCount();
+
+      // Track player -> room mapping for scoped broadcasts (use socket-assigned default if none provided)
+      try {
+        const rnorm = normalizeRoom(room);
+        const cur = (socket.data && socket.data.room) || (rnorm || DEFAULT_ROOM_ID);
+        playerRooms.set(id, cur);
+        // Assign admin if unset for this room and joiner is a human
+        try {
+          const isBot = typeof name === "string" && name.toLowerCase().startsWith("bot ");
+          if (cur && !roomAdmin.has(cur) && !isBot) {
+            roomAdmin.set(cur, id);
+            io.to(cur).emit("room.admin", { id });
+          }
+        } catch (_) {}
+      } catch (_) {}
+
+      // Join logical room (for per-room timers) and sync its state to this socket
+      try {
+        if (room && typeof room === "string") {
+          socket.data = socket.data || {};
+          const rnorm = normalizeRoom(room);
+          const prev = socket.data.room || null;
+          if (prev && prev !== rnorm) { try { socket.leave(prev); } catch (_) {} }
+          socket.data.room = rnorm;
+          try { socket.join(rnorm); } catch (_) {}
+          try { socket.leave(GLOBAL_ROOM); } catch (_) {}
+          scheduleRoomsUpdate(io);
+
+          let rs = roomTimers.get(rnorm);
+          if (!rs && ENABLE_COHERENCE_BACKEND) {
+            try {
+              const cached = await readCache(mapRooms, rnorm);
+              if (cached && cached.state) {
+                rs = { state: cached.state, startTime: cached.startTime || null, startingAt: cached.startingAt || null, timerId: null };
+                roomTimers.set(rnorm, rs);
+              }
+            } catch (_) {}
+          }
+          if (rs) {
+            socket.emit("game.state", rs.state);
+            if (rs.state === 'STARTING' && rs.startingAt) {
+              socket.emit("startingGame", { startsAt: rs.startingAt, countdownMs: Math.max(0, rs.startingAt - Date.now()) });
+            } else if (rs.state === 'RUNNING' && rs.startTime) {
+              const startX = randSpawnCoord(worldSizeX);
+              const startZ = randSpawnCoord(worldSizeZ);
+              socket.emit("game.on", { startPosition: { x: startX, y: 0, z: startZ } });
+              const elapsed = Date.now() - rs.startTime;
+              const remaining = GAME_DURATION_IN_SECONDS * 1000 - elapsed;
+              socket.emit("game.time", Math.max(0, Math.round(remaining / 1000)));
+            }
+          }
+          try {
+            const itemsForThisRoom = await getItemsForRoom(rnorm);
+            socket.emit("items.all", itemsForThisRoom);
+          } catch (_) {}
+        }
+      } catch (e) {
+        logger.error(`room join error: ${e && e.message ? e.message : e}`);
+      }
+
+      // If no room provided, attach to DEFAULT room and sync its state
+      if (!room || typeof room !== "string" || room.trim() === "") {
+        const defRoom = DEFAULT_ROOM_ID;
+        try {
+          socket.data = socket.data || {};
+          const prevR = socket.data.room || null;
+          if (prevR && prevR !== defRoom) { try { socket.leave(prevR); } catch (_) {} }
+          socket.data.room = defRoom;
+          socket.join(defRoom);
+        } catch (_) {}
+        // Sync per-room state if any
+        const rs = roomTimers.get(defRoom);
+        if (rs) {
+          socket.emit("game.state", rs.state);
+          if (rs.state === 'STARTING' && rs.startingAt) {
+            socket.emit("startingGame", { startsAt: rs.startingAt, countdownMs: Math.max(0, rs.startingAt - Date.now()) });
+          } else if (rs.state === 'RUNNING' && rs.startTime) {
+            const startX = randSpawnCoord(worldSizeX);
+            const startZ = randSpawnCoord(worldSizeZ);
+            socket.emit("game.on", { startPosition: { x: startX, y: 0, z: startZ } });
+            const elapsed = Date.now() - rs.startTime;
+            const remaining = GAME_DURATION_IN_SECONDS * 1000 - elapsed;
+            socket.emit("game.time", Math.max(0, Math.round(remaining / 1000)));
+          }
+        } else {
+          socket.emit("game.state", 'WAITING');
+        }
+        try {
+          const itemsDefault = await getItemsForRoom(defRoom);
+          socket.emit("items.all", itemsDefault);
+        } catch (_) {}
+        scheduleRoomsUpdate(io);
+      }
+
+      // Immediately top-up items in this player's room so they see objects without waiting for the next tick.
+      (async () => {
+        try {
+          const roomX = (socket.data && socket.data.room) || GLOBAL_ROOM;
+          const humans = await humansInRoom(roomX);
+          const targets = computeEffectiveTargets(humans);
+          const counts = await countItemsForRoom(roomX);
+
+          const addTrash = Math.max(0, targets.trash - counts.trash);
+          const addMarine = Math.max(0, targets.marine - counts.marine);
+
+          for (let i = 0; i < addTrash; i++) {
+            const obj = itemPool.getObject();
+            if (obj) {
+              reinitItem(obj, 'trash');
+              obj.room = roomX;
+              io.to(roomX).emit('item.new', { id: obj.id, data: obj });
+              if (ENABLE_COHERENCE_BACKEND) {
+                await writeCache(mapTrash, obj.id, obj);
+              } else {
+                mapTrash[obj.id] = obj;
+              }
+            }
+          }
+
+          for (let i = 0; i < addMarine; i++) {
+            const obj = itemPool.getObject();
+            if (obj) {
+              reinitItem(obj, 'turtle');
+              obj.room = roomX;
+              io.to(roomX).emit('item.new', { id: obj.id, data: obj });
+              if (ENABLE_COHERENCE_BACKEND) {
+                await writeCache(mapMarineLife, obj.id, obj);
+              } else {
+                mapMarineLife[obj.id] = obj;
+              }
+            }
+          }
+        } catch (e) {
+          logger.error(`immediate top-up error: ${e && e.message ? e.message : e}`);
+        }
+      })();
+    });
+
+    // Client requests to join a room explicitly
+    socket.on("room.join", async ({ id }) => {
+      try {
+        const wanted = normalizeRoom(id) || DEFAULT_ROOM_ID;
+        const prev = (socket.data && socket.data.room) || null;
+        if (prev && prev !== wanted) { try { socket.leave(prev); } catch (_) {} }
+        socket.data = socket.data || {};
+        socket.data.room = wanted;
+        try { socket.join(wanted); } catch (_) {}
+        // Track mapping for this player if we know their id already
+        if (playerIdForSocket) {
+          try { playerRooms.set(playerIdForSocket, wanted); } catch (_) {}
+          // If no admin yet for this room, promote this player
+          try {
+            if (!roomAdmin.has(wanted)) {
+              roomAdmin.set(wanted, playerIdForSocket);
+              io.to(wanted).emit("room.admin", { id: playerIdForSocket });
+            }
+          } catch (_) {}
+        }
+        // Ack to caller and push current state/items for that room
+        socket.emit("room.joined", { id: wanted, default: wanted === DEFAULT_ROOM_ID, state: (roomTimers.get(wanted)?.state || 'WAITING') });
+        try {
+          const rs = roomTimers.get(wanted);
+          if (rs) {
+            socket.emit("game.state", rs.state);
+            if (rs.state === 'STARTING' && rs.startingAt) {
+              socket.emit("startingGame", { startsAt: rs.startingAt, countdownMs: Math.max(0, rs.startingAt - Date.now()) });
+            } else if (rs.state === 'RUNNING' && rs.startTime) {
+              const startX = randSpawnCoord(worldSizeX);
+              const startZ = randSpawnCoord(worldSizeZ);
+              socket.emit("game.on", { startPosition: { x: startX, y: 0, z: startZ } });
+              const elapsed = Date.now() - rs.startTime;
+              const remaining = GAME_DURATION_IN_SECONDS * 1000 - elapsed;
+              socket.emit("game.time", Math.max(0, Math.round(remaining / 1000)));
+            }
+          } else {
+            socket.emit("game.state", 'WAITING');
+          }
+          const itemsForRoom = await getItemsForRoom(wanted);
+          socket.emit("items.all", itemsForRoom);
+        } catch (_) {}
+        scheduleRoomsUpdate(io);
+        // Send chat history for this room to the joiner
+        try {
+          const hist = roomChats.get(wanted) || [];
+          socket.emit("chat.history", hist);
+        } catch (_) {}
+      } catch (e) {
+        logger.error(`room.join error: ${e && e.message ? e.message : e}`);
+      }
     });
 
     socket.on("game.start", async ({ playerId, playerName }) => {
       playerIdForSocket = playerId;
       mapPlayerSockets[playerId] = socket;
+      try { playerRooms.set(playerId, (socket.data && socket.data.room) || null); } catch (_) {}
       const body = { name: playerName };
       if (ENABLE_COHERENCE_BACKEND) {
         await writeCache(mapPlayersInfo, playerId, body);
@@ -232,8 +816,8 @@ export async function start(
 
       // Initialize authoritative state for late joiners when a match is already RUNNING
       if (SERVER_AUTH_ENABLED && gameState === 'RUNNING' && !playersState.has(playerId)) {
-        const startX = Math.round((Math.random() - 0.5) * (WORLD_SIZE_X - 1));
-        const startZ = Math.round((Math.random() - 0.5) * (WORLD_SIZE_Z - 1));
+        const startX = randSpawnCoord(worldSizeX);
+        const startZ = randSpawnCoord(worldSizeZ);
         playersState.set(playerId, {
           x: startX,
           y: 0,
@@ -261,6 +845,12 @@ export async function start(
     socket.on("player.input", ({ id, seq, throttle = 0, steer = 0, brake = false }) => {
       try {
         if (!SERVER_AUTH_ENABLED) return;
+        // ingress rate limit: cap to ~60Hz per socket
+        if (!socket.data) socket.data = {};
+        const now = Date.now();
+        const minDelta = Math.floor(1000 / 60);
+        if (socket.data.lastInputTs && now - socket.data.lastInputTs < minDelta) return;
+        socket.data.lastInputTs = now;
         // Bind to this socket's player id if present, drop spoofed ids
         if (playerIdForSocket && id !== playerIdForSocket) return;
         const prev = playersInput.get(id) || { lastSeq: -1 };
@@ -275,6 +865,7 @@ export async function start(
 
     socket.on("items.collision", async ({ itemId, playerId, playerName }) => {
       try {
+        const room = getSocketRoom(socket);
         // Locate the item and its type
         let item = null;
         let itemType = null;
@@ -303,6 +894,8 @@ export async function start(
         }
 
         if (!item) return;
+        // Ignore collisions against items not in this socket's room
+        if (item && item.room && item.room !== room) return;
 
         // If server-authoritative, validate proximity using authoritative state
         if (SERVER_AUTH_ENABLED) {
@@ -325,8 +918,9 @@ export async function start(
           } else {
             delete mapTrash[itemId];
           }
-          io.emit("item.destroy", itemId);
+          io.to(room).emit("item.destroy", itemId);
           if (item) itemPool.returnObject(item);
+          await refillOnce(room);
           await postCurrentScore(playerId, playerName, "INCREMENT");
         } else if (itemType === "turtle") {
           if (ENABLE_COHERENCE_BACKEND) {
@@ -334,8 +928,9 @@ export async function start(
           } else {
             delete mapMarineLife[itemId];
           }
-          io.emit("item.destroy", itemId);
+          io.to(room).emit("item.destroy", itemId);
           if (item) itemPool.returnObject(item);
+          await refillOnce(room);
           // If shielded under authority, do not decrement
           if (!SERVER_AUTH_ENABLED || !(playersState.get(playerId)?.shield)) {
             await postCurrentScore(playerId, playerName, "DECREMENT");
@@ -347,7 +942,7 @@ export async function start(
           } else {
             delete mapPowerUps[itemId];
           }
-          io.emit("item.destroy", itemId);
+          io.to(room).emit("item.destroy", itemId);
           if (item) itemPool.returnObject(item);
 
           if (SERVER_AUTH_ENABLED) {
@@ -394,15 +989,19 @@ export async function start(
         socket.data.lastChatTs = now;
 
         const id = playerIdForSocket;
-        const name =
-          mapPlayersInfo && id && mapPlayersInfo[id] && mapPlayersInfo[id].name
-            ? mapPlayersInfo[id].name
-            : "Player";
+        let name = "Player";
+        try {
+          const info = ENABLE_COHERENCE_BACKEND ? null : mapPlayersInfo;
+          if (info && id && info[id] && info[id].name) name = String(info[id].name);
+        } catch (_) {}
 
         const msg = { id, name, text: trimmed, ts: now };
-        chatHistory.push(msg);
-        if (chatHistory.length > CHAT_HISTORY_LIMIT) chatHistory.shift();
-        io.emit("chat.message", msg);
+        const room = getSocketRoom(socket);
+        const list = roomChats.get(room) || [];
+        list.push(msg);
+        if (list.length > CHAT_HISTORY_LIMIT) list.shift();
+        roomChats.set(room, list);
+        io.to(room).emit("chat.message", msg);
       } catch (e) {
         logger.error(`chat.send error: ${e && e.message ? e.message : e}`);
       }
@@ -423,6 +1022,22 @@ export async function start(
       // Remove authoritative state/input if present
       playersState.delete(playerIdForSocket);
       playersInput.delete(playerIdForSocket);
+      const prevRoom = playerRooms.get(playerIdForSocket) || null;
+      playerRooms.delete(playerIdForSocket);
+      // Reassign admin if necessary
+      try {
+        if (prevRoom && roomAdmin.get(prevRoom) === playerIdForSocket) {
+          const next = await pickNextAdmin(prevRoom);
+          if (next) {
+            roomAdmin.set(prevRoom, next);
+            io.to(prevRoom).emit("room.admin", { id: next });
+          } else {
+            roomAdmin.delete(prevRoom);
+          }
+        }
+      } catch (_) {}
+      // Update rooms directory after membership change
+      scheduleRoomsUpdate(io);
 
       // Broadcast updated lobby roster after removal
       io.emit(
@@ -434,30 +1049,49 @@ export async function start(
       playerIdForSocket = undefined;
     });
 
-    socket.on("admin.start", () => {
-      if (gameState !== 'WAITING') return;
+    socket.on("admin.start", (payload = {}, ack) => {
+      const cmdId = payload && payload.cmdId;
+      if (adminTrackDuplicate(cmdId)) { try { if (typeof ack === "function") ack({ ok: true, duplicate: true }); } catch (_) {} return; }
+      // If this client is in a room, start that room's independent timer/countdown
+      const room = (socket.data && socket.data.room) || null;
+      if (room) {
+        // If no admin yet, first caller claims admin automatically for smoother UX
+        if (!roomAdmin.has(room)) {
+          roomAdmin.set(room, playerIdForSocket);
+          io.to(room).emit("room.admin", { id: playerIdForSocket });
+        }
+        // Authorization: only current room admin may start
+        if (roomAdmin.get(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
+        startRoomMatch(room);
+        try { if (typeof ack === "function") ack({ ok: true, scope: "room", room }); } catch (_) {}
+        return;
+      }
+      if (gameState !== 'WAITING') { try { if (typeof ack === "function") ack({ ok: false, error: "invalid_state" }); } catch (_) {} return; }
       gameState = 'STARTING';
-      io.emit("game.state", gameState);
+      difficultyLevel = 0;
+      lastDifficultyAt = Date.now();
+      io.to(GLOBAL_ROOM).emit("game.state", gameState);
       // Broadcast fresh server info and synchronized countdown
       gameStartingAt = Date.now() + 10000;
-      io.emit("server.info", {
+      try { if (typeof ack === "function") ack({ ok: true, scope: "global" }); } catch (_) {}
+      io.to(GLOBAL_ROOM).emit("server.info", {
         id: serverId,
         version: version,
         gameDuration: GAME_DURATION_IN_SECONDS,
-        worldSizeX: WORLD_SIZE_X,
-        worldSizeZ: WORLD_SIZE_Z,
+        worldSizeX: worldSizeX,
+        worldSizeZ: worldSizeZ,
         serverAuthEnabled: SERVER_AUTH_ENABLED,
         physics: PHYSICS_CONFIG,
       });
-      io.emit("startingGame", { startsAt: gameStartingAt, countdownMs: 10000 });
+      io.to(GLOBAL_ROOM).emit("startingGame", { startsAt: gameStartingAt, countdownMs: 10000 });
       setTimeout(() => {
         gameState = 'RUNNING';
-        io.emit("game.state", gameState);
+        io.to(GLOBAL_ROOM).emit("game.state", gameState);
         gameStartingAt = null;
         Object.keys(mapPlayerSockets).forEach((playerId) => {
           const socket = mapPlayerSockets[playerId];
-          const startX = Math.round((Math.random() - 0.5) * (WORLD_SIZE_X - 1));
-          const startZ = Math.round((Math.random() - 0.5) * (WORLD_SIZE_Z - 1));
+          const startX = randSpawnCoord(worldSizeX);
+          const startZ = randSpawnCoord(worldSizeZ);
           socket.emit("game.on", { startPosition: { x: startX, y: 0, z: startZ } });
           // Initialize authoritative state and inputs
           if (SERVER_AUTH_ENABLED) {
@@ -484,8 +1118,9 @@ export async function start(
           for (let i = 0; i < Math.max(1, numPlayersNow); i++) {
             const obj = itemPool.getObject();
             if (obj) {
-              obj.type = 'trash';
-              io.emit('item.new', { id: obj.id, data: obj });
+              reinitItem(obj, 'trash');
+              obj.room = GLOBAL_ROOM;
+              io.to(GLOBAL_ROOM).emit('item.new', { id: obj.id, data: obj });
               ENABLE_COHERENCE_BACKEND ? await writeCache(mapTrash, obj.id, obj) : (mapTrash[obj.id] = obj);
             }
           }
@@ -494,8 +1129,9 @@ export async function start(
           for (let i = 0; i < Math.max(2, numPlayersNow * 2); i++) {
             const obj = itemPool.getObject();
             if (obj) {
-              obj.type = 'turtle';
-              io.emit('item.new', { id: obj.id, data: obj });
+              reinitItem(obj, 'turtle');
+              obj.room = GLOBAL_ROOM;
+              io.to(GLOBAL_ROOM).emit('item.new', { id: obj.id, data: obj });
               ENABLE_COHERENCE_BACKEND ? await writeCache(mapMarineLife, obj.id, obj) : (mapMarineLife[obj.id] = obj);
             }
           }
@@ -505,8 +1141,10 @@ export async function start(
           for (let i = 0; i < puCount; i++) {
             const obj = itemPool.getObject();
             if (obj) {
-              obj.type = i % 2 === 0 ? 'powerup_speed' : 'powerup_shield';
-              io.emit('item.new', { id: obj.id, data: obj });
+              const ptype = i % 2 === 0 ? 'powerup_speed' : 'powerup_shield';
+              reinitItem(obj, ptype);
+              obj.room = GLOBAL_ROOM;
+              io.to(GLOBAL_ROOM).emit('item.new', { id: obj.id, data: obj });
               ENABLE_COHERENCE_BACKEND ? await writeCache(mapPowerUps, obj.id, obj) : (mapPowerUps[obj.id] = obj);
             }
           }
@@ -515,12 +1153,12 @@ export async function start(
         gameTimer = setInterval(() => {
           const elapsed = Date.now() - gameStartTime;
           const remaining = GAME_DURATION_IN_SECONDS * 1000 - elapsed;
-          io.emit("game.time", Math.max(0, Math.round(remaining / 1000)));
+          io.to(GLOBAL_ROOM).emit("game.time", Math.max(0, Math.round(remaining / 1000)));
           if (remaining <= 0) {
             clearInterval(gameTimer);
             gameState = 'ENDED';
-            io.emit("game.state", gameState);
-            io.emit("game.end");
+            io.to(GLOBAL_ROOM).emit("game.state", gameState);
+            io.to(GLOBAL_ROOM).emit("game.end");
             Object.keys(mapPlayerSockets).forEach(async (playerId) => {
               const socket = mapPlayerSockets[playerId];
               socket.emit("game.end", { playerId });
@@ -537,7 +1175,7 @@ export async function start(
             mapPlayerSockets = {};
             setTimeout(() => {
               gameState = 'WAITING';
-              io.emit("game.state", gameState);
+              io.to(GLOBAL_ROOM).emit("game.state", gameState);
               emitPlayerCount();
             }, 10000);
           }
@@ -545,12 +1183,26 @@ export async function start(
       }, 10000);
     });
 
-    socket.on("admin.end", () => {
-      if (gameState !== 'RUNNING' && gameState !== 'STARTING') return;
+    socket.on("admin.end", (payload = {}, ack) => {
+      const cmdId = payload && payload.cmdId;
+      if (adminTrackDuplicate(cmdId)) { try { if (typeof ack === "function") ack({ ok: true, duplicate: true }); } catch (_) {} return; }
+      // If this client is in a room, end that room's independent timer
+      const room = (socket.data && socket.data.room) || null;
+      if (room) {
+        // Authorization: only current room admin may end
+        if (roomAdmin.get(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
+        endRoomMatch(room);
+        try { if (typeof ack === "function") ack({ ok: true, scope: "room", room }); } catch (_) {}
+        return;
+      }
+      if (gameState !== 'RUNNING' && gameState !== 'STARTING') { try { if (typeof ack === "function") ack({ ok: false, error: "invalid_state" }); } catch (_) {} return; }
       if (gameTimer) clearInterval(gameTimer);
       gameState = 'ENDED';
-      io.emit("game.state", gameState);
-      io.emit("game.end");
+      difficultyLevel = 0;
+      lastDifficultyAt = Date.now();
+      io.to(GLOBAL_ROOM).emit("game.state", gameState);
+      io.to(GLOBAL_ROOM).emit("game.end");
+      try { if (typeof ack === "function") ack({ ok: true, scope: "global" }); } catch (_) {}
       Object.keys(mapPlayerSockets).forEach(async (playerId) => {
         const socket = mapPlayerSockets[playerId];
         socket.emit("game.end", { playerId });
@@ -569,9 +1221,96 @@ export async function start(
       gameStartingAt = null;
       setTimeout(() => {
         gameState = 'WAITING';
-        io.emit("game.state", gameState);
+        io.to(GLOBAL_ROOM).emit("game.state", gameState);
         emitPlayerCount();
       }, 10000);
+    });
+
+    // Admin: claim admin for current room if none assigned
+    socket.on("admin.claim", () => {
+      try {
+        const room = getSocketRoom(socket);
+        if (!room) return;
+        if (!roomAdmin.has(room)) {
+          roomAdmin.set(room, playerIdForSocket);
+          io.to(room).emit("room.admin", { id: playerIdForSocket });
+        }
+      } catch (e) {
+        logger.error(`admin.claim error: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    // Admin: reassign admin within the same room
+    socket.on("admin.grant", async ({ id, cmdId } = {}, ack) => {
+      if (adminTrackDuplicate(cmdId)) { try { if (typeof ack === "function") ack({ ok: true, duplicate: true }); } catch (_) {} return; }
+      try {
+        const room = getSocketRoom(socket);
+        if (!room) { try { if (typeof ack === "function") ack({ ok: false, error: "not_in_room" }); } catch (_) {} return; }
+        // Only current admin can grant
+        if (roomAdmin.get(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
+        const target = String(id || "").trim();
+        if (!target) { try { if (typeof ack === "function") ack({ ok: false, error: "invalid_target" }); } catch (_) {} return; }
+        // Must be in the same room
+        if (playerRooms.get(target) !== room) { try { if (typeof ack === "function") ack({ ok: false, error: "wrong_room" }); } catch (_) {} return; }
+        // Ensure target is a human
+        const info = await getPlayersInfoObject();
+        const name = info && info[target] && info[target].name ? String(info[target].name) : "";
+        if (name.toLowerCase().startsWith("bot ")) { try { if (typeof ack === "function") ack({ ok: false, error: "target_is_bot" }); } catch (_) {} return; }
+        roomAdmin.set(room, target);
+        io.to(room).emit("room.admin", { id: target });
+        try { if (typeof ack === "function") ack({ ok: true, room, id: target }); } catch (_) {}
+      } catch (e) {
+        logger.error(`admin.grant error: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    // Admin: switch spawn mode/params
+    socket.on("admin.spawnMode.set", ({ mode, params }) => {
+      try {
+        if (mode === "fibonacci" || mode === "proportional") spawnMode = mode;
+        if (params && typeof params === "object") {
+          spawnParams = { ...spawnParams, ...params };
+        }
+      } catch (e) {
+        logger.error(`admin.spawnMode.set error: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    // Admin: adjust world scaling bounds/base
+    socket.on("admin.worldScaling.set", ({ minX, minZ, maxX, maxZ, baseX, baseZ, basePlayers }) => {
+      try {
+        if (Number.isFinite(minX)) worldScaleCfg.minX = parseInt(minX);
+        if (Number.isFinite(minZ)) worldScaleCfg.minZ = parseInt(minZ);
+        if (Number.isFinite(maxX)) worldScaleCfg.maxX = parseInt(maxX);
+        if (Number.isFinite(maxZ)) worldScaleCfg.maxZ = parseInt(maxZ);
+        if (Number.isFinite(baseX)) worldScaleCfg.baseX = parseInt(baseX);
+        if (Number.isFinite(baseZ)) worldScaleCfg.baseZ = parseInt(baseZ);
+        if (Number.isFinite(basePlayers)) worldScaleCfg.basePlayers = parseInt(basePlayers);
+        (async () => {
+          const info = ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo;
+          const ids = Object.keys(info || {});
+          let bots = 0;
+          ids.forEach((id) => {
+            const name = (info[id] && info[id].name) ? String(info[id].name) : "";
+            if (name.toLowerCase().startsWith("bot ")) bots++;
+          });
+          const humans = Math.max(0, ids.length - bots);
+          const desired = recomputeWorldSize(humans);
+          worldSizeX = desired.x;
+          worldSizeZ = desired.z;
+          io.emit("server.info", {
+            id: serverId,
+            version: version,
+            gameDuration: GAME_DURATION_IN_SECONDS,
+            worldSizeX: worldSizeX,
+            worldSizeZ: worldSizeZ,
+            serverAuthEnabled: SERVER_AUTH_ENABLED,
+            physics: PHYSICS_CONFIG,
+          });
+        })();
+      } catch (e) {
+        logger.error(`admin.worldScaling.set error: ${e && e.message ? e.message : e}`);
+      }
     });
   });
 
@@ -579,14 +1318,29 @@ export async function start(
     logger.error(`ERROR ${err.code}: ${err.message}; ${err.context}`);
   });
 
+  // Difficulty progression timer (every 10s => +2 extra targets step by default)
+  setInterval(() => {
+    if (gameState === 'RUNNING') {
+      const now = Date.now();
+      if (now - lastDifficultyAt >= DIFFICULTY_INTERVAL_MS) {
+        difficultyLevel += 1;
+        lastDifficultyAt = now;
+      }
+    } else {
+      // Reset difficulty outside of active gameplay
+      difficultyLevel = 0;
+      lastDifficultyAt = Date.now();
+    }
+  }, 1000);
+
   // Server-authoritative simulation and state broadcast (optional)
   if (SERVER_AUTH_ENABLED) {
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-    const WORLD_HALF_X = WORLD_SIZE_X / 2;
-    const WORLD_HALF_Z = WORLD_SIZE_Z / 2;
 
     const step = (dt) => {
       const now = Date.now();
+      const WORLD_HALF_X = worldSizeX / 2;
+      const WORLD_HALF_Z = worldSizeZ / 2;
       for (const [id, state] of playersState.entries()) {
         const input = playersInput.get(id) || { throttle: 0, steer: 0, brake: false };
 
@@ -643,84 +1397,141 @@ export async function start(
     }, Math.max(1, Math.round(1000 / Math.max(1, SIM_TPS))));
 
     setInterval(() => {
-      io.emit("player.state", snapshot());
+      const t = Date.now();
+      // Build per-room snapshots
+      const byRoom = new Map();
+      for (const [id, s] of playersState.entries()) {
+        const room = playerRooms.get(id) || GLOBAL_ROOM;
+        if (!byRoom.has(room)) byRoom.set(room, {});
+        byRoom.get(room)[id] = { x: s.x || 0, z: s.z || 0, rotY: s.rotY || 0, speed: s.vel || 0 };
+      }
+      for (const [room, states] of byRoom.entries()) {
+        io.to(room).volatile.compress(false).emit("player.state", { t, states });
+      }
     }, Math.max(1, Math.round(1000 / Math.max(1, STATE_BROADCAST_HZ))));
   }
 
-  // broadcast all players traces
+  // broadcast all players traces (scoped per room)
   setInterval(async () => {
-    // TODO: Implement spatial scoping (e.g., broadcast to nearby players only)
-    // For now, emitting to all
-    const traces = ENABLE_COHERENCE_BACKEND
+    const tracesAll = ENABLE_COHERENCE_BACKEND
       ? await readCacheEntries(mapPlayersTraces)
       : mapPlayersTraces;
-    io.emit("player.trace.all", traces);
+    const byRoom = new Map();
+    for (const [id, trace] of Object.entries(tracesAll || {})) {
+      const room = playerRooms.get(id) || GLOBAL_ROOM;
+      if (!byRoom.has(room)) byRoom.set(room, {});
+      byRoom.get(room)[id] = trace;
+    }
+    for (const [room, traces] of byRoom.entries()) {
+      io.to(room).volatile.compress(false).emit("player.trace.all", traces);
+    }
   }, BROADCAST_REFRESH_UPDATE);
 
-  // refresh items
-  setInterval(async () => {
-    const numPlayers = ENABLE_COHERENCE_BACKEND
-      ? await mapPlayersInfo.size()
-      : Object.keys(mapPlayersInfo).length;
-    const numTrash = ENABLE_COHERENCE_BACKEND
-      ? await mapTrash.size()
-      : Object.keys(mapTrash).length;
-    const numMarineLife = ENABLE_COHERENCE_BACKEND
-      ? await mapMarineLife.size()
-      : Object.keys(mapMarineLife).length;
+  // Fast refill helper used on interval and after item removals
+  async function refillOnce(roomParam) {
+    // Keep world scaling based on global humans (shared water surface), but items are per-room.
+    const info = ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo;
+    const ids = Object.keys(info || {});
+    let bots = 0;
+    ids.forEach((id) => { const n = (info[id] && info[id].name) ? String(info[id].name) : ""; if (n.toLowerCase().startsWith("bot ")) bots++; });
+    const humansGlobal = Math.max(0, ids.length - bots);
 
-    const deltaTrash = numPlayers - numTrash;
-    const deltaMarineLife = numPlayers * 2 - numMarineLife;
-
-    for (let i = 0; i < deltaTrash; i++) {
-      const obj = itemPool.getObject();
-      if (obj) {
-        obj.type = 'trash';
-        io.emit('item.new', { id: obj.id, data: obj });
-        ENABLE_COHERENCE_BACKEND
-          ? await writeCache(mapTrash, obj.id, obj)
-          : (mapTrash[obj.id] = obj);
-      }
+    // Dynamic world scaling (global)
+    const desired = recomputeWorldSize(humansGlobal);
+    if (desired.x !== worldSizeX || desired.z !== worldSizeZ) {
+      worldSizeX = desired.x;
+      worldSizeZ = desired.z;
+      io.emit("server.info", {
+        id: serverId,
+        version: version,
+        gameDuration: GAME_DURATION_IN_SECONDS,
+        worldSizeX: worldSizeX,
+        worldSizeZ: worldSizeZ,
+        serverAuthEnabled: SERVER_AUTH_ENABLED,
+        physics: PHYSICS_CONFIG,
+      });
     }
 
-    for (let i = 0; i < deltaMarineLife; i++) {
-      const obj = itemPool.getObject();
-      if (obj) {
-        obj.type = 'turtle';
-        io.emit('item.new', { id: obj.id, data: obj });
-        ENABLE_COHERENCE_BACKEND
-          ? await writeCache(mapMarineLife, obj.id, obj)
-          : (mapMarineLife[obj.id] = obj);
+    const rooms = roomParam ? [roomParam] : listActiveRooms();
+    for (const room of rooms) {
+      const humans = await humansInRoom(room);
+      const targets = computeEffectiveTargets(humans);
+      const counts = await countItemsForRoom(room);
+
+      const addTrashTotal = Math.max(0, targets.trash - counts.trash);
+      const addMarineTotal = Math.max(0, targets.marine - counts.marine);
+
+      const ticksPerSecond = Math.max(0.1, 1000 / ITEMS_REFRESH_MS);
+      const horizonTicks = Math.max(1, Math.round(SPAWN_REFILL_HORIZON_SEC * ticksPerSecond));
+      const majorTrash = addTrashTotal >= 10 || (targets.trash > 0 && addTrashTotal / targets.trash >= 0.5);
+      const majorMarine = addMarineTotal >= 10 || (targets.marine > 0 && addMarineTotal / targets.marine >= 0.5);
+
+      const spawnTrash = majorTrash
+        ? Math.min(addTrashTotal, SPAWN_MAX_PER_TICK_TRASH)
+        : Math.min(addTrashTotal, SPAWN_MAX_PER_TICK_TRASH, Math.max(1, Math.ceil(addTrashTotal / horizonTicks)));
+      const spawnMarine = majorMarine
+        ? Math.min(addMarineTotal, SPAWN_MAX_PER_TICK_MARINE)
+        : Math.min(addMarineTotal, SPAWN_MAX_PER_TICK_MARINE, Math.max(1, Math.ceil(addMarineTotal / horizonTicks)));
+
+      for (let i = 0; i < spawnTrash; i++) {
+        const obj = itemPool.getObject();
+        if (obj) {
+          reinitItem(obj, 'trash');
+          obj.room = room;
+          io.to(room).emit('item.new', { id: obj.id, data: obj });
+          ENABLE_COHERENCE_BACKEND ? await writeCache(mapTrash, obj.id, obj) : (mapTrash[obj.id] = obj);
+        }
       }
-    }
-  }, BROADCAST_ITEMS_IN_SECONDS * 1000);
-
-
-  // Spawn power-ups (target: up to 1 per player, check every 60s)
-  setInterval(async () => {
-    const numPlayers = ENABLE_COHERENCE_BACKEND
-      ? await mapPlayersInfo.size()
-      : Object.keys(mapPlayersInfo).length;
-    const numPowerUps = ENABLE_COHERENCE_BACKEND
-      ? await mapPowerUps.size()
-      : Object.keys(mapPowerUps).length;
-
-    const target = numPlayers; // simple target: 1 active power-up per player
-    const toAdd = Math.max(0, target - numPowerUps);
-    for (let i = 0; i < toAdd; i++) {
-      const obj = itemPool.getObject();
-      if (obj) {
-        // Alternate types; extend with more types as needed
-        obj.type = i % 2 === 0 ? "powerup_speed" : "powerup_shield";
-        io.emit("item.new", { id: obj.id, data: obj });
-        if (ENABLE_COHERENCE_BACKEND) {
-          await writeCache(mapPowerUps, obj.id, obj);
-        } else {
-          mapPowerUps[obj.id] = obj;
+      for (let i = 0; i < spawnMarine; i++) {
+        const obj = itemPool.getObject();
+        if (obj) {
+          reinitItem(obj, 'turtle');
+          obj.room = room;
+          io.to(room).emit('item.new', { id: obj.id, data: obj });
+          ENABLE_COHERENCE_BACKEND ? await writeCache(mapMarineLife, obj.id, obj) : (mapMarineLife[obj.id] = obj);
         }
       }
     }
-  }, 60000);
+  }
+
+  // refresh items (per-room targets)
+  setInterval(async () => {
+    await refillOnce();
+    nextItemsSpawnAt = Date.now() + ITEMS_REFRESH_MS;
+  }, ITEMS_REFRESH_MS);
+
+
+  // Spawn power-ups to per-room targets (refill smoothly)
+  setInterval(async () => {
+    const rooms = listActiveRooms();
+    for (const room of rooms) {
+      const humans = await humansInRoom(room);
+      const targets = computeTargets(humans);
+
+      // Count existing power-ups in this room
+      const counts = await countItemsForRoom(room);
+      const totalDeficit = Math.max(0, targets.powerups - counts.powerups);
+
+      const ticksPerSecondPU = Math.max(0.1, 1000 / POWERUP_REFRESH_MS);
+      const horizonTicksPU = Math.max(1, Math.round(SPAWN_REFILL_HORIZON_SEC * ticksPerSecondPU));
+      const spawnPU = Math.min(totalDeficit, Math.max(1, Math.ceil(totalDeficit / horizonTicksPU)), 4);
+
+      for (let i = 0; i < spawnPU; i++) {
+        const obj = itemPool.getObject();
+        if (obj) {
+          const ptype = i % 2 === 0 ? "powerup_speed" : "powerup_shield";
+          reinitItem(obj, ptype);
+          obj.room = room;
+          io.to(room).emit("item.new", { id: obj.id, data: obj });
+          if (ENABLE_COHERENCE_BACKEND) {
+            await writeCache(mapPowerUps, obj.id, obj);
+          } else {
+            mapPowerUps[obj.id] = obj;
+          }
+        }
+      }
+    }
+  }, POWERUP_REFRESH_MS);
 
   // Clean stale players, and send delete player if stale
   setInterval(async () => {
@@ -768,6 +1579,31 @@ export async function start(
   setInterval(() => {
     emitPlayerCount();
   }, 5000);
+
+  // Emit combined server metrics for the Object Monitor (~3Hz for smoother countdown)
+  setInterval(async () => {
+    try {
+      const info = ENABLE_COHERENCE_BACKEND
+        ? await readCacheEntries(mapPlayersInfo)
+        : mapPlayersInfo;
+      const counts = {
+        trash: ENABLE_COHERENCE_BACKEND ? await mapTrash.size() : Object.keys(mapTrash).length,
+        marine: ENABLE_COHERENCE_BACKEND ? await mapMarineLife.size() : Object.keys(mapMarineLife).length,
+        powerups: ENABLE_COHERENCE_BACKEND ? await mapPowerUps.size() : Object.keys(mapPowerUps).length,
+      };
+      const ids = Object.keys(info || {});
+      let bots = 0;
+      ids.forEach((id) => {
+        const name = (info[id] && info[id].name) ? String(info[id].name) : "";
+        if (name.toLowerCase().startsWith("bot ")) bots++;
+      });
+      const humans = Math.max(0, ids.length - bots);
+      const targets = computeEffectiveTargets(humans);
+      io.volatile.compress(false).emit("server.metrics", buildMetricsObject(info, counts, targets));
+    } catch (e) {
+      logger.error(`server.metrics error: ${e && e.message ? e.message : e}`);
+    }
+  }, METRICS_BROADCAST_MS);
 
   httpServer.listen(port, () =>
     logger.info(`Server listening to port ${port}`)
