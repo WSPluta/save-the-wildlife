@@ -248,6 +248,16 @@ onmessage = ({ data }) => {
       try { if (data && data.body && data.body.id) savedInit = { ...(savedInit || {}), room: data.body.id }; } catch (_) {}
       socket.emit("room.join", data.body || {});
       break;
+    case "room.create":
+      // data.body: { id?: string }
+      postMessage({ type: "room.create.requested", body: data.body || {} });
+      emitWithAck("room.create", data.body || {}, { tries: 3, timeout: 1000, jitter: 0.2 })
+        .then((res) => {
+          try { if (res && res.id) savedInit = { ...(savedInit || {}), room: res.id }; } catch (_) {}
+          postMessage({ type: "room.create.confirmed", body: res });
+        })
+        .catch((err) => postMessage({ type: "room.create.error", body: (err && err.message) ? err.message : String(err) }));
+      break;
     case "admin.grant":
       // data.body: { id: string }
       postMessage({ type: "admin.grant.requested", body: data.body || {} });
