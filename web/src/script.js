@@ -160,6 +160,7 @@ function renderUI() {
    ctx.fillText(initialText || "", canvas.width / 2, canvas.height / 2);
    texture.needsUpdate = true;
    sprite.scale.set(COUNTDOWN_SPRITE_SCALE.x, COUNTDOWN_SPRITE_SCALE.y, 1);
+   try { disableReflectionForObject(sprite); } catch (_) {}
    return sprite;
  }
  
@@ -1556,6 +1557,7 @@ async function init() {
       itemMesh.receiveShadow = true;
       itemMesh.rotation.y = Math.random() * Math.PI; // subtle idle spin
       scene.add(itemMesh);
+      try { disableReflectionForObject(itemMesh); } catch (_) {}
     } else {
       const geometry = geometries[1];
       const material = materials[1];
@@ -1781,6 +1783,24 @@ function disableReflectionForSprite(sprite) {
   };
   sprite.onAfterRender = function () {
     try { sprite.visible = prev.visible; } catch (_) {}
+  };
+}
+
+// Generic helper: hide any Object3D from water reflection render passes
+function disableReflectionForObject(obj) {
+  if (!obj) return;
+  const prev = { visible: true };
+  obj.onBeforeRender = function (renderer) {
+    try {
+      const rt = renderer.getRenderTarget && renderer.getRenderTarget();
+      if (rt) {
+        prev.visible = obj.visible;
+        obj.visible = false;
+      }
+    } catch (_) {}
+  };
+  obj.onAfterRender = function () {
+    try { obj.visible = prev.visible; } catch (_) {}
   };
 }
 function updatePowerUpBadge() {
@@ -2365,6 +2385,113 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
   let playerSpeed = 0;
 
+  // Replay Oracle (Oracle JSON-style replay clips around key events)
+  const REPLAY_BEFORE_FRAMES = 30;
+  const REPLAY_AFTER_FRAMES = 30;
+  const REPLAY_RING_CAPACITY = 240;
+  let __replayRing = [];
+  let __pendingReplay = null; // { event, frames: [], afterRemaining }
+  let __replayQueue = [];
+  const __replays = [];
+  // expose for debugging/inspection
+  try {
+    window.__replays = __replays;
+    window.downloadLatestReplay = function () {
+      if (!__replays.length) { console.warn("No replays captured yet."); return; }
+      const doc = __replays[__replays.length - 1];
+      const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const ts = new Date(doc.event.at || Date.now()).toISOString().replace(/[:.]/g, "-");
+      a.download = `oracle-replay-${doc.event.type}-${ts}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    };
+  } catch (_) {}
+
+  function __effectiveSpeedForFrame() {
+    try {
+      if (serverAuthEnabled && authStates && authStates[yourId] && typeof authStates[yourId].speed === "number") {
+        return Math.abs(authStates[yourId].speed);
+      }
+    } catch (_) {}
+    return typeof playerSpeed === "number" ? playerSpeed : 0;
+  }
+
+  function __frameSnapshot() {
+    const pos = player ? { x: Number(player.position.x || 0), y: Number(player.position.y || 0), z: Number(player.position.z || 0) } : { x: 0, y: 0, z: 0 };
+    const rotY = player ? Number(player.rotation.y || 0) : 0;
+    const spd = __effectiveSpeedForFrame();
+    const ts = Date.now();
+    const throttle = (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0);
+    const steer = (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0);
+    return {
+      ts,
+      timeISO: new Date(ts).toISOString(),
+      room: roomId || null,
+      player: { id: yourId, name: playerName || localStorage.getItem("yourName") || "Default" },
+      state: {
+        position: pos,
+        rotY,
+        speed: spd,
+        score: Number(localScore || 0),
+        remainingTime: Number(remainingTime || 0),
+        input: { throttle, steer }
+      }
+    };
+  }
+
+  function __pushReplayFrame() {
+    const f = __frameSnapshot();
+    if (__replayRing.length >= REPLAY_RING_CAPACITY) __replayRing.shift();
+    __replayRing.push(f);
+    if (__pendingReplay) {
+      __pendingReplay.frames.push(f);
+      __pendingReplay.afterRemaining -= 1;
+      if (__pendingReplay.afterRemaining <= 0) {
+        const doc = {
+          oracleReplay: true,
+          version: 1,
+          serverVersion: serverVersion || null,
+          room: roomId || null,
+          player: { id: yourId, name: playerName || localStorage.getItem("yourName") || "Default" },
+          event: __pendingReplay.event, // { type, at, meta }
+          clip: {
+            before: REPLAY_BEFORE_FRAMES,
+            after: REPLAY_AFTER_FRAMES,
+            frames: __pendingReplay.frames
+          }
+        };
+        __replays.push(doc);
+        try {
+          console.info("[ReplayOracle] Clip ready", doc);
+        } catch (_) {}
+        __pendingReplay = null;
+        if (__replayQueue.length) {
+          __startReplayCapture(__replayQueue.shift());
+        }
+      }
+    }
+  }
+
+  function __startReplayCapture(event) {
+    const startIdx = Math.max(0, __replayRing.length - REPLAY_BEFORE_FRAMES);
+    const beforeFrames = __replayRing.slice(startIdx);
+    __pendingReplay = { event, frames: beforeFrames.slice(), afterRemaining: REPLAY_AFTER_FRAMES };
+  }
+
+  function triggerReplayMoment(type, meta) {
+    const evt = { type: String(type || "event"), at: new Date().toISOString(), meta: meta || {} };
+    if (__pendingReplay) {
+      __replayQueue.push(evt);
+    } else {
+      __startReplayCapture(evt);
+    }
+  }
+
   const navmeshBoundingBox = new THREE.Box3().setFromObject(navmesh);
 
   function applyPowerUp(type) {
@@ -2435,6 +2562,16 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       });
 
       if (emitters) emitters.collision.trigger(player.position);
+
+      // Trigger Oracle JSON replay around trash collection (30 frames before and after)
+      try {
+        if (mesh && mesh.isTrash) {
+          triggerReplayMoment("trash_collect", {
+            itemId: key,
+            worldPos: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) }
+          });
+        }
+      } catch (_) {}
 
       if (isMarineLife(mesh.itemType)) returnToPool(mesh);
       else scene.remove(mesh);
@@ -2692,6 +2829,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       checkTrailCollisionsWithPlayer();
     }
     cleanupOldTrails();
+    __pushReplayFrame();
     render();
     // Throttle sky/PMREM updates for Firefox/low-end GPUs
     if (!window.__lastSunUpdate) window.__lastSunUpdate = 0;
