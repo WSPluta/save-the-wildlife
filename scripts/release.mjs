@@ -33,10 +33,16 @@ if (action === "score") {
   process.exit(0);
 }
 
+if (action === "replay") {
+  await releaseGradle("replay");
+  process.exit(0);
+}
+
 if (a || action === "all") {
   await releaseNpm("web");
   await releaseNpm("server");
   await releaseGradle("score");
+  await releaseGradle("replay");
   process.exit(0);
 }
 
@@ -46,6 +52,7 @@ console.log("\tnpx zx scripts/release.mjs -a");
 console.log("\tnpx zx scripts/release.mjs web");
 console.log("\tnpx zx scripts/release.mjs server");
 console.log("\tnpx zx scripts/release.mjs score");
+console.log("\tnpx zx scripts/release.mjs replay");
 
 async function releaseNpm(service) {
   await cd(service);
