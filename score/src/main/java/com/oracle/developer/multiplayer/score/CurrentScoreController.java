@@ -49,6 +49,19 @@ public class CurrentScoreController {
         scoreFromStore.setName(body.getName());
         scoreFromStore.setUuid(uuid);
         CurrentScore saved = currentScoreRepository.save(scoreFromStore);
+
+        // Sync high score table with current score (create if missing, promote if >=)
+        java.util.Optional<Score> existingTop = scoreRepository.findByUuid(uuid);
+        Score top = existingTop.orElse(new Score(uuid, saved.getName(), 0L));
+        Long cur = saved.getScore();
+        Long best = top.getScore();
+        boolean shouldUpsert = (cur != null) && (!existingTop.isPresent() || best == null || cur >= best);
+        if (shouldUpsert) {
+            top.setScore(cur != null ? cur : 0L);
+            top.setName(saved.getName());
+            scoreRepository.save(top);
+        }
+
         return new CurrentScoreDAO(saved.getUuid(), saved.getName(), saved.getScore());
     }
 

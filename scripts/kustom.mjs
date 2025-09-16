@@ -27,11 +27,14 @@ async function createKustomizationYaml(regionKey, namespace) {
   const webVersion = await getNpmVersion();
   await cd(`${pwdOutput}/score`);
   const scoreVersion = await getVersionGradle();
+  await cd(`${pwdOutput}/replay`);
+  const replayVersion = await getVersionGradle();
   await cd(pwdOutput);
 
   console.log(`ws-server v${wsServerVersion}`);
   console.log(`web v${webVersion}`);
   console.log(`score v${scoreVersion}`);
+  console.log(`replay v${replayVersion}`);
 
   await cd("./deploy/k8s/overlays/devops");
   try {
@@ -40,6 +43,7 @@ async function createKustomizationYaml(regionKey, namespace) {
     | sed 's/WEB_VERSION/${webVersion}/' \
     | sed 's/WS_SERVER_VERSION/${wsServerVersion}/' \
     | sed 's/SCORE_VERSION/${scoreVersion}/' \
+    | sed 's/REPLAY_VERSION/${replayVersion}/' \
     | sed 's/NAMESPACE/${namespace}/' > kustomization.yaml`;
     if (exitCode !== 0) {
       exitWithError(`Error creating kustomization.yaml: ${stderr}`);

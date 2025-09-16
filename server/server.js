@@ -866,6 +866,9 @@ export async function start(
     socket.on("items.collision", async ({ itemId, playerId, playerName }) => {
       try {
         const room = getSocketRoom(socket);
+        // Ignore collisions unless match is RUNNING (per-room or global)
+        const rs = roomTimers.get(room);
+        if (rs ? rs.state !== 'RUNNING' : gameState !== 'RUNNING') { return; }
         // Locate the item and its type
         let item = null;
         let itemType = null;
@@ -976,7 +979,7 @@ export async function start(
     });
     
     // Lobby chat: receive text, validate/throttle, store, and broadcast
-    socket.on("chat.send", ({ text }) => {
+    socket.on("chat.send", async ({ text }) => {
       try {
         if (typeof text !== "string") return;
         const trimmed = text.trim();
@@ -991,7 +994,7 @@ export async function start(
         const id = playerIdForSocket;
         let name = "Player";
         try {
-          const info = ENABLE_COHERENCE_BACKEND ? null : mapPlayersInfo;
+          const info = await getPlayersInfoObject();
           if (info && id && info[id] && info[id].name) name = String(info[id].name);
         } catch (_) {}
 

@@ -1,0 +1,3 @@
+resources:
+  - replay.yaml
+  - replay-svc.yaml

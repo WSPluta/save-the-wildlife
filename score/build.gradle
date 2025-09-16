@@ -23,8 +23,6 @@ dependencies {
 	implementation 'com.oracle.database.security:oraclepki:21.8.0.0'
 	implementation 'com.oracle.database.security:osdt_cert:21.8.0.0'
 	implementation 'com.oracle.database.security:osdt_core:21.8.0.0'
-	compileOnly 'org.projectlombok:lombok'
-	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'com.h2database:h2:2.2.220'
 }

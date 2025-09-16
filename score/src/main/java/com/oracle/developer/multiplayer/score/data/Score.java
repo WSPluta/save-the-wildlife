@@ -1,35 +1,19 @@
 package com.oracle.developer.multiplayer.score.data;
 
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
-
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 import javax.persistence.Id;
 
 @Entity
-@ToString
-@EqualsAndHashCode
 public class Score {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    @Getter
-    Long id;
+    private Long id;
 
-    @Getter
-    @Setter
-    String uuid;
-
-    @Getter
-    @Setter
-    String name;
-
-    @Getter
-    @Setter
-    Long score;
+    private String uuid;
+    private String name;
+    private Long score;
 
     public Score() {
         this.uuid = "";
@@ -42,4 +26,13 @@ public class Score {
         this.name = name;
         this.score = score;
     }
+
+    // Explicit getters/setters to avoid reliance on Lombok at compile-time
+    public Long getId() { return id; }
+    public String getUuid() { return uuid; }
+    public void setUuid(String uuid) { this.uuid = uuid; }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    public Long getScore() { return score; }
+    public void setScore(Long score) { this.score = score; }
 }

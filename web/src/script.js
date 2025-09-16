@@ -160,7 +160,7 @@ function renderUI() {
    ctx.fillText(initialText || "", canvas.width / 2, canvas.height / 2);
    texture.needsUpdate = true;
    sprite.scale.set(COUNTDOWN_SPRITE_SCALE.x, COUNTDOWN_SPRITE_SCALE.y, 1);
-   try { disableReflectionForObject(sprite); } catch (_) {}
+   try { disableReflectionForSprite(sprite); } catch (_) {}
    return sprite;
  }
  
@@ -339,7 +339,13 @@ function renderRoomsDirectory() {
   // Default label
   const defEl = document.getElementById("rooms-default");
   if (defEl) {
-    defEl.textContent = "Default: " + (roomsDirectory.default || "-");
+    if (roomsDirectory.default) {
+      defEl.textContent = "Default: " + roomsDirectory.default;
+      defEl.style.display = "";
+    } else {
+      defEl.textContent = "";
+      defEl.style.display = "none";
+    }
   }
   // Rooms list
   const listEl = document.getElementById("rooms-list");
@@ -888,8 +894,8 @@ try {
 /* Debug HUD toggle support (F2), button, and ?debug=1 */
 function applyHudMode() {
   const stored = localStorage.getItem("debugHUD");
-  if (stored === null) localStorage.setItem("debugHUD", "1");
-  const debugOn = (stored === null) ? true : stored === "1";
+  if (stored === null) localStorage.setItem("debugHUD", "0");
+  const debugOn = (stored === null) ? false : stored === "1";
   const full = document.getElementById("hud");
   const compact = document.getElementById("hud-compact");
   const monitor = document.getElementById("monitor-panel");
@@ -2468,6 +2474,19 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         __replays.push(doc);
         try {
           console.info("[ReplayOracle] Clip ready", doc);
+          try {
+            if (navigator && typeof navigator.sendBeacon === "function") {
+              const blob = new Blob([JSON.stringify(doc)], { type: "application/json" });
+              navigator.sendBeacon("/api/replay/events", blob);
+            } else {
+              fetch("/api/replay/events", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(doc),
+                keepalive: true
+              }).catch(() => {});
+            }
+          } catch (_) {}
         } catch (_) {}
         __pendingReplay = null;
         if (__replayQueue.length) {
@@ -2823,7 +2842,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     }
     if (emitters) emitters.update(dt);
     updatePlayerPosition();
-    if (gameState !== "STARTING") {
+    if (gameState === "RUNNING") {
       checkCollisions();
       // Check collisions with other players' trails (Tron-like)
       checkTrailCollisionsWithPlayer();

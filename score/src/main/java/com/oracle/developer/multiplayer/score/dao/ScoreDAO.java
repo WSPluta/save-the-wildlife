@@ -1,13 +1,13 @@
 package com.oracle.developer.multiplayer.score.dao;
 
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
-
-@ToString
-@EqualsAndHashCode
 public class ScoreDAO {
+
+    private String uuid;
+    private String name;
+    private Long score;
+
+    public ScoreDAO() {
+    }
 
     public ScoreDAO(String uuid, String name, Long score) {
         this.uuid = uuid;
@@ -15,15 +15,27 @@ public class ScoreDAO {
         this.score = score;
     }
 
-    @Getter
-    @Setter
-    String uuid;
+    public String getUuid() {
+        return uuid;
+    }
 
-    @Getter
-    @Setter
-    String name;
+    public void setUuid(String uuid) {
+        this.uuid = uuid;
+    }
 
-    @Getter
-    @Setter
-    Long score;
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public Long getScore() {
+        return score;
+    }
+
+    public void setScore(Long score) {
+        this.score = score;
+    }
 }

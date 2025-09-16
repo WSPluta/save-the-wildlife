@@ -32,10 +32,16 @@ if (action === "score") {
   process.exit(0);
 }
 
+if (action === "replay") {
+  await releaseGradle("replay");
+  process.exit(0);
+}
+
 if (a || action === "all") {
   await releaseNpm("server");
   await releaseNpm("web");
   await releaseGradle("score");
+  await releaseGradle("replay");
   process.exit(0);
 }
 

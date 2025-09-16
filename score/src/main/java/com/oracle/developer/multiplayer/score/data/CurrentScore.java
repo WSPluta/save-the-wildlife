@@ -1,9 +1,5 @@
 package com.oracle.developer.multiplayer.score.data;
 
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
 
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
@@ -11,24 +7,15 @@ import javax.persistence.GenerationType;
 import javax.persistence.Id;
 
 @Entity
-@ToString
-@EqualsAndHashCode
 public class CurrentScore {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    @Getter
     Long id;
 
-    @Getter
-    @Setter
     String uuid;
 
-    @Getter
-    @Setter
     String name;
 
-    @Getter
-    @Setter
     Long score;
 
     public CurrentScore() {
@@ -42,4 +29,13 @@ public class CurrentScore {
         this.name = name;
         this.score = score;
     }
+
+    // Explicit getters/setters to satisfy IDEs/builds without Lombok processing
+    public Long getId() { return id; }
+    public String getUuid() { return uuid; }
+    public void setUuid(String uuid) { this.uuid = uuid; }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    public Long getScore() { return score; }
+    public void setScore(Long score) { this.score = score; }
 }

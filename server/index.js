@@ -26,6 +26,16 @@ logger.info(`Environment: ${process.env.NODE_ENV || "development"}`);
 const app = express();
 const httpServer = createServer(app);
 
+// JSON body parser and lightweight replay endpoint (fallback until Replay service is deployed)
+app.use(express.json({ limit: "2mb" }));
+app.post("/api/replay/events", (req, res) => {
+  try {
+    const body = req && req.body ? req.body : null;
+    logger.info(`Replay event received: ${body ? JSON.stringify(body).slice(0, 2000) : "<empty>"}`);
+  } catch (_) {}
+  res.status(202).json({ ok: true });
+});
+
 let pubClient;
 let subClient;
 let cacheSession;

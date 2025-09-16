@@ -9,6 +9,7 @@ env:
     - WS_SERVER_VERSION
     - WEB_VERSION
     - SCORE_VERSION
+    - REPLAY_VERSION
 
 steps:
   - type: Command
@@ -25,6 +26,8 @@ steps:
       echo "WEB_VERSION: $WEB_VERSION"
       export SCORE_VERSION=$(grep "version = " score/build.gradle | cut -d "'" -f2)
       echo "SCORE_VERSION: $SCORE_VERSION"
+      export REPLAY_VERSION=$(grep "version = " replay/build.gradle | cut -d "'" -f2)
+      echo "REPLAY_VERSION: $REPLAY_VERSION"
   - type: Command
     name: "Build ws-server"
     command: |
@@ -37,6 +40,10 @@ steps:
     name: "Build score"
     command: |
       npx zx scripts/build.mjs score
+  - type: Command
+    name: "Build replay"
+    command: |
+      npx zx scripts/build.mjs replay
 
 outputArtifacts:
   - name: server
@@ -48,3 +55,6 @@ outputArtifacts:
   - name: score
     type: DOCKER_IMAGE
     location: score:${SCORE_VERSION}
+  - name: replay
+    type: DOCKER_IMAGE
+    location: replay:${REPLAY_VERSION}
