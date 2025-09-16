@@ -4,9 +4,14 @@ metadata:
   labels:
     app: score
   name: score
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/actuator/prometheus"
 spec:
   ports:
-  - port: 8080
+  - name: http
+    port: 8080
     protocol: TCP
     targetPort: 8080
   selector:

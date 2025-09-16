@@ -55,6 +55,8 @@ spec:
           env:
           - name: NODE_ENV
             value: "production"
+          - name: SCORE_SERVICE_BASE_URL
+            value: "http://score:8080"
           volumeMounts:
           - name: config-volume
             mountPath: /usr/src/app/config

@@ -20,12 +20,29 @@ spec:
       labels:
         app: replay
     spec:
+      initContainers:
+      - name: unzip
+        image: busybox
+        command: ["unzip", "/walletzip/wallet.zip", "-d", "/wallet"]
+        volumeMounts:
+          - name: wallet-config
+            mountPath: /walletzip
+          - name: wallet-volume
+            mountPath: /wallet
       containers:
         - image: replay
           imagePullPolicy: "Always"
           name: replay
           ports:
             - containerPort: 8082
+          env:
+          - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+            value: "file:/config/"
+          volumeMounts:
+            - name: config-volume
+              mountPath: /config
+            - name: wallet-volume
+              mountPath: /wallet
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
@@ -45,5 +62,15 @@ spec:
             limits:
               cpu: 300m
               memory: 512Mi
+      volumes:
+      - name: config-volume
+        configMap:
+          name: replay-properties
+      - name: wallet-config
+        configMap:
+          name: replay-wallet-zip
+      - name: wallet-volume
+        emptyDir:
+          sizeLimit: 50Mi
       imagePullSecrets:
         - name: ocir-secret

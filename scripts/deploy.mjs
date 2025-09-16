@@ -99,7 +99,11 @@ async function createDBConfigFiles(
 ) {
   await downloadWallet(adbCompartmentId, adbName, adbPassword, walletFilePath);
   await setScoreApplicationProperties(adbName, adbPassword);
-  await $`mv wallet.zip deploy/k8s/base/score`;
+  await setReplayApplicationProperties(adbName, adbPassword);
+  // Copy wallet to both services (score and replay)
+  await $`cp wallet.zip deploy/k8s/base/score`;
+  await $`cp wallet.zip deploy/k8s/base/replay`;
+  await $`rm -f wallet.zip`;
 }
 
 async function setScoreApplicationProperties(adbName, adbPassword) {
@@ -171,6 +175,8 @@ async function createKustomizationYaml(regionKey, namespace) {
   const serverVersion = await getVersion();
   await cd("../score");
   const scoreVersion = await getVersionGradle();
+  await cd("../replay");
+  const replayVersion = await getVersionGradle();
   await cd("..");
 
   await cd("./deploy/k8s/overlays/prod");
@@ -180,11 +186,33 @@ async function createKustomizationYaml(regionKey, namespace) {
          | sed 's/SERVER_TEMPLATE_VERSION/${serverVersion}/' \
          | sed 's/WEB_TEMPLATE_VERSION/${webVersion}/' \
          | sed 's/SCORE_TEMPLATE_VERSION/${scoreVersion}/' \
+         | sed 's/REPLAY_TEMPLATE_VERSION/${replayVersion}/' \
          | sed 's/TENANCY_NAMESPACE/${namespace}/' > kustomization.yaml`;
     if (exitCode !== 0) {
       exitWithError(`Error creating kustomization.yaml: ${stderr}`);
     }
     console.log(`Overlay ${chalk.green("kustomization.yaml")} created.`);
+  } catch (error) {
+    exitWithError(error.stderr);
+  } finally {
+    await cd(pwdOutput);
+  }
+}
+
+async function setReplayApplicationProperties(adbName, adbPassword) {
+  const properties = await readEnvJson();
+  const adbDisplayName = properties.adbDisplayName;
+
+  const pwdOutput = (await $`pwd`).stdout.trim();
+  await cd(`${pwdOutput}/deploy/k8s/base/replay`);
+  try {
+    let { stdout, exitCode, stderr } =
+      await $`sed s/TEMPLATE_ADB_SERVICE/${adbDisplayName}/ application.properties.template | sed s/TEMPLATE_ADB_PASSWORD/${adbPassword}/ > application.properties`;
+    if (exitCode !== 0) {
+      exitWithError(`Error creating application.properties: ${stderr}`);
+    }
+    console.log(stdout);
+    console.log(`Replay ${chalk.green("application.properties")} created.`);
   } catch (error) {
     exitWithError(error.stderr);
   } finally {

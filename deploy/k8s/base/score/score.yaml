@@ -47,6 +47,9 @@ spec:
             periodSeconds: 5
           ports:
             - containerPort: 8080
+          env:
+          - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+            value: "file:/config/"
           resources:
             requests:
               cpu: 250m

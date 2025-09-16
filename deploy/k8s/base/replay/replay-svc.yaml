@@ -4,6 +4,10 @@ metadata:
   name: replay
   labels:
     app: replay
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8082"
+    prometheus.io/path: "/actuator/prometheus"
 spec:
   type: ClusterIP
   selector:

@@ -1,3 +1,10 @@
 resources:
   - replay.yaml
   - replay-svc.yaml
+configMapGenerator:
+  - name: replay-properties
+    files:
+      - application.properties
+  - name: replay-wallet-zip
+    files:
+      - wallet.zip

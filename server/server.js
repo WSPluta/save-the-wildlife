@@ -6,6 +6,7 @@ import pino from "pino";
 import { deleteCurrentScore, postCurrentScore } from "./score.js";
 import pkg from "./package.json" assert { type: "json" };
 import ObjectPool from './object-pool.js';
+import { updateRuntimeMetrics } from "./metrics.js";
 
 dotenv.config({ path: "../.config/.env" });
 
@@ -1602,7 +1603,9 @@ export async function start(
       });
       const humans = Math.max(0, ids.length - bots);
       const targets = computeEffectiveTargets(humans);
-      io.volatile.compress(false).emit("server.metrics", buildMetricsObject(info, counts, targets));
+      const m = buildMetricsObject(info, counts, targets);
+      try { updateRuntimeMetrics(m, gameState); } catch (_) {}
+      io.volatile.compress(false).emit("server.metrics", m);
     } catch (e) {
       logger.error(`server.metrics error: ${e && e.message ? e.message : e}`);
     }

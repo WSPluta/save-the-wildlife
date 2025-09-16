@@ -6,6 +6,8 @@ import { createTerminus } from "@godaddy/terminus";
 import pino from "pino";
 import * as dotenv from "dotenv";
 import { start } from "./server.js";
+import pinoHttp from "pino-http";
+import { register } from "./metrics.js";
 
 /**
  * Load env in this order (later calls don't override existing):
@@ -26,15 +28,27 @@ logger.info(`Environment: ${process.env.NODE_ENV || "development"}`);
 const app = express();
 const httpServer = createServer(app);
 
-// JSON body parser and lightweight replay endpoint (fallback until Replay service is deployed)
+ // JSON body parser and optional lightweight replay endpoint (disabled in prod; rely on Replay service via Ingress)
 app.use(express.json({ limit: "2mb" }));
-app.post("/api/replay/events", (req, res) => {
+app.use(pinoHttp({ logger }));
+// Prometheus metrics endpoint
+app.get("/metrics", async (_req, res) => {
   try {
-    const body = req && req.body ? req.body : null;
-    logger.info(`Replay event received: ${body ? JSON.stringify(body).slice(0, 2000) : "<empty>"}`);
-  } catch (_) {}
-  res.status(202).json({ ok: true });
+    res.setHeader("Content-Type", register.contentType);
+    res.end(await register.metrics());
+  } catch (e) {
+    res.status(500).end(String(e && e.message ? e.message : e));
+  }
 });
+if (process.env.ENABLE_REPLAY_FALLBACK === "true") {
+  app.post("/api/replay/events", (req, res) => {
+    try {
+      const body = req && req.body ? req.body : null;
+      logger.info(`Replay event received: ${body ? JSON.stringify(body).slice(0, 2000) : "<empty>"}`);
+    } catch (_) {}
+    res.status(202).json({ ok: true });
+  });
+}
 
 let pubClient;
 let subClient;

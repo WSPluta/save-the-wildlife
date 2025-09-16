@@ -1,5 +1,5 @@
 spring.main.banner-mode=off
-server.port=8080
+server.port=8082
 
 management.endpoint.health.probes.enabled=true
 management.health.livenessState.enabled=true
@@ -8,7 +8,7 @@ management.health.readinessState.enabled=true
 management.endpoints.web.exposure.include=health,info,prometheus,metrics
 management.endpoint.prometheus.enabled=true
 management.metrics.export.prometheus.enabled=true
-management.metrics.tags.application=score
+management.metrics.tags.application=replay
 
 # Oracle DB
 spring.datasource.driver-class-name=oracle.jdbc.OracleDriver
@@ -25,7 +25,10 @@ spring.jpa.hibernate.ddl-auto=update
 oracle.jdbc.fanEnabled=true
 spring.datasource.type=oracle.ucp.jdbc.PoolDataSource
 spring.datasource.oracleucp.sql-for-validate-connection=select * from dual
-spring.datasource.oracleucp.connection-pool-name=connectionPoolName1
-spring.datasource.oracleucp.initial-pool-size=5
-spring.datasource.oracleucp.min-pool-size=5
-spring.datasource.oracleucp.max-pool-size=10
+spring.datasource.oracleucp.connection-pool-name=replayPool
+spring.datasource.oracleucp.initial-pool-size=1
+spring.datasource.oracleucp.min-pool-size=1
+spring.datasource.oracleucp.max-pool-size=5
+
+# Ensure JDBC auto-config is enabled in prod (override classpath exclude)
+spring.autoconfigure.exclude=

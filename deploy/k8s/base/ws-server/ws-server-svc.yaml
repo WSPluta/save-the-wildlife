@@ -4,9 +4,14 @@ metadata:
   labels:
     app: ws-server
   name: ws-server
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "3000"
+    prometheus.io/path: "/metrics"
 spec:
   ports:
-  - port: 3000
+  - name: http
+    port: 3000
     protocol: TCP
     targetPort: 3000
   selector:

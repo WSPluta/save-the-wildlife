@@ -3,6 +3,7 @@ bases:
   - "../../base/web"
   - "../../base/ws-server"
   - "../../base/score"
+  - "../../base/replay"
 
 patchesStrategicMerge:
   - "patch_server_replicas.yaml"
@@ -17,3 +18,6 @@ images:
 - name: score
   newName: REGION_KEY.ocir.io/TENANCY_NAMESPACE/save-the-wildlife/score
   newTag: SCORE_TEMPLATE_VERSION
+- name: replay
+  newName: REGION_KEY.ocir.io/TENANCY_NAMESPACE/save-the-wildlife/replay
+  newTag: REPLAY_TEMPLATE_VERSION
