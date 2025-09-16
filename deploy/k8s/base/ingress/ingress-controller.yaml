@@ -25,6 +25,10 @@ metadata:
     service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
     service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10Mbps"
     service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "40Mbps"
+    # Use TCP health checks to avoid false warnings on HTTP 80/443 (ingress returns 404 for unknown paths)
+    service.beta.kubernetes.io/oci-load-balancer-health-check-protocol: "TCP"
+    # Increase idle timeout for long-running connections/WebSockets
+    service.beta.kubernetes.io/oci-load-balancer-connection-idle-timeout: "1200"
     # nginx.ingress.kubernetes.io/affinity: "cookie"
     # nginx.ingress.kubernetes.io/session-cookie-name: "sticky"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
