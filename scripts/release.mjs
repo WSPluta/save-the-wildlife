@@ -72,8 +72,17 @@ async function releaseNpm(service) {
 }
 async function releaseGradle(service) {
   await cd(service);
-  await cleanGradle();
-  await buildJarGradle();
+  try {
+    const hasWrapper = await fs.pathExists("./gradlew");
+    if (hasWrapper) {
+      await cleanGradle();
+      await buildJarGradle();
+    } else {
+      console.log("No gradlew found; skipping local Gradle build (Dockerfile will build the jar in a multi-stage).");
+    }
+  } catch (e) {
+    console.log("Skipping local Gradle build step (wrapper check failed). Dockerfile will build the jar.");
+  }
   const currentVersion = await getVersionGradle();
   console.log(`Releasing ${service}:${currentVersion}`);
   const image_name = `${project}/${service}`;
