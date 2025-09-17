@@ -17,6 +17,7 @@ await createKustomizationYaml(regionKey, namespace);
 await createWsServerConfigFile(redisPassword);
 await createRedisConfigFile(redisPassword);
 await createScoreConfigFile(adbAdminPassword, adbService);
+await createReplayConfigFile(adbAdminPassword, adbService);
 await createCerts();
 
 async function createKustomizationYaml(regionKey, namespace) {
@@ -105,6 +106,26 @@ async function createScoreConfigFile(adbAdminPassword, adbService) {
       exitWithError(`Error creating application.properties: ${stderr}`);
     }
     console.log(`Overlay ${chalk.green("application.properties")} created.`);
+  } catch (error) {
+    exitWithError(error.stderr);
+  } finally {
+    await cd(pwdOutput);
+  }
+}
+
+async function createReplayConfigFile(adbAdminPassword, adbService) {
+  const pwdOutput = (await $`pwd`).stdout.trim();
+  await cd("./deploy/k8s/base/replay/");
+  const replaceCmdAdbPassword = `s/TEMPLATE_ADB_PASSWORD/${adbAdminPassword}/`;
+  const replaceCmdAdbService = `s/TEMPLATE_ADB_SERVICE/${adbService}_high/`;
+  try {
+    let { exitCode, stderr } =
+      await $`sed '${replaceCmdAdbPassword}' application.properties.template \
+            | sed '${replaceCmdAdbService}' > application.properties`;
+    if (exitCode !== 0) {
+      exitWithError(`Error creating application.properties (replay): ${stderr}`);
+    }
+    console.log(`Overlay ${chalk.green("replay/application.properties")} created.`);
   } catch (error) {
     exitWithError(error.stderr);
   } finally {

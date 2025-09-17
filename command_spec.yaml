@@ -34,6 +34,8 @@ steps:
       cd /workspace/save-the-wildlife
       adb_wallet_password="$(openssl rand -base64 12)_$RANDOM"
       oci db autonomous-database generate-wallet --autonomous-database-id ${adb_id} --file "/workspace/save-the-wildlife/deploy/k8s/base/score/wallet.zip" --password "$adb_wallet_password"
+      # Generate wallet for Replay service as well
+      oci db autonomous-database generate-wallet --autonomous-database-id ${adb_id} --file "/workspace/save-the-wildlife/deploy/k8s/base/replay/wallet.zip" --password "$adb_wallet_password"
   - type: Command
     name: "Custom Kustomize with versions"
     shell: bash

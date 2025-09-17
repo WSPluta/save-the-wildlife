@@ -8,6 +8,8 @@ import pkg from "./package.json" assert { type: "json" };
 import ObjectPool from './object-pool.js';
 import { updateRuntimeMetrics } from "./metrics.js";
 
+dotenv.config();
+dotenv.config({ path: "config/.env" });
 dotenv.config({ path: "../.config/.env" });
 
 const isProduction = process.env.NODE_ENV === "production";
