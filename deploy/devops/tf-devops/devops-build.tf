@@ -12,6 +12,26 @@ resource "oci_devops_build_pipeline" "build_pipeline" {
       default_value = var.tenancy_ocid
       description   = "OCI Tenancy OCID"
     }
+    items {
+      name          = "namespace"
+      default_value = var.namespace
+      description   = "OCIR tenancy namespace"
+    }
+    items {
+      name          = "region_key"
+      default_value = var.region_key
+      description   = "OCI region key (e.g. lhr, fra)"
+    }
+    items {
+      name          = "ocir_user"
+      default_value = var.ocir_user
+      description   = "OCIR user name"
+    }
+    items {
+      name          = "user_auth_token_id"
+      default_value = var.user_auth_token_id
+      description   = "OCI Vault secret OCID for OCIR Auth Token"
+    }
   }
 
   description  = "Servers' Build Pipeline for ${random_string.deploy_id.result}"
@@ -77,6 +97,10 @@ resource "oci_devops_build_pipeline_stage" "deliver_artifact_stage" {
       artifact_id   = oci_devops_deploy_artifact.score_image.id
       artifact_name = "score"
     }
+    items {
+      artifact_id   = oci_devops_deploy_artifact.replay_image.id
+      artifact_name = "replay"
+    }
   }
   display_name = "Deliver Artifacts"
 }
@@ -93,7 +117,7 @@ resource "oci_devops_deploy_artifact" "ws_server_image" {
   deploy_artifact_source {
     deploy_artifact_source_type = "OCIR"
 
-    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/${local.repo_name}/server:$${WS_SERVER_VERSION}"
+    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/save-the-wildlife/server:$${WS_SERVER_VERSION}"
     repository_id = oci_devops_repository.github_mirrored_repository.id
   }
 
@@ -110,7 +134,7 @@ resource "oci_devops_deploy_artifact" "web_image" {
   deploy_artifact_source {
     deploy_artifact_source_type = "OCIR"
 
-    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/${local.repo_name}/web:$${WEB_VERSION}"
+    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/save-the-wildlife/web:$${WEB_VERSION}"
     repository_id = oci_devops_repository.github_mirrored_repository.id
   }
 
@@ -127,7 +151,7 @@ resource "oci_devops_deploy_artifact" "score_image" {
   deploy_artifact_source {
     deploy_artifact_source_type = "OCIR"
 
-    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/${local.repo_name}/score:$${SCORE_VERSION}"
+    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/save-the-wildlife/score:$${SCORE_VERSION}"
     repository_id = oci_devops_repository.github_mirrored_repository.id
   }
 
@@ -135,4 +159,21 @@ resource "oci_devops_deploy_artifact" "score_image" {
   project_id           = oci_devops_project.devops_project.id
 
   display_name = "Container Image Score"
+}
+
+resource "oci_devops_deploy_artifact" "replay_image" {
+
+  argument_substitution_mode = "SUBSTITUTE_PLACEHOLDERS"
+
+  deploy_artifact_source {
+    deploy_artifact_source_type = "OCIR"
+
+    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/save-the-wildlife/replay:$${REPLAY_VERSION}"
+    repository_id = oci_devops_repository.github_mirrored_repository.id
+  }
+
+  deploy_artifact_type = "DOCKER_IMAGE"
+  project_id           = oci_devops_project.devops_project.id
+
+  display_name = "Container Image Replay"
 }

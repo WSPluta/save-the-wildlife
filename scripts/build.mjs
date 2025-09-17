@@ -1,18 +1,40 @@
 #!/usr/bin/env zx
 import { getNpmVersion } from "./lib/npm.mjs";
 import { getNamespace, getRegionByName } from "./lib/oci.mjs";
-import { checkPodmanMachineRunning, buildImage } from "./lib/container.mjs";
+import { checkPodmanMachineRunning, buildImage, containerLogin, tagImage, pushImage } from "./lib/container.mjs";
 import { getVersionGradle } from "./lib/gradle.mjs";
 
 $.verbose = false;
 
 checkPodmanMachineRunning();
 
-const namespace = await getNamespace();
+const namespaceEnv = process.env.NAMESPACE || process.env.namespace;
+const namespace = namespaceEnv || (await getNamespace());
 const ociRegionNameFromEnv = (await $`echo $OCI_REGION`).stdout.trim();
-const region = await getRegionByName(ociRegionNameFromEnv);
-const regionKey = region["region-key"].toLowerCase();
+const regionKeyEnv = process.env.REGION_KEY || process.env.region_key;
+let regionKey = regionKeyEnv;
+if (!regionKey) {
+  const region = await getRegionByName(ociRegionNameFromEnv);
+  regionKey = region["region-key"].toLowerCase();
+}
 console.log({ namespace, regionKey });
+
+// Registry setup (OCIR)
+const project = "save-the-wildlife";
+const ocirUrl = `${regionKey}.ocir.io`;
+const ocirUser = process.env.OCIR_USER || process.env.OCIR_USERNAME;
+const ocirToken = process.env.OCIR_TOKEN || process.env.OCIR_AUTH_TOKEN;
+let ocirLoginDone = false;
+if (ocirUser && ocirToken) {
+  try {
+    await containerLogin(namespace, ocirUser, ocirToken, ocirUrl);
+    ocirLoginDone = true;
+  } catch (e) {
+    console.log("OCIR login failed; builds will complete but push will be skipped.");
+  }
+} else {
+  console.log("OCIR_USER/OCIR_TOKEN not set; skipping push to registry.");
+}
 
 const { a, _ } = argv;
 const [action] = _;
@@ -58,6 +80,17 @@ async function releaseNpm(service) {
   console.log(`Releasing ${service}:${currentVersion})`);
   await buildImage(`${service}`, currentVersion);
   await cd("..");
+
+  // Tag and push to OCIR if logged in
+  const localImage = `${service}:${currentVersion}`;
+  const remoteImage = `${ocirUrl}/${namespace}/${project}/${service}:${currentVersion}`;
+  if (ocirLoginDone) {
+    await tagImage(localImage, remoteImage);
+    await pushImage(remoteImage);
+    console.log(`Pushed: ${chalk.yellow(remoteImage)}`);
+  } else {
+    console.log(`Built: ${chalk.yellow(localImage)}. Skipped push. Set OCIR_USER/OCIR_TOKEN to push ${remoteImage}`);
+  }
 }
 
 async function releaseGradle(service) {
@@ -66,4 +99,15 @@ async function releaseGradle(service) {
   console.log(`Releasing ${service}:${currentVersion})`);
   await buildImage(`${service}`, currentVersion);
   await cd("..");
+
+  // Tag and push to OCIR if logged in
+  const localImage = `${service}:${currentVersion}`;
+  const remoteImage = `${ocirUrl}/${namespace}/${project}/${service}:${currentVersion}`;
+  if (ocirLoginDone) {
+    await tagImage(localImage, remoteImage);
+    await pushImage(remoteImage);
+    console.log(`Pushed: ${chalk.yellow(remoteImage)}`);
+  } else {
+    console.log(`Built: ${chalk.yellow(localImage)}. Skipped push. Set OCIR_USER/OCIR_TOKEN to push ${remoteImage}`);
+  }
 }

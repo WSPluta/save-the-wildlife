@@ -4,28 +4,47 @@ import { exitWithError } from "./utils.mjs";
 
 export async function whichContainerEngine() {
   try {
-    const dockerPath = await which("docker");
-    return !dockerPath ? "podman" : "docker";
-  } catch (err) {
-    return "podman";
+    await which("docker");
+    return "docker";
+  } catch (_) {
+    try {
+      await which("podman");
+      return "podman";
+    } catch (err2) {
+      exitWithError("Neither docker nor podman is installed in the build environment");
+    }
   }
 }
 
 const ce = await whichContainerEngine();
 
 export async function checkPodmanMachineRunning() {
-  if (ce === "podman") {
-    const isMachineRunning = (
-      await $`podman machine info --format {{.Host.MachineState}}`
-    ).stdout.trim();
-    if (isMachineRunning === "Stopped") {
-      console.log(
-        `Run ${chalk.yellow("podman machine start")} before continue`
-      );
+  if (ce !== "podman") return;
+
+  // On Linux, podman runs natively and 'podman machine' is not used.
+  // On macOS/Windows, 'podman machine' must be running.
+  let machineSupported = false;
+  try {
+    await $`podman machine --help`;
+    machineSupported = true;
+  } catch (_) {
+    machineSupported = false;
+  }
+
+  if (!machineSupported) {
+    console.log(`${chalk.green("[ok]")} podman available (no machine required)`);
+    return;
+  }
+
+  try {
+    const state = (await $`podman machine info --format {{.Host.MachineState}}`).stdout.trim();
+    if (state === "Stopped") {
+      console.log(`Run ${chalk.yellow("podman machine start")} before continue`);
       exitWithError("Podman machine stopped");
-    } else {
-      console.log(`${chalk.green("[ok]")} podman machine running`);
     }
+    console.log(`${chalk.green("[ok]")} podman machine running`);
+  } catch (error) {
+    console.log(`${chalk.yellow("Warning")}: unable to query podman machine status; proceeding`);
   }
 }
 
