@@ -145,6 +145,13 @@ async function devopsTFvars() {
 
   const githubUser = githubURL.split("/").reverse()[1];
 
+  const tenancyNamespace = namespace; // Tenancy namespace is typically the same as namespace
+
+  const ocirToken = await setVariableFromEnvOrPrompt(
+    "OCIR_TOKEN",
+    "OCIR Authentication Token"
+  );
+
   const githubURLEscaped = githubURL.replace(/\//g, "\\/");
   const replaceCmdURL = `s/GITHUB_REPOSITORY_URL/${githubURLEscaped}/`;
 
@@ -164,6 +171,8 @@ async function devopsTFvars() {
            | sed 's/ADB_SERVICE/${adbService}/' \
            | sed 's/ADB_OCID/${adbId}/' \
            | sed 's/REDIS_PASSWORD_OCID/${redisPasswordId}/' \
+           | sed 's/TENANCY_NAMESPACE/${tenancyNamespace}/' \
+           | sed 's/OCIR_TOKEN/${ocirToken}/' \
            | sed ${replaceCmdURL} \
            | sed 's/GITHUB_USER/${githubUser}/' > deploy/devops/tf-devops/terraform.tfvars`;
     if (exitCode !== 0) {
