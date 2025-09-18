@@ -54,13 +54,13 @@ resource "oci_devops_build_pipeline_stage" "build_github_stage" {
   description                        = "Build Services from GitHub"
   display_name                       = "Build Services"
   build_spec_file                    = "build_spec.yaml"
-  image                              = "OL7_X86_64_STANDARD_10"
+  image                              = "OL8_X86_64_STANDARD_10"
   primary_build_source               = "github_build_source"
   stage_execution_timeout_in_seconds = "900"
   build_runner_shape_config {
     build_runner_type = "CUSTOM"
-    memory_in_gbs     = 4
-    ocpus             = 1
+    memory_in_gbs     = 32
+    ocpus             = 6
   }
   build_source_collection {
     items {

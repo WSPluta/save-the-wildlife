@@ -10,6 +10,7 @@ steps:
     shell: bash
     timeoutInSeconds: 3600
     command: |
+      dnf update -y
       dnf module enable -y nodejs:18
       dnf module install -y nodejs
   - type: Command

@@ -15,8 +15,8 @@ steps:
   - type: Command
     name: "Install libraries"
     command: |
-      yum update -y
-      yum install jq -y
+      dnf update -y
+      dnf install jq -y
   - type: Command
     name: "Set up server versions"
     command: |

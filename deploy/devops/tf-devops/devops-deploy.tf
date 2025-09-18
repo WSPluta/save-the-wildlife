@@ -21,8 +21,8 @@ resource "oci_devops_deploy_stage" "shellstage_ci_deploy_stage" {
     }
 
     shape_config {
-      memory_in_gbs = 8
-      ocpus         = 1
+      memory_in_gbs = 32
+      ocpus         = 4
     }
   }
 
