@@ -206,7 +206,7 @@ async function cleanRegisterSecret() {
     }
   } catch (error) {}
 }
->>>>>>> REPLACE
+
 
 async function setReplayApplicationProperties(adbName, adbPassword) {
   const properties = await readEnvJson();

@@ -25,12 +25,21 @@ const ocirUrl = `${regionKey}.ocir.io`;
 const ocirUser = process.env.OCIR_USER || process.env.OCIR_USERNAME;
 const ocirToken = process.env.OCIR_TOKEN || process.env.OCIR_AUTH_TOKEN;
 let ocirLoginDone = false;
+
+console.log("OCIR Credentials Check:");
+console.log(`OCIR_USER: ${ocirUser ? 'set' : 'not set'}`);
+console.log(`OCIR_TOKEN: ${ocirToken ? 'token present' : 'not set'}`);
+console.log(`TENANCY_NAMESPACE: ${process.env.TENANCY_NAMESPACE}`);
+console.log(`NAMESPACE: ${namespace}`);
+
 if (ocirUser && ocirToken) {
   try {
-    await containerLogin(namespace, ocirUser, ocirToken, ocirUrl);
+    await containerLogin(process.env.TENANCY_NAMESPACE || namespace, ocirUser, ocirToken, ocirUrl);
     ocirLoginDone = true;
+    console.log("OCIR login successful");
   } catch (e) {
-    console.log("OCIR login failed; builds will complete but push will be skipped.");
+    console.error("OCIR login failed:", e.message);
+    console.log("Builds will complete but push will be skipped.");
   }
 } else {
   console.log("OCIR_USER/OCIR_TOKEN not set; skipping push to registry.");
