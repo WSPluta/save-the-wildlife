@@ -17,6 +17,7 @@ export async function whichContainerEngine() {
 }
 
 const ce = await whichContainerEngine();
+console.log(`${chalk.blue("Container engine")}: ${ce}`);
 
 export async function checkPodmanMachineRunning() {
   if (ce !== "podman") return;
@@ -56,31 +57,37 @@ export async function containerLogin(namespace, user, token, url) {
       console.log(`${chalk.yellow(url)}: ${chalk.green(stdout.trim())}`);
     } else {
       console.error(chalk.red(stderr.trim()));
+      throw new Error(`OCIR login returned exitCode ${exitCode}: ${stderr.trim()}`);
     }
   } catch (error) {
-    console.error(chalk.red(error.stderr.trim()));
-    const yellowUserString = chalk.yellow(user);
-    exitWithError(
-      `Review the user ${yellowUserString} and token pair, and try again.`
-    );
+    const stderr = (error && error.stderr ? error.stderr : `${error}`).toString().trim();
+    console.error(chalk.red(stderr));
+    // Do not exit here; let caller decide to proceed without push
+    throw new Error(`OCIR login failed for ${namespace}/${user} @ ${url}: ${stderr}`);
   }
 }
 
 export async function tagImage(local, remote) {
   console.log(`${ce} tag ${local} ${remote}`);
+  console.time(`[tag] ${local} -> ${remote}`);
   try {
     await $`${ce} tag ${local} ${remote}`;
+    console.timeEnd(`[tag] ${local} -> ${remote}`);
   } catch (error) {
-    exitWithError(error.stderr);
+    console.timeEnd(`[tag] ${local} -> ${remote}`);
+    exitWithError(error.stderr || error.message || String(error));
   }
 }
 
 export async function pushImage(remote) {
   console.log(`${ce} push ${remote}`);
+  console.time(`[push] ${remote}`);
   try {
     await $`${ce} push ${remote}`;
+    console.timeEnd(`[push] ${remote}`);
   } catch (error) {
-    exitWithError(error.stderr);
+    console.timeEnd(`[push] ${remote}`);
+    exitWithError(error.stderr || error.message || String(error));
   }
 }
 
@@ -95,10 +102,14 @@ export async function build_image(name, version) {
 }
 
 export async function buildImage(name, version) {
-  console.log(`${ce} build . -t ${name}:${version}`);
+  const tag = `${name}:${version}`;
+  console.log(`${ce} build . -t ${tag}`);
+  console.time(`[build] ${tag}`);
   try {
-    await $`${ce} build . -t ${name}:${version}`;
+    await $`${ce} build . -t ${tag}`;
+    console.timeEnd(`[build] ${tag}`);
   } catch (error) {
-    exitWithError(error.stderr);
+    console.timeEnd(`[build] ${tag}`);
+    exitWithError(error.stderr || error.message || String(error));
   }
 }
