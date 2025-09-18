@@ -17,15 +17,6 @@ steps:
     command: |
       dnf update -y
       dnf install jq -y
-      # Install OCI CLI if not available
-      if ! command -v oci &> /dev/null; then
-        curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh | bash -s -- --accept-all-defaults
-        export PATH="$HOME/bin:$PATH"
-      fi
-      # Configure OCI CLI (assuming environment variables are set)
-      if [ -n "$OCI_REGION" ] && [ -n "$OCI_TENANCY" ]; then
-        oci setup config --region "$OCI_REGION" --tenancy "$OCI_TENANCY" --user "$OCI_USER" --fingerprint "$OCI_FINGERPRINT" --key-file "$OCI_KEY_FILE"
-      fi
   - type: Command
     name: "Set up server versions"
     command: |
