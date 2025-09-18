@@ -10,13 +10,15 @@ checkPodmanMachineRunning();
 
 const namespaceEnv = process.env.NAMESPACE || process.env.namespace;
 const namespace = namespaceEnv || (await getNamespace());
-const ociRegionNameFromEnv = (await $`echo $OCI_REGION`).stdout.trim();
+const ociRegionNameFromEnv = process.env.OCI_REGION;
 const regionKeyEnv = process.env.REGION_KEY || process.env.region_key;
-let regionKey = regionKeyEnv;
-if (!regionKey) {
-  const region = await getRegionByName(ociRegionNameFromEnv);
-  regionKey = region["region-key"].toLowerCase();
+
+if (!ociRegionNameFromEnv && !regionKeyEnv) {
+  console.error("Error: OCI_REGION or REGION_KEY must be set");
+  process.exit(1);
 }
+
+let regionKey = regionKeyEnv || (await getRegionByName(ociRegionNameFromEnv)).["region-key"].toLowerCase();
 console.log({ namespace, regionKey });
 
 // Registry setup (OCIR)
