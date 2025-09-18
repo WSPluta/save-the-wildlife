@@ -67,3 +67,7 @@ variable "adb_service" {
 variable "adb_id" {
   type = string
 }
+
+variable "tenancy_namespace" {
+  type = string
+}
