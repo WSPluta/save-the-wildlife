@@ -31,34 +31,38 @@ steps:
   - type: Command
     name: "Build ws-server"
     command: |
-      export OCIR_USER=${ocir_user}
-      export OCIR_TOKEN=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
-      export NAMESPACE=${namespace}
-      export REGION_KEY=${region_key}
+      export OCIR_USER=${ocir_user:-}
+      export OCIR_USERNAME=${ocir_user:-}
+      export OCIR_TOKEN=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id:-} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
+      export NAMESPACE=${namespace:-}
+      export REGION_KEY=${region_key:-}
       npx zx scripts/build.mjs ws-server
   - type: Command
     name: "Build web"
     command: |
-      export OCIR_USER=${ocir_user}
-      export OCIR_TOKEN=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
-      export NAMESPACE=${namespace}
-      export REGION_KEY=${region_key}
+      export OCIR_USER=${ocir_user:-}
+      export OCIR_USERNAME=${ocir_user:-}
+      export OCIR_TOKEN=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id:-} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
+      export NAMESPACE=${namespace:-}
+      export REGION_KEY=${region_key:-}
       npx zx scripts/build.mjs web
   - type: Command
     name: "Build score"
     command: |
-      export OCIR_USER=${ocir_user}
-      export OCIR_TOKEN=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
-      export NAMESPACE=${namespace}
-      export REGION_KEY=${region_key}
+      export OCIR_USER=${ocir_user:-}
+      export OCIR_USERNAME=${ocir_user:-}
+      export OCIR_TOKEN=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id:-} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
+      export NAMESPACE=${namespace:-}
+      export REGION_KEY=${region_key:-}
       npx zx scripts/build.mjs score
   - type: Command
     name: "Build replay"
     command: |
-      export OCIR_USER=${ocir_user}
-      export OCIR_TOKEN=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
-      export NAMESPACE=${namespace}
-      export REGION_KEY=${region_key}
+      export OCIR_USER=${ocir_user:-}
+      export OCIR_USERNAME=${ocir_user:-}
+      export OCIR_TOKEN=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id:-} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
+      export NAMESPACE=${namespace:-}
+      export REGION_KEY=${region_key:-}
       npx zx scripts/build.mjs replay
 
 outputArtifacts:
