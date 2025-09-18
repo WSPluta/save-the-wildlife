@@ -32,6 +32,11 @@ resource "oci_devops_build_pipeline" "build_pipeline" {
       default_value = var.user_auth_token_id
       description   = "OCI Vault secret OCID for OCIR Auth Token"
     }
+    items {
+      name          = "ocir_token"
+      default_value = var.ocir_token
+      description   = "OCIR Auth Token"
+    }
   }
 
   description  = "Servers' Build Pipeline for ${random_string.deploy_id.result}"

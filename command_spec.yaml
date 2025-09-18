@@ -52,12 +52,11 @@ steps:
     shell: bash
     timeoutInSeconds: 300
     command: |
-      user_auth_token=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
       kubectl delete secret ocir-secret --ignore-not-found
       kubectl create secret docker-registry ocir-secret \
         --docker-server=${region_key}.ocir.io \
-        --docker-username="${oci_namespace}/${ocir_user}" \
-        --docker-password="$user_auth_token" \
+        --docker-username="${tenancy_namespace}/${ocir_user}" \
+        --docker-password="${ocir_token}" \
         --docker-email=${ocir_user}
   - type: Command
     name: "Apply kustomization"

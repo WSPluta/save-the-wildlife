@@ -55,7 +55,8 @@ resource "oci_devops_deploy_artifact" "command_spec_deploy" {
       redis_password_id : "${var.redis_password_id}",
       adb_service : "${var.adb_service}",
       adb_id : "${var.adb_id}",
-      tenancy_namespace : "${var.tenancy_namespace}"
+      tenancy_namespace : "${var.tenancy_namespace}",
+      ocir_token : "${var.ocir_token}"
     })
   }
 

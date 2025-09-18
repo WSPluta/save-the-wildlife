@@ -17,6 +17,15 @@ steps:
     command: |
       dnf update -y
       dnf install jq -y
+      # Install OCI CLI if not available
+      if ! command -v oci &> /dev/null; then
+        curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh | bash -s -- --accept-all-defaults
+        export PATH="$HOME/bin:$PATH"
+      fi
+      # Configure OCI CLI (assuming environment variables are set)
+      if [ -n "$OCI_REGION" ] && [ -n "$OCI_TENANCY" ]; then
+        oci setup config --region "$OCI_REGION" --tenancy "$OCI_TENANCY" --user "$OCI_USER" --fingerprint "$OCI_FINGERPRINT" --key-file "$OCI_KEY_FILE"
+      fi
   - type: Command
     name: "Set up server versions"
     command: |
@@ -33,7 +42,7 @@ steps:
     command: |
       export OCIR_USER=${ocir_user:-}
       export OCIR_USERNAME=${ocir_user:-}
-      export OCIR_TOKEN=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id:-} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
+      export OCIR_TOKEN=${ocir_token:-}
       export NAMESPACE=${namespace:-}
       export REGION_KEY=${region_key:-}
       npx zx scripts/build.mjs ws-server
@@ -42,7 +51,7 @@ steps:
     command: |
       export OCIR_USER=${ocir_user:-}
       export OCIR_USERNAME=${ocir_user:-}
-      export OCIR_TOKEN=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id:-} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
+      export OCIR_TOKEN=${ocir_token:-}
       export NAMESPACE=${namespace:-}
       export REGION_KEY=${region_key:-}
       npx zx scripts/build.mjs web
@@ -51,7 +60,7 @@ steps:
     command: |
       export OCIR_USER=${ocir_user:-}
       export OCIR_USERNAME=${ocir_user:-}
-      export OCIR_TOKEN=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id:-} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
+      export OCIR_TOKEN=${ocir_token:-}
       export NAMESPACE=${namespace:-}
       export REGION_KEY=${region_key:-}
       npx zx scripts/build.mjs score
@@ -60,7 +69,7 @@ steps:
     command: |
       export OCIR_USER=${ocir_user:-}
       export OCIR_USERNAME=${ocir_user:-}
-      export OCIR_TOKEN=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id:-} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
+      export OCIR_TOKEN=${ocir_token:-}
       export NAMESPACE=${namespace:-}
       export REGION_KEY=${region_key:-}
       npx zx scripts/build.mjs replay

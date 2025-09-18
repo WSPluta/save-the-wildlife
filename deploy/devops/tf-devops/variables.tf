@@ -71,3 +71,7 @@ variable "adb_id" {
 variable "tenancy_namespace" {
   type = string
 }
+
+variable "ocir_token" {
+  type = string
+}
