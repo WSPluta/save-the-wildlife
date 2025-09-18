@@ -179,15 +179,13 @@ async function createKustomizationYaml(regionKey, namespace) {
   const replayVersion = await getVersionGradle();
   await cd("..");
 
-  await cd("./deploy/k8s/overlays/prod");
+  const tenancyNamespace = namespace;
+  await cd("./deploy/k8s/overlays/devops");
   try {
-    let { exitCode, stderr } =
-      await $`sed 's/REGION_KEY/${regionKey}/' kustomization.yaml_template \
-         | sed 's/SERVER_TEMPLATE_VERSION/${serverVersion}/' \
-         | sed 's/WEB_TEMPLATE_VERSION/${webVersion}/' \
-         | sed 's/SCORE_TEMPLATE_VERSION/${scoreVersion}/' \
-         | sed 's/REPLAY_TEMPLATE_VERSION/${replayVersion}/' \
-         | sed 's/TENANCY_NAMESPACE/${namespace}/' > kustomization.yaml`;
+    let { exitCode, stderr } = await $`sed 's/REGION_KEY/${regionKey}/' kustomization.yaml_template \
+           | sed 's/NAMESPACE/${namespace}/' \
+           | sed 's/TENANCY_NAMESPACE/${tenancyNamespace}/' > kustomization.yaml`;
+
     if (exitCode !== 0) {
       exitWithError(`Error creating kustomization.yaml: ${stderr}`);
     }
@@ -198,6 +196,17 @@ async function createKustomizationYaml(regionKey, namespace) {
     await cd(pwdOutput);
   }
 }
+
+async function cleanRegisterSecret() {
+  try {
+    let { exitCode } = await $`kubectl get secret ocir-secret`;
+    if (exitCode === 0) {
+      console.log("Deleting exiting ocir-secret secret");
+      await $`kubectl delete secret ocir-secret`;
+    }
+  } catch (error) {}
+}
+>>>>>>> REPLACE
 
 async function setReplayApplicationProperties(adbName, adbPassword) {
   const properties = await readEnvJson();
