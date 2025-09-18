@@ -147,10 +147,19 @@ async function devopsTFvars() {
 
   const tenancyNamespace = namespace; // Tenancy namespace is typically the same as namespace
 
-  const ocirToken = await setVariableFromEnvOrPrompt(
-    "OCIR_TOKEN",
-    "OCIR Authentication Token"
-  );
+  // Fetch OCIR token from vault secret instead of prompting
+  let ocirToken;
+  try {
+    const { stdout } = await $`oci secrets secret-bundle get --secret-id ${userAuthTokenId} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d`;
+    ocirToken = stdout.trim();
+    console.log("Successfully fetched OCIR token from vault");
+  } catch (error) {
+    console.log("Could not fetch OCIR token from vault, falling back to manual input");
+    ocirToken = await setVariableFromEnvOrPrompt(
+      "OCIR_TOKEN",
+      "OCIR Authentication Token"
+    );
+  }
 
   const githubURLEscaped = githubURL.replace(/\//g, "\\/");
   const replaceCmdURL = `s/GITHUB_REPOSITORY_URL/${githubURLEscaped}/`;
