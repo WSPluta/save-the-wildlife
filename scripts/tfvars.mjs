@@ -1,5 +1,6 @@
 #!/usr/bin/env zx
 
+import fs from 'fs/promises';
 import { createSSHKeyPair } from "./lib/crypto.mjs";
 import {
   getNamespace,
@@ -161,34 +162,35 @@ async function devopsTFvars() {
     );
   }
 
-  const githubURLEscaped = githubURL.replace(/\//g, "\\/");
-  const replaceCmdURL = `s/GITHUB_REPOSITORY_URL/${githubURLEscaped}/`;
-
+  // Create the terraform.tfvars file using a safer approach
   try {
-    let { exitCode, stderr } =
-      await $`sed 's/REGION_NAME/${regionName}/' deploy/devops/tf-devops/terraform.tfvars.template \
-           | sed 's/TENANCY_OCID/${tenancyId}/' \
-           | sed 's/COMPARTMENT_OCID/${compartmentId}/' \
-           | sed 's/NAMESPACE/${namespace}/' \
-           | sed 's/REGION_KEY/${regionKey}/' \
-           | sed 's/ONS_TOPIC_ID/${devopsOnsTopicId}/' \
-           | sed 's/OKE_CLUSTER_ID/${okeClusterId}/' \
-           | sed 's/OCIR_USER/${userName}/' \
-           | sed 's/GITHUB_SECRET_OCID/${githubAccessTokenSecretId}/' \
-           | sed 's/USER_AUTH_TOKEN_OCID/${userAuthTokenId}/' \
-           | sed 's/ADB_ADMIN_PASSWORD_OCID/${adbAdminPasswordId}/' \
-           | sed 's/ADB_SERVICE/${adbService}/' \
-           | sed 's/ADB_OCID/${adbId}/' \
-           | sed 's/REDIS_PASSWORD_OCID/${redisPasswordId}/' \
-           | sed 's/TENANCY_NAMESPACE/${tenancyNamespace}/' \
-           | sed 's/OCIR_TOKEN/${ocirToken}/' \
-           | sed ${replaceCmdURL} \
-           | sed 's/GITHUB_USER/${githubUser}/' > deploy/devops/tf-devops/terraform.tfvars`;
-    if (exitCode !== 0) {
-      exitWithError(
-        `Error creating deploy/devops/tf-devops/terraform.tfvars: ${stderr}`
-      );
-    }
+    // Read the template
+    const templateContent = await fs.readFile('deploy/devops/tf-devops/terraform.tfvars.template', 'utf8');
+
+    // Replace all placeholders
+    let content = templateContent
+      .replace(/REGION_NAME/g, regionName)
+      .replace(/TENANCY_OCID/g, tenancyId)
+      .replace(/COMPARTMENT_OCID/g, compartmentId)
+      .replace(/NAMESPACE/g, namespace)
+      .replace(/REGION_KEY/g, regionKey)
+      .replace(/ONS_TOPIC_ID/g, devopsOnsTopicId)
+      .replace(/OKE_CLUSTER_ID/g, okeClusterId)
+      .replace(/OCIR_USER/g, userName)
+      .replace(/GITHUB_SECRET_OCID/g, githubAccessTokenSecretId)
+      .replace(/USER_AUTH_TOKEN_OCID/g, userAuthTokenId)
+      .replace(/ADB_ADMIN_PASSWORD_OCID/g, adbAdminPasswordId)
+      .replace(/ADB_SERVICE/g, adbService)
+      .replace(/ADB_OCID/g, adbId)
+      .replace(/REDIS_PASSWORD_OCID/g, redisPasswordId)
+      .replace(/TENANCY_NAMESPACE/g, tenancyNamespace)
+      .replace(/OCIR_TOKEN/g, ocirToken)
+      .replace(/GITHUB_REPOSITORY_URL/g, githubURL)
+      .replace(/GITHUB_USER/g, githubUser);
+
+    // Write the final file
+    await fs.writeFile('deploy/devops/tf-devops/terraform.tfvars', content, 'utf8');
+
     console.log(
       `${chalk.green("deploy/devops/tf-devops/terraform.tfvars")} created.`
     );
