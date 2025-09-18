@@ -17,6 +17,8 @@ steps:
     command: |
       dnf update -y
       dnf install jq -y
+      dnf module enable -y nodejs:18
+      dnf module install -y nodejs
   - type: Command
     name: "Set up server versions"
     command: |
