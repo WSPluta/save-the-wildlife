@@ -9,6 +9,7 @@ env:
     - WS_SERVER_VERSION
     - WEB_VERSION
     - SCORE_VERSION
+    - REPLAY_VERSION
 
 steps:
   - type: Command
@@ -63,6 +64,9 @@ steps:
       export SCORE_VERSION=$(grep -E "^version\s*=\s*'[^']+'" score/build.gradle | sed -E "s/.*'([^']+)'.*/\1/")
       echo "SCORE_VERSION: $SCORE_VERSION"
 
+      export REPLAY_VERSION=$(grep -E "^version\s*=\s*'[^']+'" replay/build.gradle | sed -E "s/.*'([^']+)'.*/\1/")
+      echo "REPLAY_VERSION: $REPLAY_VERSION"
+
   - type: Command
     name: "Build ws-server"
     command: |
@@ -84,6 +88,13 @@ steps:
       trap 'echo "[FATAL] Build score failed at line $LINENO" >&2' ERR
       npx zx scripts/build.mjs score
 
+  - type: Command
+    name: "Build replay"
+    command: |
+      set -Eeuo pipefail
+      trap 'echo "[FATAL] Build replay failed at line $LINENO" >&2' ERR
+      npx zx scripts/build.mjs replay
+
 outputArtifacts:
   - name: server
     type: DOCKER_IMAGE
@@ -94,3 +105,6 @@ outputArtifacts:
   - name: score
     type: DOCKER_IMAGE
     location: score:${SCORE_VERSION}
+  - name: replay
+    type: DOCKER_IMAGE
+    location: replay:${REPLAY_VERSION}

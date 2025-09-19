@@ -1,18 +1,11 @@
 #!/usr/bin/env zx
 import { getNpmVersion } from "./lib/npm.mjs";
-import { getNamespace, getRegionByName } from "./lib/oci.mjs";
 import { checkPodmanMachineRunning, buildImage } from "./lib/container.mjs";
 import { getVersionGradle } from "./lib/gradle.mjs";
 
 $.verbose = false;
 
 checkPodmanMachineRunning();
-
-const namespace = await getNamespace();
-const ociRegionNameFromEnv = (await $`echo $OCI_REGION`).stdout.trim();
-const region = await getRegionByName(ociRegionNameFromEnv);
-const regionKey = region["region-key"].toLowerCase();
-console.log({ namespace, regionKey });
 
 const { a, _ } = argv;
 const [action] = _;
@@ -32,10 +25,16 @@ if (action === "score") {
   process.exit(0);
 }
 
+if (action === "replay") {
+  await releaseGradle("replay");
+  process.exit(0);
+}
+
 if (a || action === "all") {
   await releaseNpm("server");
   await releaseNpm("web");
   await releaseGradle("score");
+  await releaseGradle("replay");
   process.exit(0);
 }
 
@@ -45,6 +44,7 @@ console.log("\tnpx zx scripts/build.mjs -a");
 console.log("\tnpx zx scripts/build.mjs ws-server");
 console.log("\tnpx zx scripts/build.mjs web");
 console.log("\tnpx zx scripts/build.mjs score");
+console.log("\tnpx zx scripts/build.mjs replay");
 
 async function releaseNpm(service) {
   await cd(`${service}`);
