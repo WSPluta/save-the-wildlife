@@ -1,4 +1,4 @@
-version: 0.1             
+version: 0.1
 component: build
 timeoutInSeconds: 1200
 failImmediatelyOnError: true
@@ -12,45 +12,41 @@ env:
 
 steps:
   - type: Command
-    name: "Install libraries"
+    name: "Install libraries (jq, Node.js 18, podman, zx)"
     command: |
       set -Eeuo pipefail
       trap 'echo "[FATAL] Install libraries failed at line $LINENO" >&2' ERR
 
       echo "=== SYSTEM INFO ==="
       cat /etc/os-release || true
-      echo "=== DNF REPOS ==="
-      dnf repolist || true
-      echo "=== DISK SPACE ==="
-      df -h
-      echo "=== MEMORY ==="
-      free -h || true
+      uname -a || true
 
-      echo "=== UPDATING PACKAGES ==="
-      dnf -y update
+      if command -v dnf >/dev/null 2>&1; then
+        echo "Using dnf"
+        dnf -y update || true
+        dnf -y install jq podman || true
+        # Try AppStream modules for Node 18 (OL8+)
+        dnf -y module enable nodejs:18 || true
+        dnf -y module install nodejs || dnf -y install nodejs || true
+      else
+        echo "Using yum"
+        yum -y update || true
+        yum -y install jq podman || true
+        # Install Node.js 18 from NodeSource on OL7/RHEL-like
+        curl -fsSL https://rpm.nodesource.com/setup_18.x | bash - || true
+        yum -y install nodejs || true
+      fi
 
-      echo "=== INSTALLING TOOLS (jq, Node.js 18, podman, zx) ==="
-      dnf -y install jq podman
-      dnf -y module enable nodejs:18
-      dnf -y module install nodejs
       npm -g config set fund false audit false || true
-      npm i -g zx@7
-      echo "=== zx version ==="
-      zx --version || true
-      echo "=== npm global bin ==="
-      npm bin -g || true
+      npm i -g zx@7 || true
 
       echo "=== TOOL VERSIONS ==="
       node -v || true
       npm -v || true
       npx -v || true
-      which docker || true
-      docker -v || true
-      which podman || true
-      podman -v || true
-
-      echo "=== PODMAN INFO (if available) ==="
-      podman info || true
+      which docker || true && docker -v || true
+      which podman || true && podman -v || true
+      which zx || true && zx --version || true
 
   - type: Command
     name: "Set up server versions"
@@ -58,138 +54,35 @@ steps:
       set -Eeuo pipefail
       trap 'echo "[FATAL] Set up server versions failed at line $LINENO" >&2' ERR
 
-      echo "=== READ VERSIONS ==="
-      if [ -f server/package.json ]; then
-        WS_SERVER_VERSION=$(jq -r '.version // empty' server/package.json)
-      else
-        WS_SERVER_VERSION=""
-        echo "[WARN] server/package.json missing"
-      fi
-      echo "WS_SERVER_VERSION: ${WS_SERVER_VERSION:-<unset>}"
-      export WS_SERVER_VERSION
+      export WS_SERVER_VERSION=$(jq -r '.version' server/package.json)
+      echo "WS_SERVER_VERSION: $WS_SERVER_VERSION"
 
-      if [ -f web/package.json ]; then
-        WEB_VERSION=$(jq -r '.version // empty' web/package.json)
-      else
-        WEB_VERSION=""
-        echo "[WARN] web/package.json missing"
-      fi
-      echo "WEB_VERSION: ${WEB_VERSION:-<unset>}"
-      export WEB_VERSION
+      export WEB_VERSION=$(jq -r '.version' web/package.json)
+      echo "WEB_VERSION: $WEB_VERSION"
 
-      if [ -f score/build.gradle ]; then
-        echo "score/build.gradle version lines:"
-        grep -n "version" score/build.gradle || true
-        SCORE_VERSION=$(grep -E "^version\s*=\s*'[^']+'" -n score/build.gradle | head -n1 | sed -E "s/.*'([^']+)'.*/\1/")
-      else
-        SCORE_VERSION=""
-        echo "[WARN] score/build.gradle missing"
-      fi
-      echo "SCORE_VERSION: ${SCORE_VERSION:-<unset>}"
-      export SCORE_VERSION
+      export SCORE_VERSION=$(grep -E "^version\s*=\s*'[^']+'" score/build.gradle | sed -E "s/.*'([^']+)'.*/\1/")
+      echo "SCORE_VERSION: $SCORE_VERSION"
 
   - type: Command
     name: "Build ws-server"
     command: |
       set -Eeuo pipefail
       trap 'echo "[FATAL] Build ws-server failed at line $LINENO" >&2' ERR
-
-      # Pass through OCIR credentials if present (optional; build works without push)
-      export OCIR_USER=${ocir_user:-}
-      export OCIR_USERNAME=${ocir_user:-}
-      export OCIR_TOKEN=${ocir_token:-}
-      export NAMESPACE=${namespace:-}
-      export TENANCY_NAMESPACE=${tenancy_namespace:-${namespace:-}}
-      export REGION_KEY=${region_key:-}
-      export PUSH_TO_OCIR=1
-      export OCI_REGION=${region:-${oci_region:-}}
-
-      echo "=== BUILD ws-server CONTEXT ==="
-      echo "NAMESPACE=${NAMESPACE:-unset} REGION_KEY=${REGION_KEY:-unset} OCI_REGION=${OCI_REGION:-unset} OCIR_USER=$(test -n "${OCIR_USER:-}" && echo set || echo unset) OCIR_TOKEN=$(test -n "${OCIR_TOKEN:-}" && echo present || echo unset)"
-      node -v || true; npm -v || true; npx -v || true
-      which docker || true; docker -v || true
-      which podman || true; podman -v || true
-
-      echo "Resolving zx binary..."
-      ZX_BIN="$(command -v zx || true)"
-      if [ -z "$ZX_BIN" ]; then ZX_BIN="$(npm bin -g)/zx"; fi
-      if [ ! -x "$ZX_BIN" ]; then
-        npm i -g zx@7
-        ZX_BIN="$(command -v zx || true)"
-        if [ -z "$ZX_BIN" ]; then ZX_BIN="$(npm bin -g)/zx"; fi
-      fi
-      "$ZX_BIN" --version || true
-
-      echo "Invoking build script..."
-      DEBUG_BUILD=1 "$ZX_BIN" scripts/build.mjs ws-server
+      npx zx scripts/build.mjs ws-server
 
   - type: Command
     name: "Build web"
     command: |
       set -Eeuo pipefail
       trap 'echo "[FATAL] Build web failed at line $LINENO" >&2' ERR
-
-      export OCIR_USER=${ocir_user:-}
-      export OCIR_USERNAME=${ocir_user:-}
-      export OCIR_TOKEN=${ocir_token:-}
-      export NAMESPACE=${namespace:-}
-      export TENANCY_NAMESPACE=${tenancy_namespace:-${namespace:-}}
-      export REGION_KEY=${region_key:-}
-      export PUSH_TO_OCIR=1
-      export OCI_REGION=${region:-${oci_region:-}}
-
-      echo "=== BUILD web CONTEXT ==="
-      echo "NAMESPACE=${NAMESPACE:-unset} REGION_KEY=${REGION_KEY:-unset} OCI_REGION=${OCI_REGION:-unset} OCIR_USER=$(test -n "${OCIR_USER:-}" && echo set || echo unset) OCIR_TOKEN=$(test -n "${OCIR_TOKEN:-}" && echo present || echo unset)"
-      node -v || true; npm -v || true; npx -v || true
-      which docker || true; docker -v || true
-      which podman || true; podman -v || true
-
-      echo "Resolving zx binary..."
-      ZX_BIN="$(command -v zx || true)"
-      if [ -z "$ZX_BIN" ]; then ZX_BIN="$(npm bin -g)/zx"; fi
-      if [ ! -x "$ZX_BIN" ]; then
-        npm i -g zx@7
-        ZX_BIN="$(command -v zx || true)"
-        if [ -z "$ZX_BIN" ]; then ZX_BIN="$(npm bin -g)/zx"; fi
-      fi
-      "$ZX_BIN" --version || true
-
-      echo "Invoking build script..."
-      DEBUG_BUILD=1 "$ZX_BIN" scripts/build.mjs web
+      npx zx scripts/build.mjs web
 
   - type: Command
     name: "Build score"
     command: |
       set -Eeuo pipefail
       trap 'echo "[FATAL] Build score failed at line $LINENO" >&2' ERR
-
-      export OCIR_USER=${ocir_user:-}
-      export OCIR_USERNAME=${ocir_user:-}
-      export OCIR_TOKEN=${ocir_token:-}
-      export NAMESPACE=${namespace:-}
-      export TENANCY_NAMESPACE=${tenancy_namespace:-${namespace:-}}
-      export REGION_KEY=${region_key:-}
-      export PUSH_TO_OCIR=1
-      export OCI_REGION=${region:-${oci_region:-}}
-
-      echo "=== BUILD score CONTEXT ==="
-      echo "NAMESPACE=${NAMESPACE:-unset} REGION_KEY=${REGION_KEY:-unset} OCI_REGION=${OCI_REGION:-unset} OCIR_USER=$(test -n "${OCIR_USER:-}" && echo set || echo unset) OCIR_TOKEN=$(test -n "${OCIR_TOKEN:-}" && echo present || echo unset)"
-      node -v || true; npm -v || true; npx -v || true
-      which docker || true; docker -v || true
-      which podman || true; podman -v || true
-
-      echo "Resolving zx binary..."
-      ZX_BIN="$(command -v zx || true)"
-      if [ -z "$ZX_BIN" ]; then ZX_BIN="$(npm bin -g)/zx"; fi
-      if [ ! -x "$ZX_BIN" ]; then
-        npm i -g zx@7
-        ZX_BIN="$(command -v zx || true)"
-        if [ -z "$ZX_BIN" ]; then ZX_BIN="$(npm bin -g)/zx"; fi
-      fi
-      "$ZX_BIN" --version || true
-
-      echo "Invoking build script..."
-      DEBUG_BUILD=1 "$ZX_BIN" scripts/build.mjs score
+      npx zx scripts/build.mjs score
 
 outputArtifacts:
   - name: server
