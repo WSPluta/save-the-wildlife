@@ -69,11 +69,11 @@ steps:
   - type: Command
     name: "Wait for deployments readiness"
     shell: bash
-    timeoutInSeconds: 600
+    timeoutInSeconds: 900
     command: |
-      kubectl -n default rollout status deploy/ws-server --timeout=180s
-      kubectl -n default rollout status deploy/web --timeout=180s
-      kubectl -n default rollout status deploy/replay --timeout=180s
+      kubectl -n default rollout status deploy/ws-server --timeout=300s
+      kubectl -n default rollout status deploy/web --timeout=300s
+      kubectl -n default rollout status deploy/replay --timeout=300s
   - type: Command
     name: "Health check ws-server"
     shell: bash
