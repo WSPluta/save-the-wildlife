@@ -23,7 +23,8 @@ let namespace;
 let regionKey;
 let ocirUrl;
 
-const ocirUser = process.env.OCIR_USER || process.env.OCIR_USERNAME;
+const ocirUserEnv = process.env.OCIR_USER || process.env.OCIR_USERNAME;
+let ocirUser = ocirUserEnv; // may auto-prefix for IDCS users (oracleidentitycloudservice/)
 const ocirToken = process.env.OCIR_TOKEN || process.env.OCIR_AUTH_TOKEN;
 const namespaceEnv = process.env.TENANCY_NAMESPACE || process.env.NAMESPACE || process.env.namespace;
 const ociRegionNameFromEnv = process.env.OCI_REGION;
@@ -50,12 +51,36 @@ if (pushEnabled && ocirUser && ocirToken) {
     regionKey = (regionKeyEnv || (await getRegionByName(ociRegionNameFromEnv))['region-key']).toLowerCase();
     ocirUrl = `${regionKey}.ocir.io`;
     console.log({ namespace, regionKey });
-    await containerLogin(process.env.TENANCY_NAMESPACE || namespace, ocirUser, ocirToken, ocirUrl);
-    ocirLoginDone = true;
-    console.log("OCIR login successful");
+
+    // Attempt login; if federated user (email-like) without IDCS prefix, retry with oracleidentitycloudservice/
+    try {
+      await containerLogin(process.env.TENANCY_NAMESPACE || namespace, ocirUser, ocirToken, ocirUrl);
+      ocirLoginDone = true;
+      console.log("OCIR login successful");
+    } catch (e1) {
+      const needsIdcsPrefix = ocirUser.includes("@") && !ocirUser.includes("/");
+      if (needsIdcsPrefix) {
+        const prefixedUser = `oracleidentitycloudservice/${ocirUser}`;
+        console.log(`OCIR login retry with IDCS prefix: ${prefixedUser}`);
+        try {
+          await containerLogin(process.env.TENANCY_NAMESPACE || namespace, prefixedUser, ocirToken, ocirUrl);
+          ocirUser = prefixedUser; // keep for logs
+          ocirLoginDone = true;
+          console.log("OCIR login successful (with IDCS prefix)");
+        } catch (e2) {
+          throw e2;
+        }
+      } else {
+        throw e1;
+      }
+    }
   } catch (e) {
     console.error("OCIR login failed or config missing:", e.message);
-    console.log("Builds will complete but push will be skipped.");
+    if (pushEnabled) {
+      throw e;
+    } else {
+      console.log("Builds will complete but push will be skipped.");
+    }
   }
 } else {
   console.log("Push disabled or OCIR credentials not set; skipping push to registry.");
@@ -125,7 +150,11 @@ async function releaseNpm(service) {
     }
   } catch (error) {
     console.error(`Error tagging or pushing ${service} image:`, error.message);
-    console.log(`Built: ${chalk.yellow(localImage)}. Push failed; continuing without push.`);
+    if (pushEnabled) {
+      throw error;
+    } else {
+      console.log(`Built: ${chalk.yellow(localImage)}. Push failed; continuing without push.`);
+    }
   }
 }
 
@@ -155,6 +184,10 @@ async function releaseGradle(service) {
     }
   } catch (error) {
     console.error(`Error tagging or pushing ${service} image:`, error.message);
-    console.log(`Built: ${chalk.yellow(localImage)}. Push failed; continuing without push.`);
+    if (pushEnabled) {
+      throw error;
+    } else {
+      console.log(`Built: ${chalk.yellow(localImage)}. Push failed; continuing without push.`);
+    }
   }
 }
