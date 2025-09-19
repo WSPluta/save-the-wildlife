@@ -29,10 +29,16 @@ steps:
       echo "=== UPDATING PACKAGES ==="
       dnf -y update
 
-      echo "=== INSTALLING TOOLS (jq, Node.js 18, podman) ==="
+      echo "=== INSTALLING TOOLS (jq, Node.js 18, podman, zx) ==="
       dnf -y install jq podman
       dnf -y module enable nodejs:18
       dnf -y module install nodejs
+      npm -g config set fund false audit false || true
+      npm i -g zx@7
+      echo "=== zx version ==="
+      zx --version || true
+      echo "=== npm global bin ==="
+      npm bin -g || true
 
       echo "=== TOOL VERSIONS ==="
       node -v || true
@@ -101,8 +107,18 @@ steps:
       which docker || true; docker -v || true
       which podman || true; podman -v || true
 
+      echo "Resolving zx binary..."
+      ZX_BIN="$(command -v zx || true)"
+      if [ -z "$ZX_BIN" ]; then ZX_BIN="$(npm bin -g)/zx"; fi
+      if [ ! -x "$ZX_BIN" ]; then
+        npm i -g zx@7
+        ZX_BIN="$(command -v zx || true)"
+        if [ -z "$ZX_BIN" ]; then ZX_BIN="$(npm bin -g)/zx"; fi
+      fi
+      "$ZX_BIN" --version || true
+
       echo "Invoking build script..."
-      DEBUG_BUILD=1 time npx zx scripts/build.mjs ws-server
+      DEBUG_BUILD=1 "$ZX_BIN" scripts/build.mjs ws-server
 
   - type: Command
     name: "Build web"
@@ -122,8 +138,18 @@ steps:
       which docker || true; docker -v || true
       which podman || true; podman -v || true
 
+      echo "Resolving zx binary..."
+      ZX_BIN="$(command -v zx || true)"
+      if [ -z "$ZX_BIN" ]; then ZX_BIN="$(npm bin -g)/zx"; fi
+      if [ ! -x "$ZX_BIN" ]; then
+        npm i -g zx@7
+        ZX_BIN="$(command -v zx || true)"
+        if [ -z "$ZX_BIN" ]; then ZX_BIN="$(npm bin -g)/zx"; fi
+      fi
+      "$ZX_BIN" --version || true
+
       echo "Invoking build script..."
-      DEBUG_BUILD=1 time npx zx scripts/build.mjs web
+      DEBUG_BUILD=1 "$ZX_BIN" scripts/build.mjs web
 
   - type: Command
     name: "Build score"
@@ -143,8 +169,18 @@ steps:
       which docker || true; docker -v || true
       which podman || true; podman -v || true
 
+      echo "Resolving zx binary..."
+      ZX_BIN="$(command -v zx || true)"
+      if [ -z "$ZX_BIN" ]; then ZX_BIN="$(npm bin -g)/zx"; fi
+      if [ ! -x "$ZX_BIN" ]; then
+        npm i -g zx@7
+        ZX_BIN="$(command -v zx || true)"
+        if [ -z "$ZX_BIN" ]; then ZX_BIN="$(npm bin -g)/zx"; fi
+      fi
+      "$ZX_BIN" --version || true
+
       echo "Invoking build script..."
-      DEBUG_BUILD=1 time npx zx scripts/build.mjs score
+      DEBUG_BUILD=1 "$ZX_BIN" scripts/build.mjs score
 
 outputArtifacts:
   - name: server
