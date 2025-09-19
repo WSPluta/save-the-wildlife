@@ -94,9 +94,10 @@ console.log("\tnpx zx scripts/build.mjs web");
 console.log("\tnpx zx scripts/build.mjs score");
 
 async function releaseNpm(service) {
+  let currentVersion;
   try {
     await cd(`${service}`);
-    const currentVersion = await getNpmVersion();
+    currentVersion = await getNpmVersion();
     console.log(`Releasing ${service}:${currentVersion}`);
     await buildImage(`${service}`, currentVersion);
     await cd("..");
@@ -123,9 +124,10 @@ async function releaseNpm(service) {
 }
 
 async function releaseGradle(service) {
+  let currentVersion;
   try {
     await cd(`${service}`);
-    const currentVersion = await getVersionGradle();
+    currentVersion = await getVersionGradle();
     console.log(`Releasing ${service}:${currentVersion}`);
     await buildImage(`${service}`, currentVersion);
     await cd("..");
