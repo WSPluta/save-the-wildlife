@@ -100,6 +100,7 @@ steps:
       export OCIR_TOKEN=${ocir_token:-}
       export NAMESPACE=${namespace:-}
       export REGION_KEY=${region_key:-}
+      export PUSH_TO_OCIR=0
 
       echo "=== BUILD ws-server CONTEXT ==="
       echo "NAMESPACE=${NAMESPACE:-unset} REGION_KEY=${REGION_KEY:-unset} OCI_REGION=${OCI_REGION:-unset} OCIR_USER=$(test -n "${OCIR_USER:-}" && echo set || echo unset) OCIR_TOKEN=$(test -n "${OCIR_TOKEN:-}" && echo present || echo unset)"
@@ -131,6 +132,7 @@ steps:
       export OCIR_TOKEN=${ocir_token:-}
       export NAMESPACE=${namespace:-}
       export REGION_KEY=${region_key:-}
+      export PUSH_TO_OCIR=0
 
       echo "=== BUILD web CONTEXT ==="
       echo "NAMESPACE=${NAMESPACE:-unset} REGION_KEY=${REGION_KEY:-unset} OCI_REGION=${OCI_REGION:-unset} OCIR_USER=$(test -n "${OCIR_USER:-}" && echo set || echo unset) OCIR_TOKEN=$(test -n "${OCIR_TOKEN:-}" && echo present || echo unset)"
@@ -162,6 +164,7 @@ steps:
       export OCIR_TOKEN=${ocir_token:-}
       export NAMESPACE=${namespace:-}
       export REGION_KEY=${region_key:-}
+      export PUSH_TO_OCIR=0
 
       echo "=== BUILD score CONTEXT ==="
       echo "NAMESPACE=${NAMESPACE:-unset} REGION_KEY=${REGION_KEY:-unset} OCI_REGION=${OCI_REGION:-unset} OCIR_USER=$(test -n "${OCIR_USER:-}" && echo set || echo unset) OCIR_TOKEN=$(test -n "${OCIR_TOKEN:-}" && echo present || echo unset)"

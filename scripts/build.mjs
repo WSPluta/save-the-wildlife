@@ -35,7 +35,13 @@ console.log(`OCIR_TOKEN: ${ocirToken ? 'token present' : 'not set'}`);
 console.log(`TENANCY_NAMESPACE: ${process.env.TENANCY_NAMESPACE}`);
 console.log(`NAMESPACE: ${namespaceEnv || '(auto)'}`);
 
-if (ocirUser && ocirToken) {
+const pushEnabled = (() => {
+  const v = (process.env.PUSH_TO_OCIR || "").toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+})();
+console.log(`Push to OCIR enabled: ${pushEnabled ? 'yes' : 'no'}`);
+
+if (pushEnabled && ocirUser && ocirToken) {
   try {
     namespace = namespaceEnv || (await getNamespace());
     if (!regionKeyEnv && !ociRegionNameFromEnv) {
@@ -52,7 +58,7 @@ if (ocirUser && ocirToken) {
     console.log("Builds will complete but push will be skipped.");
   }
 } else {
-  console.log("OCIR_USER/OCIR_TOKEN not set; skipping push to registry.");
+  console.log("Push disabled or OCIR credentials not set; skipping push to registry.");
 }
 
 const { a, _ } = argv;
@@ -119,7 +125,7 @@ async function releaseNpm(service) {
     }
   } catch (error) {
     console.error(`Error tagging or pushing ${service} image:`, error.message);
-    throw error;
+    console.log(`Built: ${chalk.yellow(localImage)}. Push failed; continuing without push.`);
   }
 }
 
@@ -149,6 +155,6 @@ async function releaseGradle(service) {
     }
   } catch (error) {
     console.error(`Error tagging or pushing ${service} image:`, error.message);
-    throw error;
+    console.log(`Built: ${chalk.yellow(localImage)}. Push failed; continuing without push.`);
   }
 }

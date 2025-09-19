@@ -75,7 +75,9 @@ export async function tagImage(local, remote) {
     console.timeEnd(`[tag] ${local} -> ${remote}`);
   } catch (error) {
     console.timeEnd(`[tag] ${local} -> ${remote}`);
-    exitWithError(error.stderr || error.message || String(error));
+    const msg = error.stderr || error.message || String(error);
+    console.error(msg);
+    throw new Error(msg);
   }
 }
 
@@ -87,7 +89,9 @@ export async function pushImage(remote) {
     console.timeEnd(`[push] ${remote}`);
   } catch (error) {
     console.timeEnd(`[push] ${remote}`);
-    exitWithError(error.stderr || error.message || String(error));
+    const msg = error.stderr || error.message || String(error);
+    console.error(msg);
+    throw new Error(msg);
   }
 }
 
