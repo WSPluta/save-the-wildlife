@@ -13,39 +13,42 @@ if (process.env.DEBUG_BUILD === '1' || process.env.DEBUG_BUILD === 'true') {
 
 checkPodmanMachineRunning();
 
-const namespaceEnv = process.env.NAMESPACE || process.env.namespace;
-const namespace = namespaceEnv || (await getNamespace());
-const ociRegionNameFromEnv = process.env.OCI_REGION;
-const regionKeyEnv = process.env.REGION_KEY || process.env.region_key;
-
-if (!ociRegionNameFromEnv && !regionKeyEnv) {
-  console.error("Error: OCI_REGION or REGION_KEY must be set");
-  process.exit(1);
-}
-
-let regionKey = regionKeyEnv || (await getRegionByName(ociRegionNameFromEnv))['region-key'].toLowerCase();
-console.log({ namespace, regionKey });
-
-// Registry setup (OCIR)
+/**
+ * Registry setup (OCIR)
+ * Note: Local builds do NOT require OCI env. We only resolve OCI data if we have credentials to push.
+ */
 const project = "save-the-wildlife";
-const ocirUrl = `${regionKey}.ocir.io`;
+let ocirLoginDone = false;
+let namespace;
+let regionKey;
+let ocirUrl;
+
 const ocirUser = process.env.OCIR_USER || process.env.OCIR_USERNAME;
 const ocirToken = process.env.OCIR_TOKEN || process.env.OCIR_AUTH_TOKEN;
-let ocirLoginDone = false;
+const namespaceEnv = process.env.TENANCY_NAMESPACE || process.env.NAMESPACE || process.env.namespace;
+const ociRegionNameFromEnv = process.env.OCI_REGION;
+const regionKeyEnv = process.env.REGION_KEY || process.env.region_key;
 
 console.log("OCIR Credentials Check:");
 console.log(`OCIR_USER: ${ocirUser ? 'set' : 'not set'}`);
 console.log(`OCIR_TOKEN: ${ocirToken ? 'token present' : 'not set'}`);
 console.log(`TENANCY_NAMESPACE: ${process.env.TENANCY_NAMESPACE}`);
-console.log(`NAMESPACE: ${namespace}`);
+console.log(`NAMESPACE: ${namespaceEnv || '(auto)'}`);
 
 if (ocirUser && ocirToken) {
   try {
+    namespace = namespaceEnv || (await getNamespace());
+    if (!regionKeyEnv && !ociRegionNameFromEnv) {
+      throw new Error("OCI_REGION or REGION_KEY must be set to push images to OCIR");
+    }
+    regionKey = (regionKeyEnv || (await getRegionByName(ociRegionNameFromEnv))['region-key']).toLowerCase();
+    ocirUrl = `${regionKey}.ocir.io`;
+    console.log({ namespace, regionKey });
     await containerLogin(process.env.TENANCY_NAMESPACE || namespace, ocirUser, ocirToken, ocirUrl);
     ocirLoginDone = true;
     console.log("OCIR login successful");
   } catch (e) {
-    console.error("OCIR login failed:", e.message);
+    console.error("OCIR login failed or config missing:", e.message);
     console.log("Builds will complete but push will be skipped.");
   }
 } else {
@@ -104,14 +107,14 @@ async function releaseNpm(service) {
 
   // Tag and push to OCIR if logged in
   const localImage = `${service}:${currentVersion}`;
-  const remoteImage = `${ocirUrl}/${namespace}/${project}/${service}:${currentVersion}`;
   try {
-    if (ocirLoginDone) {
+    if (ocirLoginDone && ocirUrl && namespace) {
+      const remoteImage = `${ocirUrl}/${namespace}/${project}/${service}:${currentVersion}`;
       await tagImage(localImage, remoteImage);
       await pushImage(remoteImage);
       console.log(`Pushed: ${chalk.yellow(remoteImage)}`);
     } else {
-      console.log(`Built: ${chalk.yellow(localImage)}. Skipped push. Set OCIR_USER/OCIR_TOKEN to push ${remoteImage}`);
+      console.log(`Built: ${chalk.yellow(localImage)}. Skipped push (no OCIR credentials).`);
     }
   } catch (error) {
     console.error(`Error tagging or pushing ${service} image:`, error.message);
@@ -133,14 +136,14 @@ async function releaseGradle(service) {
 
   // Tag and push to OCIR if logged in
   const localImage = `${service}:${currentVersion}`;
-  const remoteImage = `${ocirUrl}/${namespace}/${project}/${service}:${currentVersion}`;
   try {
-    if (ocirLoginDone) {
+    if (ocirLoginDone && ocirUrl && namespace) {
+      const remoteImage = `${ocirUrl}/${namespace}/${project}/${service}:${currentVersion}`;
       await tagImage(localImage, remoteImage);
       await pushImage(remoteImage);
       console.log(`Pushed: ${chalk.yellow(remoteImage)}`);
     } else {
-      console.log(`Built: ${chalk.yellow(localImage)}. Skipped push. Set OCIR_USER/OCIR_TOKEN to push ${remoteImage}`);
+      console.log(`Built: ${chalk.yellow(localImage)}. Skipped push (no OCIR credentials).`);
     }
   } catch (error) {
     console.error(`Error tagging or pushing ${service} image:`, error.message);
