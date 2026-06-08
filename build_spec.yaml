@@ -39,6 +39,7 @@ steps:
       fi
 
       npm -g config set fund false audit false || true
+      npm ci --include=dev
       npm i -g zx@7 || true
 
       echo "=== TOOL VERSIONS ==="

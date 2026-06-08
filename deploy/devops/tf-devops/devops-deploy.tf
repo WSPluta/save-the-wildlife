@@ -36,7 +36,7 @@ resource "oci_devops_deploy_stage" "shellstage_ci_deploy_stage" {
 }
 
 resource "oci_devops_deploy_artifact" "command_spec_deploy" {
-  argument_substitution_mode = "SUBSTITUTE_PLACEHOLDERS"
+  argument_substitution_mode = "NONE"
   deploy_artifact_type       = "COMMAND_SPEC"
   display_name               = "Commnad spec deploy for ${random_string.deploy_id.result}"
   project_id                 = oci_devops_project.devops_project.id

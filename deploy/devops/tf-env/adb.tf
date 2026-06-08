@@ -7,7 +7,8 @@ resource "oci_database_autonomous_database" "adb" {
   db_name        = local.adb_name
 
   admin_password           = random_password.adb_admin_password.result
-  cpu_core_count           = 1
+  compute_count            = 2
+  compute_model            = "ECPU"
   data_storage_size_in_tbs = 1
   db_workload              = "OLTP"
   display_name             = local.adb_name
