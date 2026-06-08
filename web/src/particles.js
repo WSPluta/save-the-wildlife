@@ -174,55 +174,89 @@ export function createEmitters(scene, scale = 1.0) {
     collision.update(dt);
   }
 
+  // Small Vector3 pool to avoid per-emission allocations.
+  const vecPool = [];
+  const VEC_POOL_MAX = 256;
+  function v3(x = 0, y = 0, z = 0) {
+    const v = vecPool.pop() || new THREE.Vector3();
+    return v.set(x, y, z);
+  }
+  function recycleVec(v) {
+    if (!v || vecPool.length >= VEC_POOL_MAX) return;
+    vecPool.push(v);
+  }
+
   // High-level helpers
 
   function emitEngineAt(position, direction, intensity = 3) {
     // Emit a few particles per frame behind the boat (reduced)
-    const backDir = new THREE.Vector3().copy(direction).multiplyScalar(-1);
+    const backDir = v3(direction.x, direction.y, direction.z).multiplyScalar(-1);
     const baseVel = backDir.multiplyScalar(0.7);
     const n = Math.min(3, Math.max(1, Math.floor(intensity))); // 1..3
     for (let i = 0; i < n; i++) {
-      const jitter = new THREE.Vector3(
+      const jitter = v3(
         (Math.random() - 0.5) * 0.3,
         (Math.random() - 0.5) * 0.15,
         (Math.random() - 0.5) * 0.3
       );
-      const vel = new THREE.Vector3().copy(baseVel).add(jitter);
-      const p = new THREE.Vector3(
+      const vel = v3(baseVel.x, baseVel.y, baseVel.z).add(jitter);
+      const p = v3(
         position.x + (Math.random() - 0.5) * 0.2,
         position.y + 0.05,
         position.z + (Math.random() - 0.5) * 0.2
       );
       engine.emit(p, vel);
+      recycleVec(jitter);
+      recycleVec(vel);
+      recycleVec(p);
     }
+    recycleVec(backDir);
+    recycleVec(baseVel);
   }
 
   function triggerSplash(position, amount = 2) {
     for (let i = 0; i < amount; i++) {
-      const vel = new THREE.Vector3(
+      const vel = v3(
         (Math.random() - 0.5) * 0.6,
         Math.random() * 0.8 + 0.15,
         (Math.random() - 0.5) * 0.6
       );
-      const p = new THREE.Vector3(position.x, position.y, position.z);
+      const p = v3(position.x, position.y, position.z);
       splash.emit(p, vel);
+      recycleVec(vel);
+      recycleVec(p);
     }
   }
 
   function triggerCollision(position, amount = 12) {
     for (let i = 0; i < amount; i++) {
-      const vel = new THREE.Vector3(
+      const vel = v3(
         (Math.random() - 0.5) * 2.0,
         Math.random() * 2.0,
         (Math.random() - 0.5) * 2.0
       );
-      const p = new THREE.Vector3(
+      const p = v3(
         position.x,
         position.y + 0.2,
         position.z
       );
       collision.emit(p, vel);
+      recycleVec(vel);
+      recycleVec(p);
     }
+  }
+
+  function metrics() {
+    const cap = engine.maxCount + splash.maxCount + collision.maxCount;
+    const alive = engine.aliveCount + splash.aliveCount + collision.aliveCount;
+    // position+velocity+age+alive ~= 29 bytes/particle rounded up
+    const memoryEstimateBytes = Math.round(cap * 32);
+    return {
+      capacity: cap,
+      alive,
+      vectorPoolFree: vecPool.length,
+      memoryEstimateBytes,
+    };
   }
 
   function dispose() {
@@ -236,6 +270,7 @@ export function createEmitters(scene, scale = 1.0) {
     splash: { trigger: triggerSplash },
     collision: { trigger: triggerCollision },
     update,
-    dispose
+    dispose,
+    metrics
   };
 }

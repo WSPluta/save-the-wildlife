@@ -19,11 +19,13 @@ class ObjectPool {
     // Basic logger toggle
     this._debug = false;
 
+    // Performance monitoring
+    this._recycleCount = 0;
+    this._recycleTimes = []; // Sample recycle durations
+    this._lastResizeAt = Date.now();
+
     // Preallocate
-    for (let i = 0; i < this.initialSize; i++) {
-      const obj = this._create();
-      if (obj) this.pool.push(obj);
-    }
+    this.resize(this.initialSize, this.maxSize);
   }
 
   setDebug(enabled) {
@@ -52,6 +54,7 @@ class ObjectPool {
 
   // Get an object from the pool or create if capacity remains
   getObject() {
+    const start = performance.now();
     let obj = null;
     if (this.pool.length > 0) {
       obj = this.pool.pop();
@@ -70,12 +73,19 @@ class ObjectPool {
     } catch {
       /* ignore */
     }
+
+    const duration = performance.now() - start;
+    if (duration > 1) { // Log slow gets (>1ms)
+      this._log("Slow getObject", { duration, poolSize: this.pool.length });
+    }
     return obj;
   }
 
   // Return an object to the pool
   returnObject(obj) {
     if (!obj) return;
+
+    const start = performance.now();
 
     // Remove from in-use diagnostics
     try {
@@ -91,16 +101,55 @@ class ObjectPool {
       return;
     }
     this.pool.push(obj);
+
+    this._recycleCount++;
+    const duration = performance.now() - start;
+    if (this._recycleTimes.length < 100) { // Keep recent samples
+      this._recycleTimes.push(duration);
+    } else {
+      this._recycleTimes.shift();
+      this._recycleTimes.push(duration);
+    }
+
+    if (duration > 1) { // Log slow returns (>1ms)
+      this._log("Slow returnObject", { duration, poolSize: this.pool.length });
+    }
+  }
+
+  resize(newInitialSize, newMaxSize) {
+    const now = Date.now();
+    newInitialSize = Math.max(0, newInitialSize | 0);
+    newMaxSize = Math.max(newInitialSize, newMaxSize | 0);
+
+    if (newMaxSize < this.maxSize) {
+      // Shrink: Trim excess from pool
+      while (this.pool.length > newInitialSize) {
+        this.pool.pop();
+      }
+      // Note: Cannot shrink createdCount; objects in-use remain until returned
+      this._log("Pool shrunk", { oldMax: this.maxSize, newMax: newMaxSize, oldInitial: this.initialSize, newInitial: newInitialSize });
+    } else if (newInitialSize > this.initialSize || newMaxSize > this.maxSize) {
+      // Grow: Preallocate up to newInitialSize if capacity allows
+      const toAdd = Math.min(newInitialSize - this.pool.length, newMaxSize - this.createdCount);
+      for (let i = 0; i < toAdd; i++) {
+        const obj = this._create();
+        if (obj) this.pool.push(obj);
+      }
+      this._log("Pool grown", { oldMax: this.maxSize, newMax: newMaxSize, oldInitial: this.initialSize, newInitial: newInitialSize, added: toAdd });
+    }
+
+    this.initialSize = newInitialSize;
+    this.maxSize = newMaxSize;
+    this._lastResizeAt = now;
   }
 
   reset() {
     this.pool.length = 0;
     this.createdCount = 0;
     this._inUse.clear();
-    for (let i = 0; i < this.initialSize; i++) {
-      const obj = this._create();
-      if (obj) this.pool.push(obj);
-    }
+    this._recycleCount = 0;
+    this._recycleTimes = [];
+    this.resize(this.initialSize, this.maxSize);
   }
 
   // Helpers / diagnostics
@@ -118,6 +167,20 @@ class ObjectPool {
 
   isExhausted() {
     return this.createdCount >= this.maxSize && this.pool.length === 0;
+  }
+
+  getMetrics() {
+    const avgRecycleTime = this._recycleTimes.length > 0 ? this._recycleTimes.reduce((a, b) => a + b, 0) / this._recycleTimes.length : 0;
+    return {
+      poolSize: this.size(),
+      inUse: this.inUseCount(),
+      totalCreated: this.createdCount,
+      maxSize: this.maxSize,
+      recycleCount: this._recycleCount,
+      avgRecycleTime: avgRecycleTime.toFixed(3),
+      lastResize: Date.now() - this._lastResizeAt,
+      exhausted: this.isExhausted(),
+    };
   }
 
   _keyFor(obj) {

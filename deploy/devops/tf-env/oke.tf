@@ -121,4 +121,3 @@ resource "null_resource" "add_sec_rules_lb" {
 
   depends_on = [module.oke]
 }
-

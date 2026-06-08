@@ -1,14 +1,15 @@
 #!/usr/bin/env zx
 
-import fs from 'fs/promises';
+import fs from "node:fs/promises";
 import { createSSHKeyPair } from "./lib/crypto.mjs";
 import {
+  getOciConfigValue,
   getNamespace,
   getRegions,
   getTenancyId,
   searchCompartmentIdByName,
 } from "./lib/oci.mjs";
-import { setVariableFromEnvOrPrompt, exitWithError } from "./lib/utils.mjs";
+import { setVariableFromEnvOrPrompt, exitWithError, printRegionNames } from "./lib/utils.mjs";
 
 $.verbose = false;
 
@@ -43,33 +44,157 @@ console.log("\tnpx zx scripts/tfvars.mjs ci");
 
 process.exit(0);
 
+async function setVariableFromEnvDefaultOrPrompt(envKey, questionText, defaultValue = "", options = {}) {
+  const { printChoices, sensitive = false, source = "detected default" } = options;
+  if (process.env[envKey]) {
+    console.log(`${chalk.green("[ok]")} ${envKey} from environment`);
+    return process.env[envKey];
+  }
+  if (defaultValue) {
+    console.log(`${chalk.green("[ok]")} ${envKey} from ${source}`);
+    return defaultValue;
+  }
+  if (printChoices) {
+    await printChoices();
+  }
+  return question(`${questionText}${sensitive ? "" : ""}: `);
+}
+
+async function defaultRegionName(regions) {
+  const configuredRegion = await getOciConfigValue("region");
+  if (!configuredRegion) {
+    return "";
+  }
+  return regions.some((region) => region.name === configuredRegion)
+    ? configuredRegion
+    : "";
+}
+
+async function defaultCompartmentId() {
+  return process.env.DEVOPS_COMPARTMENT_OCID ||
+    process.env.OCI_COMPARTMENT_OCID ||
+    await getOciConfigValue("compartment_id") ||
+    await getOciConfigValue("compartment_ocid");
+}
+
+async function defaultCompartmentName() {
+  const configuredName = await getOciConfigValue("compartment_name") || await getOciConfigValue("compartment");
+  if (configuredName && !configuredName.startsWith("ocid1.")) {
+    return configuredName;
+  }
+
+  const email = await defaultOciUserEmail();
+  const localPart = email.split("@")[0] || "";
+  const parts = localPart.split(/[._-]+/).filter(Boolean);
+  if (parts.length < 2) {
+    return "";
+  }
+
+  const firstName = titleCase(parts[0]);
+  const lastInitial = parts[1].slice(0, 1).toUpperCase();
+  return findActiveCompartmentName([`${firstName}_${lastInitial}`]);
+}
+
+async function findActiveCompartmentName(candidates) {
+  for (const candidate of candidates.filter(Boolean)) {
+    try {
+      const { stdout } = await $`oci iam compartment list --compartment-id-in-subtree true --name ${candidate}`;
+      const { data } = JSON.parse(stdout.trim());
+      if (data.some((compartment) => compartment.name === candidate && compartment["lifecycle-state"] === "ACTIVE")) {
+        return candidate;
+      }
+    } catch (_) {
+      // Keep probing other candidate names.
+    }
+  }
+  return "";
+}
+
+async function defaultOciUserEmail() {
+  const userId = process.env.OCI_CS_USER_OCID ||
+    process.env.OCI_USER_OCID ||
+    await getOciConfigValue("user");
+  if (!userId) {
+    return "";
+  }
+  try {
+    const { stdout } = await $`oci iam user get --user-id ${userId}`;
+    const { data } = JSON.parse(stdout.trim());
+    if (data.email) {
+      return data.email;
+    }
+    const userName = data.name || "";
+    const nameCandidate = userName.includes("/") ? userName.split("/").pop() : userName;
+    return nameCandidate.includes("@") ? nameCandidate : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+async function defaultGithubUrl() {
+  try {
+    const { stdout } = await $`git remote get-url origin`;
+    return stdout.trim().replace(/\.git$/, "");
+  } catch (_) {
+    return "";
+  }
+}
+
+async function defaultGithubToken() {
+  try {
+    await which("gh");
+    const { stdout } = await $`gh auth token`;
+    return stdout.trim();
+  } catch (_) {
+    return "";
+  }
+}
+
+function titleCase(value) {
+  return value.slice(0, 1).toUpperCase() + value.slice(1).toLowerCase();
+}
+
 async function envTFvars() {
   const tenancyId = await getTenancyId();
 
   const regions = await getRegions();
-  const regionName = await setVariableFromEnvOrPrompt(
+  const regionName = await setVariableFromEnvDefaultOrPrompt(
     "OCI_REGION",
     "OCI Region name",
-    async () => printRegionNames(regions)
+    await defaultRegionName(regions),
+    { printChoices: async () => printRegionNames(regions), source: "OCI config" }
   );
 
-  const compartmentName = await setVariableFromEnvOrPrompt(
-    "DEVOPS_COMPARTMENT_NAME",
-    "DevOps Compartment Name (root)"
-  );
+  const compartmentIdDefault = await defaultCompartmentId();
+  let compartmentId = compartmentIdDefault;
 
-  const compartmentId = await searchCompartmentIdByName(
-    compartmentName || "root"
-  );
+  if (compartmentId) {
+    console.log(`${chalk.green("[ok]")} DEVOPS_COMPARTMENT_OCID from OCI config/env`);
+  } else {
+    const compartmentName = await setVariableFromEnvDefaultOrPrompt(
+      "DEVOPS_COMPARTMENT_NAME",
+      "DevOps Compartment Name (root)",
+      await defaultCompartmentName(),
+      { source: "OCI user profile" }
+    );
 
-  const onsEmail = await setVariableFromEnvOrPrompt(
+    compartmentId = await searchCompartmentIdByName(
+      compartmentName || "root"
+    );
+  }
+
+  const onsEmail = await setVariableFromEnvDefaultOrPrompt(
     "ONS_EMAIL",
-    "Oracle Notification Service (ONS) email"
+    "Oracle Notification Service (ONS) email",
+    await defaultOciUserEmail(),
+    { source: "OCI user profile" }
   );
 
-  const githubToken = await setVariableFromEnvOrPrompt(
+  const githubToken = await setVariableFromEnvDefaultOrPrompt(
     "GITHUB_TOKEN",
-    "GitHub Token"
+    "GitHub Token",
+    await defaultGithubToken(),
+    { sensitive: true, source: "GitHub CLI" }
   );
 
   try {
@@ -98,10 +223,11 @@ async function devopsTFvars() {
   const namespace = await getNamespace();
 
   const regions = await getRegions();
-  const regionName = await setVariableFromEnvOrPrompt(
+  const regionName = await setVariableFromEnvDefaultOrPrompt(
     "OCI_REGION",
     "OCI Region name",
-    async () => printRegionNames(regions)
+    await defaultRegionName(regions),
+    { printChoices: async () => printRegionNames(regions), source: "OCI config" }
   );
 
   await cd("deploy/devops/tf-env");
@@ -135,9 +261,11 @@ async function devopsTFvars() {
 
   console.log(`Environment deployment id: ${deploy_id}`);
 
-  const githubURLParam = await setVariableFromEnvOrPrompt(
+  const githubURLParam = await setVariableFromEnvDefaultOrPrompt(
     "GITHUB_URL",
-    "GitHub URL"
+    "GitHub URL",
+    await defaultGithubUrl(),
+    { source: "git origin remote" }
   );
 
   const githubURL = githubURLParam.endsWith(".git")
@@ -146,21 +274,9 @@ async function devopsTFvars() {
 
   const githubUser = githubURL.split("/").reverse()[1];
 
-  const tenancyNamespace = namespace; // Tenancy namespace is typically the same as namespace
-
-  // Fetch OCIR token from vault secret instead of prompting
-  let ocirToken;
-  try {
-    const { stdout } = await $`oci secrets secret-bundle get --secret-id ${userAuthTokenId} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d`;
-    ocirToken = stdout.trim();
-    console.log("Successfully fetched OCIR token from vault");
-  } catch (error) {
-    console.log("Could not fetch OCIR token from vault, falling back to manual input");
-    ocirToken = await setVariableFromEnvOrPrompt(
-      "OCIR_TOKEN",
-      "OCIR Authentication Token"
-    );
-  }
+  const pafImageRepository = process.env.PAF_IMAGE_REPOSITORY || "AUTO";
+  const pafVersion = process.env.PAF_VERSION || "latest";
+  const genaiModelId = process.env.OCI_GENAI_MODEL_ID || "cohere.command-r-08-2024";
 
   // Create the terraform.tfvars file using a safer approach
   try {
@@ -183,8 +299,9 @@ async function devopsTFvars() {
       .replace(/ADB_SERVICE/g, adbService)
       .replace(/ADB_OCID/g, adbId)
       .replace(/REDIS_PASSWORD_OCID/g, redisPasswordId)
-      .replace(/TENANCY_NAMESPACE/g, tenancyNamespace)
-      .replace(/OCIR_TOKEN/g, ocirToken)
+      .replace(/PAF_IMAGE_REPOSITORY/g, pafImageRepository)
+      .replace(/PAF_VERSION/g, pafVersion)
+      .replace(/OCI_GENAI_MODEL_ID/g, genaiModelId)
       .replace(/GITHUB_REPOSITORY_URL/g, githubURL)
       .replace(/GITHUB_USER/g, githubUser);
 

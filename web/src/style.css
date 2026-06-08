@@ -29,7 +29,7 @@ body
     height: 100vh;
     font-family: 'Poppins';
     overflow: hidden;
-    background-color: #ffffff;
+    background-color: #0b1a24;
 }
 
 .label {
@@ -66,14 +66,13 @@ body
 	align-items: center;
 	justify-content: center;
 	flex-direction: column;
-	background: rgba(0,0,0,0.7);
+	background: rgba(5, 12, 18, 0.72);
 }
 
 	#overlay button {
-		background: tomato;
-		border: 0;
-		border: 1px solid rgb(255, 255, 255);
-		border-radius: 4px;
+		background: #1d6f8a;
+		border: 1px solid rgba(255, 255, 255, 0.5);
+		border-radius: 6px;
 		color: #ffffff;
 		padding: 12px 18px;
 		text-transform: uppercase;
@@ -156,6 +155,82 @@ body
     margin-top: 10px;
     font-size: 24px;
     font-weight: bold;
+}
+
+.touch-joystick {
+    position: fixed;
+    left: max(18px, env(safe-area-inset-left));
+    bottom: max(18px, env(safe-area-inset-bottom));
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    display: none;
+    z-index: 5;
+    touch-action: none;
+    pointer-events: auto;
+    border: 1px solid rgba(255, 255, 255, 0.38);
+    background: rgba(5, 18, 26, 0.44);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.touch-joystick::before,
+.touch-joystick::after {
+    content: "";
+    position: absolute;
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.touch-joystick::before {
+    left: 50%;
+    top: 14px;
+    bottom: 14px;
+    width: 1px;
+}
+
+.touch-joystick::after {
+    top: 50%;
+    left: 14px;
+    right: 14px;
+    height: 1px;
+}
+
+.touch-joystick-knob {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(255, 255, 255, 0.82);
+    border: 2px solid rgba(9, 82, 105, 0.85);
+    box-shadow: inset 0 0 0 7px rgba(29, 111, 138, 0.22);
+}
+
+.touch-joystick.active .touch-joystick-knob {
+    background: rgba(239, 252, 255, 0.95);
+}
+
+.results-commentary {
+    max-width: min(520px, 78vw);
+    margin-top: 10px;
+    color: #d9f7ff;
+    line-height: 1.35;
+    font-size: 15px;
+}
+
+@media (pointer: coarse), (max-width: 780px) {
+    body.phase-gameplay .touch-joystick {
+        display: block;
+    }
+
+    .hud-right {
+        gap: 4px;
+    }
+
+    .hud-right .btn {
+        padding: 8px 9px;
+    }
 }
 
 #restart-btn {
@@ -595,12 +670,217 @@ body {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
-#screen-lobby {
-  background: var(--glass);
+#screen-lobby.lobby-sheet {
+  align-items: stretch;
+  justify-content: flex-start;
+  width: min(760px, calc(100vw - 28px));
+  max-height: calc(100dvh - 88px);
+  box-sizing: border-box;
+  overflow-y: auto;
+  background: rgba(8, 25, 40, 0.78);
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
+  border-radius: 12px;
   box-shadow: var(--shadow);
-  padding: 16px;
+  padding: 12px;
+  gap: 10px;
+  color: var(--text);
+}
+
+#screen-lobby button,
+#screen-lobby input {
+  margin: 0;
+}
+
+#screen-lobby .btn {
+  min-height: 44px;
+  padding: 9px 12px;
+}
+
+.lobby-launch {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.05);
+}
+
+.lobby-title-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.lobby-title-row h2 {
+  color: #ffffff;
+  font-size: 22px;
+  line-height: 1.05;
+  margin: 0 0 6px;
+}
+
+.lobby-start-button {
+  min-width: 144px;
+  min-height: 48px;
+  font-size: 15px;
+}
+
+.lobby-status {
+  min-height: 20px;
+  color: #d8f3fb;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.lobby-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.invite-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.invite-row label {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.invite-row input,
+.chat-row input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.lobby-sections {
+  display: grid;
+  gap: 8px;
+}
+
+.lobby-detail {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.045);
+  overflow: hidden;
+}
+
+.lobby-detail > summary {
+  cursor: pointer;
+  color: #ffffff;
+  font-weight: 700;
+  padding: 10px 12px;
+  list-style-position: inside;
+}
+
+.lobby-detail[open] > summary {
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+}
+
+.lobby-detail > :not(summary) {
+  margin: 10px 12px;
+}
+
+#screen-lobby #waiting-list,
+#screen-lobby #rooms-list {
+  margin: 8px 12px 12px;
+  padding: 0;
+  list-style: none;
+}
+
+#screen-lobby #waiting-list li,
+#screen-lobby #rooms-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+#screen-lobby #rooms-default {
+  display: block;
+  margin: 10px 12px 4px;
+}
+
+#screen-lobby #games-container {
+  display: block;
+}
+
+#screen-lobby #playerTable {
+  font-size: 14px;
+  box-shadow: none;
+}
+
+#screen-lobby #playerTable th,
+#screen-lobby #playerTable td {
+  padding: 8px;
+}
+
+#chat-log {
+  height: 112px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.35);
+  margin-bottom: 8px;
+}
+
+.chat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+body.phase-lobby #monitor-panel {
+  display: none !important;
+}
+
+body.phase-lobby #hud-compact {
+  display: none !important;
+}
+
+@media (max-width: 720px) {
+  #screen-lobby.lobby-sheet {
+    width: min(430px, calc(100vw - 20px));
+    max-height: calc(100dvh - 28px);
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .lobby-title-row {
+    grid-template-columns: 1fr;
+  }
+
+  .lobby-start-button {
+    width: 100%;
+  }
+
+  .lobby-actions {
+    justify-content: stretch;
+  }
+
+  .lobby-actions .btn {
+    flex: 1;
+  }
+
+  .invite-row {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-row {
+    grid-template-columns: 1fr;
+  }
+
+  #chat-log {
+    height: 96px;
+  }
 }
 
 /* Buttons */

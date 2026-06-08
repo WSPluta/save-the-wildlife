@@ -4,6 +4,7 @@ bases:
   - "../../base/ws-server"
   - "../../base/score"
   - "../../base/replay"
+  - "../../base/private-agent-factory"
 
 patchesStrategicMerge:
   - "patch_server_replicas.yaml"
@@ -21,3 +22,6 @@ images:
 - name: replay
   newName: REGION_KEY.ocir.io/NAMESPACE/save-the-wildlife/replay
   newTag: REPLAY_VERSION
+- name: private-agent-factory
+  newName: PAF_IMAGE_REPOSITORY
+  newTag: PAF_VERSION

@@ -3,6 +3,158 @@ import { io } from "socket.io-client";
 let socket;
 let savedInit = null;
 let DEBUG_WORKER = false;
+let networkStatsInterval = null;
+let networkPingInterval = null;
+let traceBatchTimer = null;
+let queuedTrace = null;
+let currentEngine = null;
+let enginePacketListener = null;
+let enginePacketCreateListener = null;
+
+const networkStats = {
+  upBytesWindow: 0,
+  downBytesWindow: 0,
+  upKbps: 0,
+  downKbps: 0,
+  rttMs: null,
+  quality: "unknown",
+  pingsSent: 0,
+  pingsOk: 0,
+  pingsTimeout: 0,
+};
+
+function estimateBytes(payload) {
+  if (payload == null) return 0;
+  try {
+    if (typeof payload === "string") return new TextEncoder().encode(payload).length;
+    return new TextEncoder().encode(JSON.stringify(payload)).length;
+  } catch (_) {
+    return 0;
+  }
+}
+
+function qualityFromStats(rttMs, lossRate) {
+  if (!Number.isFinite(rttMs)) return "unknown";
+  if (lossRate >= 0.2 || rttMs > 250) return "poor";
+  if (lossRate >= 0.08 || rttMs > 140) return "fair";
+  return "good";
+}
+
+function attachEnginePacketTracking() {
+  try {
+    const engine = socket && socket.io ? socket.io.engine : null;
+    if (!engine || engine === currentEngine) return;
+    detachEnginePacketTracking();
+    currentEngine = engine;
+    enginePacketListener = (packet) => {
+      networkStats.downBytesWindow += estimateBytes(packet && packet.data);
+    };
+    enginePacketCreateListener = (packet) => {
+      networkStats.upBytesWindow += estimateBytes(packet && packet.data);
+    };
+    engine.on("packet", enginePacketListener);
+    engine.on("packetCreate", enginePacketCreateListener);
+  } catch (_) {}
+}
+
+function detachEnginePacketTracking() {
+  try {
+    if (currentEngine && enginePacketListener) {
+      currentEngine.off("packet", enginePacketListener);
+    }
+    if (currentEngine && enginePacketCreateListener) {
+      currentEngine.off("packetCreate", enginePacketCreateListener);
+    }
+  } catch (_) {}
+  currentEngine = null;
+  enginePacketListener = null;
+  enginePacketCreateListener = null;
+}
+
+function flushTraceBatch() {
+  if (!socket || !queuedTrace) return;
+  try {
+    socket.emit("player.trace.change", queuedTrace);
+  } catch (_) {}
+  queuedTrace = null;
+}
+
+function queueTrace(trace) {
+  queuedTrace = {
+    c: 1,
+    i: trace && trace.id ? trace.id : null,
+    x: Math.round((Number(trace && trace.x) || 0) * 1000),
+    z: Math.round((Number(trace && trace.z) || 0) * 1000),
+    r: Math.round((Number(trace && trace.rotY) || 0) * 10000),
+  };
+  if (traceBatchTimer) return;
+  traceBatchTimer = setTimeout(() => {
+    traceBatchTimer = null;
+    flushTraceBatch();
+  }, 50);
+}
+
+function startNetworkMonitoring() {
+  stopNetworkMonitoring();
+  attachEnginePacketTracking();
+
+  networkStatsInterval = setInterval(() => {
+    const sent = Math.max(1, networkStats.pingsSent);
+    const lossRate = networkStats.pingsTimeout / sent;
+    networkStats.upKbps = Number(((networkStats.upBytesWindow * 8) / 1024).toFixed(2));
+    networkStats.downKbps = Number(((networkStats.downBytesWindow * 8) / 1024).toFixed(2));
+    networkStats.quality = qualityFromStats(networkStats.rttMs, lossRate);
+    postMessage({
+      type: "network.stats",
+      body: {
+        upKbps: networkStats.upKbps,
+        downKbps: networkStats.downKbps,
+        rttMs: networkStats.rttMs,
+        quality: networkStats.quality,
+        lossRate: Number(lossRate.toFixed(3)),
+      },
+    });
+    networkStats.upBytesWindow = 0;
+    networkStats.downBytesWindow = 0;
+  }, 1000);
+
+  networkPingInterval = setInterval(() => {
+    if (!socket || !socket.connected) return;
+    const startTs = Date.now();
+    networkStats.pingsSent++;
+    try {
+      socket.timeout(1500).emit("client.ping", { clientTs: startTs }, (err, res) => {
+        if (err) {
+          networkStats.pingsTimeout++;
+          return;
+        }
+        networkStats.pingsOk++;
+        const now = Date.now();
+        const measured = Number(res && res.serverTs) ? now - startTs : now - startTs;
+        networkStats.rttMs = Math.max(1, Math.round(measured));
+      });
+    } catch (_) {
+      networkStats.pingsTimeout++;
+    }
+  }, 2000);
+}
+
+function stopNetworkMonitoring() {
+  if (networkStatsInterval) {
+    clearInterval(networkStatsInterval);
+    networkStatsInterval = null;
+  }
+  if (networkPingInterval) {
+    clearInterval(networkPingInterval);
+    networkPingInterval = null;
+  }
+  if (traceBatchTimer) {
+    clearTimeout(traceBatchTimer);
+    traceBatchTimer = null;
+  }
+  flushTraceBatch();
+  detachEnginePacketTracking();
+}
 
 function init(wsURL, yourId, yourName, room, debugWorker = false) {
   DEBUG_WORKER = !!debugWorker;
@@ -23,7 +175,10 @@ function init(wsURL, yourId, yourName, room, debugWorker = false) {
   socket.io.on("reconnect_error", (error) => postMessage({ type: "error", body: `reconnect_error: ${error && error.message ? error.message : error}` }));
   socket.io.on("reconnect_failed", () => logger("reconnect_failed"));
   socket.io.on("reconnect", (attempt) => logger(`reconnect after #${attempt}`));
-  socket.io.on("open", () => logger("manager open"));
+  socket.io.on("open", () => {
+    logger("manager open");
+    attachEnginePacketTracking();
+  });
   socket.io.on("close", (reason) => logger(`manager close: ${reason}`));
   socket.io.on("error", (error) => postMessage({ type: "error", body: `manager error: ${error && error.message ? error.message : error}` }));
 
@@ -37,6 +192,7 @@ function init(wsURL, yourId, yourName, room, debugWorker = false) {
   socket.on("connect", () => {
     logger("connect");
     postMessage({ type: "connect" });
+    attachEnginePacketTracking();
     try {
       if (savedInit) {
         socket.emit("player.info.joining", { id: savedInit.yourId, name: savedInit.yourName, room: savedInit.room });
@@ -56,6 +212,10 @@ function init(wsURL, yourId, yourName, room, debugWorker = false) {
 
   socket.on("game.end", () => {
     postMessage({ type: "game.end" });
+  });
+
+  socket.on("commentary.ready", (data) => {
+    postMessage({ type: "commentary.ready", body: data });
   });
 
   socket.on("items.all", (data) => {
@@ -144,6 +304,7 @@ function init(wsURL, yourId, yourName, room, debugWorker = false) {
   socket.on("lobby.players", (data) => {
     postMessage({ type: "lobby.players", body: data });
   });
+  startNetworkMonitoring();
 }
 
 function generateCmdId() {
@@ -192,7 +353,7 @@ function emitWithAck(event, payload = {}, opts = {}) {
 onmessage = ({ data }) => {
   switch (data.type) {
     case "player.trace.change":
-      socket.emit("player.trace.change", data.body);
+      queueTrace(data.body);
       break;
     case "game.start":
       logger("game.start");
@@ -200,10 +361,18 @@ onmessage = ({ data }) => {
       break;
     case "close":
       logger("Socket closing");
+      stopNetworkMonitoring();
       socket.close();
       break;
     case "items.collision":
       socket.emit("items.collision", data.body);
+      break;
+    case "game.event":
+      socket.emit("game.event", data.body, (res) => {
+        if (res && res.commentary) {
+          postMessage({ type: "commentary.ready", body: res.commentary });
+        }
+      });
       break;
     case "player.input":
       // data.body: { id, seq, throttle, steer, brake }

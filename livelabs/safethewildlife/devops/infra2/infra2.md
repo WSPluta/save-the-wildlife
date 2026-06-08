@@ -20,6 +20,7 @@ In this lab, you are going to deploy OCI DevOps components that include:
 - DevOps Build Pipeline
 - DevOps Deployment Pipeline
 - DevOps Environment pointing to the Kubernetes Cluster
+- DevOps command-spec configuration for Oracle Private Agent Factory image/tag and OCI Generative AI model.
 - DevOps logs
 
 ### Prerequisites
@@ -32,6 +33,14 @@ In this lab, you are going to deploy OCI DevOps components that include:
 ## Task 1: Set up Terraform configuration file
 
 1. From the **Cloud Shell**, you should be on the directory `save-the-wildlife`, run this command.
+
+    If you are running the Oracle Private Agent Factory commentary demo, keep using this same DevOps infrastructure step. The defaults deploy the PAF image from this workshop's OCIR path and use the default OCI Generative AI model. To override those values, export them before running `tfvars.mjs`.
+
+    ```bash
+    <copy>export PAF_IMAGE_REPOSITORY=AUTO</copy>
+    <copy>export PAF_VERSION=latest</copy>
+    <copy>export OCI_GENAI_MODEL_ID=cohere.command-r-08-2024</copy>
+    ```
     
     ```bash
     <copy>npx zx scripts/tfvars.mjs devops</copy>
@@ -89,6 +98,7 @@ In this lab, you are going to deploy OCI DevOps components that include:
     >     - DevOps GitHub repository mirroring
     >     - DevOps Build Pipeline and its stages
     >     - DevOps Deployment Pipeline and its stages
+    >     - Oracle Private Agent Factory deployment configuration
     >     - Networking requirements.
     > <br>
     > <br>

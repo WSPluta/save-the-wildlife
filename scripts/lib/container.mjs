@@ -1,5 +1,6 @@
 #!/usr/bin/env zx
 //container.mjs
+import chalk from "chalk";
 import { exitWithError } from "./utils.mjs";
 
 export async function whichContainerEngine() {

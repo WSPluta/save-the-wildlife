@@ -158,8 +158,26 @@ start_web() {
 
 start_score() {
   echo "=== Starting Score (Spring Boot) on :$SCORE_PORT"
+  local profile="default"
+  local dbEnv=""
+  if [[ -f "$ROOT_DIR/.env.json" ]]; then
+    local useLocal=$(jq -r '.USE_LOCAL_DB // "false"' "$ROOT_DIR/.env.json" 2>/dev/null || echo "false")
+    if [[ "$useLocal" == "true" ]]; then
+      profile="local"
+      local host=$(jq -r '.ORACLE_DB_HOST // "localhost"' "$ROOT_DIR/.env.json" 2>/dev/null || echo "localhost")
+      local port=$(jq -r '.ORACLE_DB_PORT // "1521"' "$ROOT_DIR/.env.json" 2>/dev/null || echo "1521")
+      local name=$(jq -r '.ORACLE_DB_NAME // "FREEPDB1"' "$ROOT_DIR/.env.json" 2>/dev/null || echo "FREEPDB1")
+      local user=$(jq -r '.ORACLE_DB_USERNAME // "ADMIN"' "$ROOT_DIR/.env.json" 2>/dev/null || echo "ADMIN")
+      local pass=$(jq -r '.ORACLE_DB_PASSWORD // ""' "$ROOT_DIR/.env.json" 2>/dev/null || echo "")
+      dbEnv="ORACLE_DB_HOST='$host' ORACLE_DB_PORT='$port' ORACLE_DB_NAME='$name' ORACLE_DB_USERNAME='$user' ORACLE_DB_PASSWORD='$pass' "
+      echo "Using local Oracle DB with host $host:$port/$name"
+    else
+      echo "Using cloud ADB"
+    fi
+  fi
+  echo "Using Spring profile: $profile"
   # Spring Boot 2.x can accept server.port via system property or env
-  nohup bash -c "cd '$ROOT_DIR/score' && SERVER_PORT='$SCORE_PORT' ./gradlew bootRun" \
+  nohup bash -c "cd '$ROOT_DIR/score' && $dbEnv SERVER_PORT='$SCORE_PORT' SPRING_PROFILES_ACTIVE='$profile' ./gradlew bootRun" \
     > "$LOG_DIR/score.out.log" 2> "$LOG_DIR/score.err.log" &
 
   echo $! > "$LOG_DIR/score.pid"

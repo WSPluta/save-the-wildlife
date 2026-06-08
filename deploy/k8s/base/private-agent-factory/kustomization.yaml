@@ -1,0 +1,8 @@
+resources:
+  - private-agent-factory.yaml
+  - private-agent-factory-svc.yaml
+
+configMapGenerator:
+  - name: private-agent-factory-env
+    envs:
+      - application.env

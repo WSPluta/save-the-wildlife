@@ -1,0 +1,46 @@
+{
+  "generatedAt": "2026-03-29T16:31:00.908Z",
+  "assets": [
+    {
+      "path": "web/static/assets/waternormals.jpg",
+      "sizeBytes": 248813,
+      "size": "243.0KB",
+      "ext": "jpg"
+    },
+    {
+      "path": "web/static/assets/boat.gltf",
+      "sizeBytes": 136684,
+      "size": "133.5KB",
+      "ext": "gltf"
+    },
+    {
+      "path": "web/static/assets/waternormals.compressed.jpg",
+      "sizeBytes": 122581,
+      "size": "119.7KB",
+      "ext": "jpg"
+    },
+    {
+      "path": "web/static/assets/box.gltf",
+      "sizeBytes": 62088,
+      "size": "60.6KB",
+      "ext": "gltf"
+    },
+    {
+      "path": "web/static/assets/turtle.gltf",
+      "sizeBytes": 60641,
+      "size": "59.2KB",
+      "ext": "gltf"
+    }
+  ],
+  "recommendations": [
+    "Use glTF mesh compression (meshopt) and prune unused nodes/materials.",
+    "Convert heavy textures to WebP/AVIF and keep power-of-two sizes.",
+    "Run Draco only for large static meshes to avoid decode spikes.",
+    "Bake lightmaps for static props if lighting remains consistent."
+  ],
+  "pipelineExample": [
+    "npx @gltf-transform/cli optimize web/static/assets/boat.gltf web/static/assets/boat.optimized.glb --texture-compress webp --meshopt",
+    "npx @gltf-transform/cli optimize web/static/assets/turtle.gltf web/static/assets/turtle.optimized.glb --texture-compress webp --meshopt",
+    "npx @gltf-transform/cli optimize web/static/assets/box.gltf web/static/assets/box.optimized.glb --texture-compress webp --meshopt"
+  ]
+}

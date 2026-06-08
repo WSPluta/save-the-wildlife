@@ -1,0 +1,184 @@
+Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-web-game/SKILL.md) on this repo nd [todo.md](todo.md)
+
+- Reviewed todo.md and existing server/client/bot files.
+- Observed that core room lifecycle exists in server (`WAITING`/`STARTING`/`RUNNING`/`ENDED`, `admin.start`, `admin.end`, `startingGame`, `game.time`).
+- Observed `web/src/script.js` appears truncated (179 lines) and currently does not include full comms handling paths.
+- Next: patch concrete gaps for top todo items with minimal-risk changes and verify with tests + Playwright loop.
+
+- Implemented server lifecycle sync fix:
+  - Added shared `serverInfoPayload()` helper for consistent `server.info` payloads.
+  - Persisted `startingAt`/`startTime` fields in `roomTimers` transitions.
+  - Ensured per-room `admin.start` emits fresh `server.info` before `startingGame`.
+- Fixed bot manager runtime blockers in `bots/index.js`:
+  - Removed merge-marker artifact.
+  - Fixed `const` mutation bug in desired bot count.
+  - Reworked shutdown to disconnect manager and pooled bot sockets cleanly.
+- Runtime compatibility fixes for local validation loop:
+  - Updated Node ESM JSON import syntax in `server/server.js` to `with { type: "json" }` (Node 25 compatible).
+  - Hardened web dev-port parsing in `web/bundler/webpack.dev.js` to avoid invalid `devServer.port` when env is malformed.
+- Validation:
+  - `npm --prefix server run test:unit` passes (10/10).
+  - Ran Playwright loop via `$WEB_GAME_CLIENT` against local web server (`output/web-game/shot-0.png`, `shot-1.png`, `state-0.json`, `state-1.json`).
+  - Added minimal `window.render_game_to_text` and `window.advanceTime` hooks in `web/src/script.js` so automation can collect state.
+- Observed in screenshots/state: client remains in `WAITING` + `MAIN_MENU` with no active world objects, indicating broader client flow is still incomplete/truncated and needs a dedicated follow-up.
+- TODO next agent:
+  - Restore full client gameplay flow in `web/src/script.js` (worker init, socket message handling, room/game lifecycle transitions).
+  - Wire explicit UI text for waiting/start signals and verify `startingGame` transition in UI.
+  - Re-run Playwright loop with click-selector flow to move beyond menu and validate controls/state end-to-end.
+- User confirmed begin-game corruption.
+- Restored `web/src/script.js` from known-good commit `e1194a4` (file had been truncated to 179 lines).
+- Re-added automation hooks (`window.render_game_to_text`, `window.advanceTime`) after restore.
+- Verified start path with Playwright two-click scenario (Continue + Quick Match):
+  - Screenshots now show active gameplay scene (`output/web-game/shot-0.png`, `shot-1.png`).
+  - Text state transitions to RUNNING with timer decreasing and items present (`state-0.json`, `state-1.json`).
+- Added full-cycle validator script `scripts/dev_cycle_check.mjs` to cover:
+  - local unit/syntax checks,
+  - gameplay lifecycle checks via Playwright (RUNNING and return to WAITING),
+  - OCI prod deploy docs/terraform readiness checks,
+  - `oracle-db-skills-main` integrity checks.
+- Patched client lifecycle sync in `web/src/script.js`:
+  - reset waiting timer from authoritative `server.info.gameDuration`,
+  - explicit lobby status message: "Waiting for game..." on WAITING state.
+- Included `oracle-db-skills-main` in full-cycle readiness validation.
+- Added and stabilized `scripts/dev_cycle_check.mjs` (local tests + lifecycle Playwright + OCI prod docs checks + oracle-db-skills checks).
+- Fixed `web/src/util.js` room-id normalization edge case (`--123` vs `-123`) uncovered by web unit tests.
+- Updated `todo.md` top core gameplay lifecycle items to checked based on implemented/validated state.
+- Full-cycle run now passes; report at `output/dev-cycle/report.json`.
+- Phase B first slice started:
+  - Added frustum culling debug visualization toggle (`F4`) in `web/src/script.js`.
+  - Reduced culling allocations by reusing `Matrix4`/`Box3`/`Color` temporaries in render path.
+  - Added helper cleanup for culling debug overlays.
+- Re-ran full dev-cycle validation after perf slice; report remains green (`output/dev-cycle/report.json`).
+- Phase B network slice completed:
+  - Added client-side delta compression thresholds for `player.trace.change` payloads.
+  - Added `commsWorker` trace batching (50ms window) to reduce bursty socket traffic.
+  - Added bandwidth monitoring and RTT/loss-based network quality detection in `commsWorker`.
+  - Added server `client.ping` ack event for RTT probing.
+  - Surfaced network metrics in HUD debug line and monitor panel.
+  - Updated `todo.md` network optimization checks for completed items.
+- Phase B pooling/culling/compression slice completed:
+  - Added reusable `ObjectPool` manager (`web/src/objectPool.js`) and integrated pools for wildlife, boats, and UI name tags.
+  - Added dynamic pool-size optimization based on active player count plus pool performance metrics (memory/lifetime/timing/errors) in monitor panel.
+  - Added `SpatialOctree` (`web/src/spatialOctree.js`) and switched frustum culling path to octree-backed queries.
+  - Added compact wire payloads for trace/input events and server-side decode support.
+  - Enabled Socket.IO compressed volatile broadcasts for `player.state`, `player.trace.all`, and `server.metrics`.
+  - Added web unit tests for pool and octree modules.
+  - Updated `todo.md` to mark Object Pooling, Frustum Culling, and Network Compression items as done.
+- Follow-up gameplay control fix:
+  - Restored `player.input` wire payload to the original shape after detecting post-countdown control regression.
+  - Kept trace compact encoding + transport compression for message-compression goals.
+  - Hardened `scripts/dev_cycle_check.mjs` admin command handling (`admin.claim` attempt, tolerate `not_admin` in teardown ack) for full-cycle stability.
+- Asset pipeline hardening:
+  - Made `preloadAssets` tolerant of missing GLTF/texture fetches with fallbacks.
+  - Added non-critical asset preloading (menu logos) and cache metrics for the debug monitor.
+  - Synced `todo.md` asset management items for preloading/caching/progressive loading.
+- WebGL instancing:
+  - Added instanced trash rendering to cut draw calls and keep collision logic intact.
+  - Updated cleanup/culling paths to handle instanced trash items safely.
+  - Marked `Implement instanced rendering` as complete in `todo.md`.
+- Geometry batching:
+  - Added instanced batching for power-ups to reduce draw calls.
+  - Added collision handling for instanced power-ups and synced cleanup logic.
+  - Marked `Create geometry batching` as complete in `todo.md`.
+- Shader optimization:
+  - Switched trash/power-up materials to Lambert + flat shading and reduced power-up cone segments.
+  - Disabled shadows for instanced trash/power-ups to cut shader + shadow map cost.
+  - Marked `Implement shader optimization` as complete in `todo.md`.
+- Texture atlas:
+  - Added a small runtime atlas for trash + power-up materials and wired it into material maps.
+  - Marked `Add texture atlas system` as complete in `todo.md`.
+- Texture compression:
+  - Added compressed menu logos and water normals, and switched loading to compressed assets.
+  - Marked `Implement texture compression` as complete in `todo.md`.
+- LOD groundwork:
+  - Added distance-based LOD swapping for turtles and remote boats using low-detail meshes.
+  - Exposed LOD thresholds in the monitor panel for quick tuning visibility.
+  - Marked `Define LOD distances`, `Create LOD transition system`, and `Optimize LOD switching performance` as complete in `todo.md`.
+- Phase B render instrumentation slice completed:
+  - Added client-side WebGL/render monitor stats to the debug panel (`FPS`, frame time, draw calls, triangles, geometry/texture/program counts).
+  - Surfaced asset cache/preload status in the monitor panel using `web/src/assets.js` cache stats.
+  - Extended the compact debug line with live FPS/draw/triangle counts.
+  - Updated `todo.md` to mark `Add WebGL performance monitoring` as done.
+- Countdown to GO control-flow retest after `player.input` rollback:
+  - Ran focused Playwright scenario with `?debug=1&name=RetestUser&room=ROOM-0001`, clicked `#btn-start-match`, waited through countdown, then applied throttle + steering input.
+  - Output artifacts: `output/countdown-go-retest/shot-0.png`, `output/countdown-go-retest/state-0.json`.
+  - Result: controls respond after countdown; final state remained `RUNNING` and player position advanced to approximately `x=-2.58, z=15.38` with no captured browser errors.
+- Fixed countdown/timer/control regression guards in `web/src/script.js`:
+  - Ignore late `startingGame` events once `RUNNING`/`GAMEPLAY`.
+  - On `game.on`, force `RUNNING`, clear countdown, and start local timer ticker.
+- Added URL deep-link QoL:
+  - `?name=` now skips Access -> Menu.
+  - `?autostart=1` triggers auto admin-claim + match start from Lobby (helps tests).
+- Fixed runtime errors in power-up instancing:
+  - Lifted `powerupTmp*` temps to module scope.
+  - Lifted `isPowerUp` helper to module scope.
+- Playwright checks (backend running via `server/index.js` on :3000, web dev on :8080):
+  - `node $WEB_GAME_CLIENT --url "http://localhost:8080/?name=CodexTester&room=ROOM-0001&autostart=1" --actions-file $WEB_GAME_ACTIONS --iterations 3`
+  - Latest artifacts: `output/web-game/shot-0.png`, `shot-1.png`, `shot-2.png`, `state-0.json` (timer counts down 19→17, no new console errors).
+- Visual cohesion + water shader pass in `web/src/script.js`:
+  - Warmer sun + deeper teal water, higher distortion + wave scale.
+  - Water normals repeat set to 4x for clearer wave detail.
+  - Fog color/intensity aligned with sky; sky scattering tuned.
+  - Lighting balanced (ambient/hemi/dir) and exposure nudged for cohesion.
+- Playwright visual check after shader pass:
+  - `output/web-game/shot-0.png`, `shot-1.png`, `shot-2.png` show improved horizon blend and wave detail; countdown overlay visible.
+- Implemented power-up expansion (client + server):
+  - Added magnet + time-freeze types, durations, UI badges, and effects.
+  - Magnet expands collision radius; freeze slows other players/turtles.
+  - Server auth supports magnet radius validation and freeze slow per-room.
+- Implemented LOD texture quality reduction:
+  - Added `applyTextureQuality` to lower anisotropy/filters on distant LODs.
+- Added model optimization pipeline script:
+  - `scripts/model_optimize.mjs` generates `output/model-optimize/report.json` with asset size report and CLI recommendations.
+  - Ran: `node scripts/model_optimize.mjs` (report generated).
+- Playwright validation after power-up/LOD changes:
+  - `output/web-game/shot-0.png`, `shot-1.png`, `shot-2.png`, `state-0.json` (no new errors).
+- Fixed `clearTrashInstances`/`clearPowerupInstances` scope so endGame cleanup no longer throws.
+- Playwright rerun after fix: `output/web-game/shot-0.png`, `shot-1.png`, `shot-2.png` (no new errors).
+- Water visuals: injected foam, depth fade, and fresnel sparkle into Water shader (onBeforeCompile) for richer surface detail.
+- Playwright re-check after water shader update: `output/web-game/shot-0.png`, `shot-1.png`, `shot-2.png`.
+- Migrated to GPU heightmap water + buoyancy sampling (Three.js gpgpu water example adapted).
+- Playwright check after migration: `output/web-game/shot-0.png`, `shot-1.png`, `shot-2.png`.
+- Stabilized buoyancy so boats and turtles ride the GPU water surface without overriding yaw:
+  - Added applyBuoyancyToGroup and hooked into local/remote boats + turtles.
+- Playwright check after buoyancy fix: `output/web-game/shot-0.png`, `shot-1.png`, `shot-2.png`.
+- Playwright check resumed on 2026-03-30: new screenshots `output/web-game/shot-0.png`, `shot-1.png`, `shot-2.png`; ripples now visible on GPU water.
+- Dev-cycle validator timing fix on 2026-04-09:
+  - Reproduced failing `node scripts/dev_cycle_check.mjs`: `lifecycle-running` captured `ENDED` instead of `RUNNING/STARTING`.
+  - Root cause: validator still used the old pre-started room flow and long frame-count waits, which had become timing-sensitive after the newer lifecycle/autostart changes and heavier runtime.
+  - Updated `scripts/dev_cycle_check.mjs` to:
+    - use dedicated autostart URLs per scenario (`ROOM-0001` and `ROOM-0002`),
+    - avoid pre-starting the room via external `admin.start`,
+    - use short frame bursts plus explicit wall-clock pauses instead of long frame-only waits.
+  - Re-ran full validation successfully; green report at `output/dev-cycle/report.json`.
+- Revival smoke check on 2026-06-08:
+  - Local sandbox blocks Node port binding with `listen EPERM`; foreground dev sessions must run outside the sandbox for local verification.
+  - Verified `npm --prefix server run test:unit`, `npm --prefix web run test:unit`, and `npm --prefix web run build`.
+  - Started server with `ENABLE_REDIS_BACKEND=false ENABLE_COHERENCE_BACKEND=false PORT=3000 npm --prefix server start`.
+  - Started web with `WEB_PORT=8080 SERVER_PORT=3000 npm --prefix web run dev`.
+  - Reproduced a gameplay runtime overlay: `TypeError: Converting circular structure to JSON` while cloning the local boat model for remote player meshes.
+  - Fixed `web/src/script.js` by sanitizing non-serializable `userData` before cloning the boat model for remote players.
+  - Fresh Playwright smoke artifacts at `output/revive-smoke-postfix/` show `RUNNING` state, timer countdown, visible items, player movement, and no `errors-*.json`.
+- Water restoration on 2026-06-08:
+  - Reverted the experimental GPU heightmap/custom water shader and restored the original Three.js `Water` setup in `web/src/script.js`.
+  - Removed GPU water sampling/buoyancy hooks from local player, remote players, turtles, trash, and power-up placement.
+  - Switched water normal loading back to `assets/waternormals.jpg` while keeping the menu/asset fallback improvements.
+  - Stashed the unused compressed water-normal asset as `stash@{0}: water-normal-compressed-experiment`.
+  - Verified `npm --prefix web run test:unit` and `npm --prefix web run build`; fresh screenshots/state at `output/water-restore-running/` reach `RUNNING` with no `errors-*.json`.
+- Trash render fix on 2026-06-08:
+  - Server metrics showed trash counts, but trash was not reliably visible after the instanced-rendering/culling work.
+  - Root cause: `trashInstances.mesh` and `powerupInstances.mesh` were treated as normal culling candidates, so the whole instanced batch could be hidden by mesh-level frustum/octree culling.
+  - Fixed by disabling built-in frustum culling on the instanced trash/power-up batches and excluding them from the custom culling candidate list.
+  - Added `trashInstances` and `powerupInstances` counts to `window.render_game_to_text` for future smoke checks.
+  - Verified `npm --prefix web run test:unit`, `npm --prefix web run build`, and fresh artifacts at `output/trash-spawn-smoke/` showing `trashInstances: 11`, `powerupInstances: 5`, no errors, and visible trash in `shot-1.png`.
+- Trash collection crash fix on 2026-06-08:
+  - Reproduced user-reported failure source: `checkCollisions()` called `releaseTrashInstance`, but the helper was scoped inside `init()`.
+  - Lifted `releaseTrashInstance` and `releasePowerupInstance` to module-scope callback variables, matching the existing `clearTrashInstances`/`clearPowerupInstances` pattern.
+  - Added local score increment/update for the instanced trash collection path.
+  - Verified `npm --prefix web run test:unit`, `npm --prefix web run build`, and movement smoke artifacts at `output/trash-collect-smoke-2/` with no `errors-*.json`.
+- Mobile lobby fix on 2026-06-08:
+  - Reworked `#screen-lobby` into a compact launch sheet with Start Match at the top and secondary sections collapsed under native `details` panels.
+  - Overrode old global overlay button/input margins inside the lobby so mobile layout stays short and tappable.
+  - Added a lobby phase body class and hid the compact HUD/monitor clutter while the lobby is active.
+  - Changed lifecycle controls so Start Match remains enabled in Lobby even before `roomJoinedAck`; the existing `requestMatchStart()` queue now handles late room acknowledgements.
+  - Verified `npm --prefix web run test:unit`, `npm --prefix web run build`, Playwright flow artifacts at `output/mobile-lobby-smoke/`, and mobile viewport screenshots at `output/mobile-lobby-page/` showing Start visible/enabled and click reaching `STARTING` without console errors.

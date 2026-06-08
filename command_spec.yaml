@@ -45,6 +45,11 @@ steps:
       cd save-the-wildlife
       redis_password=$(oci secrets secret-bundle get --secret-id ${redis_password_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
       adb_admin_password=$(oci secrets secret-bundle get --secret-id ${adb_admin_password_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
+      export OCI_REGION=${region}
+      export OCI_COMPARTMENT_OCID=${compartment_id}
+      export OCI_GENAI_MODEL_ID=${genai_model_id}
+      export PAF_IMAGE_REPOSITORY=${paf_image_repository}
+      export PAF_VERSION=${paf_version}
       npx zx scripts/kustom.mjs ${region_key} $redis_password $adb_admin_password ${adb_service}
       echo "Wallet and config files generated successfully"
   - type: Command
@@ -52,11 +57,12 @@ steps:
     shell: bash
     timeoutInSeconds: 300
     command: |
+      user_auth_token=$(oci secrets secret-bundle get --secret-id ${user_auth_token_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
       kubectl delete secret ocir-secret --ignore-not-found
       kubectl create secret docker-registry ocir-secret \
         --docker-server=${region_key}.ocir.io \
-        --docker-username="${tenancy_namespace}/${ocir_user}" \
-        --docker-password="${ocir_token}" \
+        --docker-username="${oci_namespace}/${ocir_user}" \
+        --docker-password="$user_auth_token" \
         --docker-email=${ocir_user}
   - type: Command
     name: "Apply kustomization"
@@ -74,6 +80,7 @@ steps:
       kubectl -n default rollout status deploy/ws-server --timeout=300s
       kubectl -n default rollout status deploy/web --timeout=300s
       kubectl -n default rollout status deploy/replay --timeout=300s
+      kubectl -n default rollout status deploy/private-agent-factory --timeout=300s
   - type: Command
     name: "Health check ws-server"
     shell: bash

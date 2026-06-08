@@ -57,6 +57,40 @@
           <div>Next spawn in: <span id="mon-next-spawn">-</span> ms</div>
         </div>
         <div class="monitor-section">
+          <div class="monitor-title">Network</div>
+          <div>Up: <span id="mon-net-up">-</span></div>
+          <div>Down: <span id="mon-net-down">-</span></div>
+          <div>RTT: <span id="mon-net-rtt">-</span></div>
+          <div>Loss: <span id="mon-net-loss">-</span></div>
+          <div>Quality: <span id="mon-net-quality">-</span></div>
+        </div>
+        <div class="monitor-section">
+          <div class="monitor-title">Pools</div>
+          <div>Wildlife: <span id="mon-pool-wildlife">-</span></div>
+          <div>Boats: <span id="mon-pool-boats">-</span></div>
+          <div>UI: <span id="mon-pool-ui">-</span></div>
+          <div>Particles: <span id="mon-pool-particles">-</span></div>
+          <div>Memory est.: <span id="mon-pool-memory">-</span></div>
+        </div>
+        <div class="monitor-section">
+          <div class="monitor-title">Render</div>
+          <div>FPS: <span id="mon-render-fps">-</span></div>
+          <div>Frame: <span id="mon-render-frame">-</span></div>
+          <div>Draw calls: <span id="mon-render-draws">-</span></div>
+          <div>Triangles: <span id="mon-render-tris">-</span></div>
+          <div>Geom/Tex/Prog: <span id="mon-render-memory">-</span></div>
+        </div>
+        <div class="monitor-section">
+          <div class="monitor-title">Assets</div>
+          <div>Models: <span id="mon-asset-models">-</span></div>
+          <div>Textures: <span id="mon-asset-textures">-</span></div>
+          <div>Preload: <span id="mon-asset-preload">-</span></div>
+        </div>
+        <div class="monitor-section">
+          <div class="monitor-title">LOD</div>
+          <div>Levels: <span id="mon-lod">-</span></div>
+        </div>
+        <div class="monitor-section">
           <div class="monitor-title">Admin Controls</div>
           <div style="display:flex; gap:8px; align-items:center; flex-wrap: wrap;">
             <label for="mon-mode-select">Spawn:</label>
@@ -139,54 +173,63 @@
         </div>
       </section>
 
-      <!-- LOBBY: Scores, players, chat -->
-      <section id="screen-lobby" class="screen" style="display: none; flex-direction: column; align-items: stretch; width: min(1024px, 92vw);">
-        <div style="display:flex; align-items:center; justify-content: space-between; margin-bottom: 8px;">
-          <h2 style="color: white; margin: 0;">Lobby</h2>
-          <div id="lobby-room-code" class="hud-item">Room: -</div>
+      <!-- LOBBY: compact mobile-first launch sheet -->
+      <section id="screen-lobby" class="screen lobby-sheet" style="display: none;">
+        <div class="lobby-launch">
+          <div class="lobby-title-row">
+            <div>
+              <h2>Lobby</h2>
+              <div id="lobby-room-code" class="hud-item">Room: -</div>
+            </div>
+            <button id="btn-lobby-start" class="btn btn-primary lobby-start-button">Start Match</button>
+          </div>
+          <div id="lobby-status" class="lobby-status">Waiting for game...</div>
+          <div class="lobby-actions">
+            <button id="btn-lobby-leave" class="btn">Back to Menu</button>
+          </div>
         </div>
 
-        <div class="invite-row" style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-          <label for="invite-link" style="color:white;">Invite:</label>
-          <input id="invite-link" readonly placeholder="Invite link will appear here" style="flex:1;" />
+        <div class="invite-row">
+          <label for="invite-link">Invite</label>
+          <input id="invite-link" readonly placeholder="Invite link will appear here" />
           <button id="invite-copy" class="btn">Copy Link</button>
         </div>
 
-        <h3 style="color:white; margin: 8px 0 4px 0;">Top Scores</h3>
-        <div id="games-container">
-          <table id="playerTable">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Score</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
+        <div class="lobby-sections">
+          <details class="lobby-detail">
+            <summary>Players</summary>
+            <ul id="waiting-list"></ul>
+          </details>
 
-        <h3 style="color:white; margin: 10px 0 4px 0;">Waiting Players</h3>
-        <ul id="waiting-list" style="margin: 6px 0 12px 18px;"></ul>
+          <details class="lobby-detail">
+            <summary>Rooms</summary>
+            <div id="rooms-default" class="hud-item">Default: -</div>
+            <ul id="rooms-list"></ul>
+          </details>
 
-        <h3 style="color:white; margin: 10px 0 4px 0;">Rooms</h3>
-        <div id="rooms-default" class="hud-item" style="margin: 4px 0 6px 0;">Default: -</div>
-        <ul id="rooms-list" style="margin: 6px 0 12px 18px; list-style: none; padding: 0;"></ul>
+          <details class="lobby-detail">
+            <summary>Top Scores</summary>
+            <div id="games-container">
+              <table id="playerTable">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Score</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </details>
 
-        <h3 style="color:white; margin: 10px 0 4px 0;">Lobby Chat</h3>
-        <div
-          id="chat-log"
-          style="height: 160px; overflow-y: auto; padding: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.35); margin-bottom: 6px;"
-        ></div>
-        <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 12px;">
-          <input id="chat-text" maxlength="300" placeholder="Message..." style="flex: 1;" />
-          <button id="chat-send" class="btn">Send</button>
-        </div>
-
-        <div id="lobby-status" style="color:#eaf6fb; min-height:20px; margin-bottom:8px;"></div>
-
-        <div class="lobby-actions" style="display:flex; gap:10px; align-items:center; justify-content:flex-end;">
-          <button id="btn-lobby-start" class="btn btn-primary">Start Match</button>
-          <button id="btn-lobby-leave" class="btn">Back to Menu</button>
+          <details class="lobby-detail">
+            <summary>Lobby Chat</summary>
+            <div id="chat-log"></div>
+            <div class="chat-row">
+              <input id="chat-text" maxlength="300" placeholder="Message..." />
+              <button id="chat-send" class="btn">Send</button>
+            </div>
+          </details>
         </div>
       </section>
 

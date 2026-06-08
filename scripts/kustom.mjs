@@ -14,10 +14,11 @@ const namespace = await getNamespace();
 
 await createKustomizationYaml(regionKey, namespace);
 
-await createWsServerConfigFile(redisPassword);
+await createWsServerConfigFile(redisPassword, adbAdminPassword, adbService);
 await createRedisConfigFile(redisPassword);
 await createScoreConfigFile(adbAdminPassword, adbService);
 await createReplayConfigFile(adbAdminPassword, adbService);
+await createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService);
 await createCerts();
 
 async function createKustomizationYaml(regionKey, namespace) {
@@ -31,11 +32,17 @@ async function createKustomizationYaml(regionKey, namespace) {
   await cd(`${pwdOutput}/replay`);
   const replayVersion = await getVersionGradle();
   await cd(pwdOutput);
+  const pafVersion = process.env.PAF_VERSION || "latest";
+  const pafImageRepository = process.env.PAF_IMAGE_REPOSITORY && process.env.PAF_IMAGE_REPOSITORY !== "AUTO"
+    ? process.env.PAF_IMAGE_REPOSITORY
+    : `${regionKey}.ocir.io/${namespace}/save-the-wildlife/private-agent-factory`;
 
   console.log(`ws-server v${wsServerVersion}`);
   console.log(`web v${webVersion}`);
   console.log(`score v${scoreVersion}`);
   console.log(`replay v${replayVersion}`);
+  console.log(`private-agent-factory v${pafVersion}`);
+  console.log(`private-agent-factory image ${pafImageRepository}`);
 
   await cd("./deploy/k8s/overlays/devops");
   try {
@@ -45,6 +52,8 @@ async function createKustomizationYaml(regionKey, namespace) {
     | sed 's/WS_SERVER_VERSION/${wsServerVersion}/' \
     | sed 's/SCORE_VERSION/${scoreVersion}/' \
     | sed 's/REPLAY_VERSION/${replayVersion}/' \
+    | sed 's|PAF_IMAGE_REPOSITORY|${pafImageRepository}|' \
+    | sed 's/PAF_VERSION/${pafVersion}/' \
     | sed 's/NAMESPACE/${namespace}/' > kustomization.yaml`;
     if (exitCode !== 0) {
       exitWithError(`Error creating kustomization.yaml: ${stderr}`);
@@ -57,13 +66,17 @@ async function createKustomizationYaml(regionKey, namespace) {
   }
 }
 
-async function createWsServerConfigFile(redisPassword) {
+async function createWsServerConfigFile(redisPassword, adbAdminPassword, adbService) {
   const pwdOutput = (await $`pwd`).stdout.trim();
   await cd("./deploy/k8s/base/ws-server/");
   const replaceCmdRedisPassword = `s/MASTERPASSWORD/${redisPassword}/`;
+  const replaceCmdAdbPassword = `s/TEMPLATE_ADB_PASSWORD/${adbAdminPassword}/`;
+  const replaceCmdAdbService = `s/TEMPLATE_ADB_SERVICE/${adbService}/`;
   try {
     let { exitCode, stderr } = await $`sed '${replaceCmdRedisPassword}' \
-          env_server_template > .env_server`;
+          env_server_template | sed '${replaceCmdAdbPassword}' \
+          | sed '${replaceCmdAdbService}' \
+          > .env_server`;
     if (exitCode !== 0) {
       exitWithError(`Error creating .env_server: ${stderr}`);
     }
@@ -126,6 +139,32 @@ async function createReplayConfigFile(adbAdminPassword, adbService) {
       exitWithError(`Error creating application.properties (replay): ${stderr}`);
     }
     console.log(`Overlay ${chalk.green("replay/application.properties")} created.`);
+  } catch (error) {
+    exitWithError(error.stderr);
+  } finally {
+    await cd(pwdOutput);
+  }
+}
+
+async function createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService) {
+  const pwdOutput = (await $`pwd`).stdout.trim();
+  await cd("./deploy/k8s/base/private-agent-factory/");
+  const replaceCmdAdbPassword = `s/TEMPLATE_ADB_PASSWORD/${adbAdminPassword}/`;
+  const replaceCmdAdbService = `s/TEMPLATE_ADB_SERVICE/${adbService}/`;
+  const replaceCmdRegion = `s/TEMPLATE_OCI_REGION/${process.env.OCI_REGION || ""}/`;
+  const replaceCmdCompartment = `s/TEMPLATE_COMPARTMENT_OCID/${process.env.OCI_COMPARTMENT_OCID || ""}/`;
+  const replaceCmdGenaiModel = `s/TEMPLATE_GENAI_MODEL_ID/${process.env.OCI_GENAI_MODEL_ID || "cohere.command-r-08-2024"}/`;
+  try {
+    let { exitCode, stderr } =
+      await $`sed '${replaceCmdAdbPassword}' application.env.template \
+            | sed '${replaceCmdAdbService}' \
+            | sed '${replaceCmdRegion}' \
+            | sed '${replaceCmdCompartment}' \
+            | sed '${replaceCmdGenaiModel}' > application.env`;
+    if (exitCode !== 0) {
+      exitWithError(`Error creating private-agent-factory/application.env: ${stderr}`);
+    }
+    console.log(`Overlay ${chalk.green("private-agent-factory/application.env")} created.`);
   } catch (error) {
     exitWithError(error.stderr);
   } finally {

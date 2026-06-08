@@ -45,7 +45,7 @@ resource "oci_identity_dynamic_group" "devops_dynamic_group" {
   provider       = oci.home_region
   compartment_id = var.tenancy_ocid
   description    = "DevOps Dynamic Group for ${random_string.deploy_id.result}"
-  matching_rule  = "ANY { ALL { resource.type = 'instance-family', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopsdeploypipeline', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopsbuildpipeline', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopsrepository', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopsconnection', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopsrepository', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopsdeployment', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopstrigger', resource.compartment.id = '${var.compartment_ocid}' }, ALL { resource.type = 'devops-deploy-artifact', resource.compartment.id = '${var.compartment_ocid}' }, ALL {resource.type = 'cluster-family', resource.compartment.id = '${var.compartment_ocid}' } }"
+  matching_rule  = "ANY { ALL { resource.type = 'instance-family', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'autonomousdatabase', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopsdeploypipeline', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopsbuildpipeline', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopsrepository', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopsconnection', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopsrepository', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopsdeployment', resource.compartment.id = '${var.compartment_ocid}'}, ALL { resource.type = 'devopstrigger', resource.compartment.id = '${var.compartment_ocid}' }, ALL { resource.type = 'devops-deploy-artifact', resource.compartment.id = '${var.compartment_ocid}' }, ALL {resource.type = 'cluster-family', resource.compartment.id = '${var.compartment_ocid}' } }"
   name           = local.dynamic_group_name
 }
 
@@ -85,6 +85,8 @@ resource "oci_identity_policy" "devops_policy_in_compartment" {
     "allow dynamic-group ${local.dynamic_group_name} to use vnics in compartment id ${var.compartment_ocid}",
     "allow dynamic-group ${local.dynamic_group_name} to use network-security-groups in compartment id ${var.compartment_ocid}",
     "allow dynamic-group ${local.dynamic_group_name} to use adm-knowledge-bases in compartment id ${var.compartment_ocid}",
-    "allow dynamic-group ${local.dynamic_group_name} to use cabundles in compartment id ${var.compartment_ocid}"
+    "allow dynamic-group ${local.dynamic_group_name} to use cabundles in compartment id ${var.compartment_ocid}",
+    "allow dynamic-group ${local.dynamic_group_name} to use generative-ai-family in compartment id ${var.compartment_ocid}",
+    "allow dynamic-group ${local.dynamic_group_name} to read database-tools-family in compartment id ${var.compartment_ocid}"
   ]
 }

@@ -35,6 +35,13 @@ spec:
             name: replay
             port:
               number: 8082
+      - path: /paf
+        pathType: Prefix
+        backend:
+          service:
+            name: private-agent-factory
+            port:
+              number: 8080
       - path: /api
         pathType: Prefix
         backend:

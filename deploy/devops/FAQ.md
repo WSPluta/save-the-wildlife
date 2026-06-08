@@ -14,4 +14,3 @@ Re-try the terraform apply by running again:
 
 ```
 terraform apply -auto-approve
-```

@@ -17,6 +17,7 @@ In this lab, you are going to deploy that foundational infrastructure that inclu
 - OCI Vault: to store the secrets like passwords and tokens.
 - Identity and Access Management policies and dynamic groups control what services use what resources in Oracle Cloud.
 - Oracle Autonomous Database to be used by the application.
+- OCI Generative AI access for the Oracle Private Agent Factory commentary service.
 - Oracle Notification Service to receive emails every time  OCI DevOps finishes an operation.
 
 ### Prerequisites
@@ -91,6 +92,7 @@ In this lab, you are going to deploy that foundational infrastructure that inclu
     >   - Oracle Notification Service (ONS) topic
     >   - Oracle Vault, Master Key and secrets
     >   - Policies and Dynamic Groups
+    >   - OCI Generative AI permissions used by Oracle Private Agent Factory
     >  
     > <br>
     > <br>

@@ -14,6 +14,8 @@ Watch the video below for a quick walk-through of this lab.
 
 In this lab, you are going to deploy the artifacts (container images) into the Kubernetes Cluster. As part of this lab, you will run the Deployment pipeline that will do all the work for you automatically. The deployment pipeline will access secrets from OCI Vault and create all the config files. Finally, it will deploy with Kustomize running `kubectl`.
 
+The same deployment pipeline also deploys Oracle Private Agent Factory. During the Kustomize step it wires PAF to Oracle Autonomous Database gameplay telemetry, configures the OCI Generative AI model, and exposes the service through the application ingress at `/paf`.
+
 ### Prerequisites
 
 - Oracle Cloud Account.
@@ -31,7 +33,7 @@ In this lab, you are going to deploy the artifacts (container images) into the K
 
   ![Deployment pipelines](images/deployment-pipelines.png)
 
-3. Take a look, there is one stage: **Deploy with Kustomize**. This stage will deploy with Kustomize to the Kubernetes Cluster.
+3. Take a look, there is one stage: **Deploy with Kustomize**. This stage will deploy with Kustomize to the Kubernetes Cluster, including `web`, `ws-server`, `score`, `replay`, and `private-agent-factory`.
 
   ![Deployment pipeline stage](images/deployment-stage.png)
 
@@ -51,7 +53,7 @@ In this lab, you are going to deploy the artifacts (container images) into the K
 
   ![Deployment Running](images/deployment-running.png)
 
-8. Finally, confirm the success and explore the console log. You can minimize some of the other panels.
+8. Finally, confirm the success and explore the console log. You can minimize some of the other panels. The rollout checks should include `private-agent-factory` along with the other game services.
 
   ![Deployment Success minimize](images/deployment-success-minimize.png)
 

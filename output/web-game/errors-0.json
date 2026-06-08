@@ -1,0 +1,10 @@
+[
+  {
+    "type": "console.error",
+    "text": "THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: MeshStandardMaterial\n\nProgram Info Log: Vertex shader is not compiled.\n\u0000\nVERTEX\n\nERROR: 0:615: 'worldPosition' : undeclared identifier\nERROR: 0:615: 'xyz' :  field selection requires structure, vector, or interface block on left hand side\nERROR: 0:615: '=' : dimension mismatch\nERROR: 0:615: 'assign' : cannot convert from 'const highp float' to 'out highp 3-component vector of float'\n\u0000\n\n  610: \t#ifdef USE_INSTANCING\n  611: \t\tworldPosition = instanceMatrix * worldPosition;\n  612: \t#endif\n  613: \tworldPosition = modelMatrix * worldPosition;\n  614: #endif\n> 615: vWorldPos = worldPosition.xyz;\n  616: #if ( defined( USE_SHADOWMAP ) && ( 0 > 0 || 0 > 0 ) ) || ( 0 > 0 )\n  617: \tvec3 shadowWorldNormal = inverseTransformDirection( transformedNormal, viewMatrix );\n  618: \tvec4 shadowWorldPosition;\n  619: #endif\n  620: #if defined( USE_SHADOWMAP )\n  621: \t#if 0 > 0\n"
+  },
+  {
+    "type": "console.error",
+    "text": "THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false\n\nMaterial Name: \nMaterial Type: MeshStandardMaterial\n\nProgram Info Log: Vertex shader is not compiled.\n\u0000\nVERTEX\n\nERROR: 0:614: 'worldPosition' : undeclared identifier\nERROR: 0:614: 'xyz' :  field selection requires structure, vector, or interface block on left hand side\nERROR: 0:614: '=' : dimension mismatch\nERROR: 0:614: 'assign' : cannot convert from 'const highp float' to 'out highp 3-component vector of float'\n\u0000\n\n  609: \t#ifdef USE_INSTANCING\n  610: \t\tworldPosition = instanceMatrix * worldPosition;\n  611: \t#endif\n  612: \tworldPosition = modelMatrix * worldPosition;\n  613: #endif\n> 614: vWorldPos = worldPosition.xyz;\n  615: #if ( defined( USE_SHADOWMAP ) && ( 0 > 0 || 0 > 0 ) ) || ( 0 > 0 )\n  616: \tvec3 shadowWorldNormal = inverseTransformDirection( transformedNormal, viewMatrix );\n  617: \tvec4 shadowWorldPosition;\n  618: #endif\n  619: #if defined( USE_SHADOWMAP )\n  620: \t#if 0 > 0\n"
+  }
+]

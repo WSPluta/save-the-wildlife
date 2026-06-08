@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: private-agent-factory
+  name: private-agent-factory
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: private-agent-factory
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: private-agent-factory
+    spec:
+      containers:
+      - image: private-agent-factory
+        imagePullPolicy: Always
+        name: private-agent-factory
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 45
+          periodSeconds: 15
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1024Mi
+        envFrom:
+        - configMapRef:
+            name: private-agent-factory-env
+      imagePullSecrets:
+      - name: ocir-secret

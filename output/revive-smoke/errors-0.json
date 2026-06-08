@@ -1,0 +1,6 @@
+[
+  {
+    "type": "pageerror",
+    "text": "TypeError: Converting circular structure to JSON\n    --> starting at object with constructor 'Object'\n    |     property 'boatVisual' -> object with constructor 'Object'\n    |     property 'object' -> object with constructor 'Object'\n    --- property 'userData' closes the circle"
+  }
+]

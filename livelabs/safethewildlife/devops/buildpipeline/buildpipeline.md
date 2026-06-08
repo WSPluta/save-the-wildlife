@@ -14,6 +14,8 @@ Watch the video below for a quick walk-through of this lab.
 
 In this lab, you are going to build the artifacts from the source code using OCI DevOps build pipeline. As part of the process, you are going to use stages to build and deliver the artifacts built. The outcome will be to have the container images with the application components on Oracle Cloud Image Registry.
 
+The Oracle Private Agent Factory commentary service is deployed by the same DevOps deployment pipeline. Its image repository and tag are configured during the DevOps infrastructure lab with `PAF_IMAGE_REPOSITORY` and `PAF_VERSION`; the standard build pipeline continues to build the source-owned services from this repository.
+
 ### Prerequisites
 
 - Oracle Cloud Account.
@@ -62,7 +64,7 @@ In this lab, you are going to build the artifacts from the source code using OCI
 
   ![Build click build pipeline](images/devops-build-click-buildpipeline.png)
 
-2. Take a look, there are two stages: **Build Services** and **Deliver Artifacts**. The first stage will build the Node and Java Applications. The second stage will deliver the container images with the applications on Oracle Cloud Image Registry.
+2. Take a look, there are two stages: **Build Services** and **Deliver Artifacts**. The first stage will build the Node and Java Applications. The second stage will deliver the container images with the applications on Oracle Cloud Image Registry. This includes the game services and replay service built from this repository; Oracle Private Agent Factory is referenced by the deployment pipeline using the configured PAF image repository and tag.
 
   ![Build Stages](images/build-stages.png)
 

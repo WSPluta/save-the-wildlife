@@ -43,7 +43,15 @@ await loginContainerRegistry();
 
 await redisDetails();
 
-await adbDetails();
+// Local DB mode selection
+const useLocalDb = await setVariableFromEnvOrPrompt("USE_LOCAL_DB", "Use local Oracle DB? (true/false)", () => "false", "boolean");
+if (useLocalDb) {
+  properties = { ...properties, USE_LOCAL_DB: true };
+  console.log(chalk.yellow("Local DB mode enabled. Run 'scripts/start_local_db.mjs' after setenv to start the Oracle 23ai container."));
+} else {
+  await adbDetails();
+  properties = { ...properties, USE_LOCAL_DB: false };
+}
 
 await printVersions();
 

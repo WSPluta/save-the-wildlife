@@ -11,6 +11,12 @@
  */
 export function normalizeRoomId(id) {
   if (!id) return null;
-  const s = String(id).trim().toUpperCase().replace(/[^A-Z0-9\-_]/g, "").slice(0, 24);
+  const s = String(id)
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9\-_]/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/_{2,}/g, "_")
+    .slice(0, 24);
   return s || null;
 }

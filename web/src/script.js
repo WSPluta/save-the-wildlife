@@ -5,9 +5,10 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Water } from "three/examples/jsm/objects/Water.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { throttle } from "throttle-debounce";
-import { preloadAssets, progressivePreload } from "./assets";
+import { getAssetCacheStats, preloadAssets, preloadNonCriticalAssets, progressivePreload } from "./assets";
 import { createEmitters } from "./particles";
-import { getHeightAndNormal, applyTilt } from "./buoyancy";
+import { ObjectPool } from "./objectPool";
+import { SpatialOctree } from "./spatialOctree";
 import "./style.css";
 import * as lobby from "./lobby";
 import { normalizeRoomId } from "./util";
@@ -39,6 +40,7 @@ let player, controls;
 let emitters = null;
 let lastFrameTs = performance.now();
 let frameDt = 0;
+let smoothedFrameMs = 16.67;
 let otherPlayersInfo = {};
 
 // Game flags and UI
@@ -54,6 +56,9 @@ let serverVersion;
 let worker;
 let remainingTime;
 let timerDivRef = null;
+let lastServerTimeSyncAtMs = 0;
+let lastServerTimeSyncValue = null;
+let localTimeTickerId = null;
 
 let keyboard = {};
 let gameState = "WAITING";
@@ -72,6 +77,50 @@ let inputSeq = 0;
 let authStates = null;
 let authStatesTime = 0;
 let startPosition = null;
+let cullingDebugEnabled = false;
+const cullingHelpers = new Map();
+let cullingOctree = null;
+let lastCullingNodeCount = 0;
+const powerupTmpMatrix = new THREE.Matrix4();
+const powerupTmpPos = new THREE.Vector3();
+const powerupTmpScale = new THREE.Vector3();
+const powerupTmpQuat = new THREE.Quaternion();
+const powerupTmpEuler = new THREE.Euler(0, 0, 0);
+let wildlifePool = null;
+let boatPool = null;
+let uiNameTagPool = null;
+let trashInstances = null;
+let powerupInstances = null;
+let latestPoolMetrics = null;
+let clearTrashInstances = () => {};
+let clearPowerupInstances = () => {};
+let releaseTrashInstance = () => {};
+let releasePowerupInstance = () => {};
+const trashTmpMatrix = new THREE.Matrix4();
+const trashTmpPos = new THREE.Vector3();
+const trashTmpScale = new THREE.Vector3();
+const LOD_DISTANCES = {
+  high: 50,
+  medium: 100,
+  low: 200
+};
+let renderStats = {
+  fps: 60,
+  frameMs: 16.67,
+  drawCalls: 0,
+  triangles: 0,
+  geometries: 0,
+  textures: 0,
+  programs: null,
+};
+let lastClientMonitorUpdateAt = 0;
+let networkStats = {
+  upKbps: 0,
+  downKbps: 0,
+  rttMs: null,
+  quality: "unknown",
+  lossRate: 0,
+};
 
 // Client-side prediction config
 const SNAPSHOT_STALE_MS = 300;
@@ -103,12 +152,21 @@ const PHASES = {
 
 function setPhase(phase) {
   currentPhase = phase;
+  try {
+    document.body.classList.toggle("phase-gameplay", phase === PHASES.GAMEPLAY);
+  } catch (_) {}
   renderUI();
   try { if (typeof updateControls === "function") updateControls(); } catch (_) {}
 }
 
 function renderUI() {
   const overlay = document.getElementById("overlay");
+  if (document.body && document.body.classList) {
+    ["MAIN_MENU", ...Object.values(PHASES)].forEach((name) => {
+      document.body.classList.remove(`phase-${String(name).toLowerCase()}`);
+    });
+    document.body.classList.add(`phase-${String(currentPhase).toLowerCase()}`);
+  }
   const screens = {
     ACCESS: document.getElementById("screen-access"),
     MENU: document.getElementById("screen-menu"),
@@ -291,6 +349,34 @@ function showPostGame() {
   setPhase("POST_GAME");
 }
 
+function renderTimeValue(seconds) {
+  const safe = Math.max(0, Math.round(Number(seconds) || 0));
+  remainingTime = safe;
+  if (hudTimeEl) hudTimeEl.innerHTML = "Time: " + safe;
+  if (compactTimeEl) compactTimeEl.innerHTML = "Time: " + safe;
+  if (!hudTimeEl && !compactTimeEl && timerDivRef) {
+    timerDivRef.innerHTML = "Time: " + safe;
+  }
+}
+
+function stopLocalTimeTicker() {
+  if (localTimeTickerId) {
+    clearInterval(localTimeTickerId);
+    localTimeTickerId = null;
+  }
+}
+
+function startLocalTimeTicker() {
+  stopLocalTimeTicker();
+  localTimeTickerId = setInterval(() => {
+    if (gameState !== "RUNNING") return;
+    if (!Number.isFinite(lastServerTimeSyncValue)) return;
+    const elapsedSec = (Date.now() - lastServerTimeSyncAtMs) / 1000;
+    const next = Math.max(0, lastServerTimeSyncValue - elapsedSec);
+    renderTimeValue(next);
+  }, 200);
+}
+
 // Rooms and lifecycle ownership
 let roomId = null;
 let isAdmin = false;
@@ -298,6 +384,7 @@ let roomsDirectory = null;       // { default, rooms[], ts }
 let pendingRoomJoinId = null;    // queued join before worker init
 let roomJoinedAck = false;       // true after server confirms room.joined
 let pendingStartRequested = false; // start requested before room ack
+let autoStartMatch = false;      // autostart match when URL flag present
 
 function updateRoomHud() {
   const roomText = "Room: " + (roomId ? roomId : "-");
@@ -428,8 +515,8 @@ function updateControls() {
   const inPost = currentPhase === "POST_GAME";
 
   if (menuBtn) menuBtn.disabled = false;
-  const canStartNow = inLobby && currentPhase !== "STARTING" && currentPhase !== "GAMEPLAY";
-  const canStartEffective = canStartNow && roomJoinedAck;
+  const canStartNow = inLobby;
+  const canStartEffective = canStartNow;
   if (createBtn) createBtn.disabled = inPlay || currentPhase === "STARTING";          // cannot create while playing or during countdown
   if (joinBtn) joinBtn.disabled = inPlay || currentPhase === "STARTING";              // cannot join while playing or during countdown
   if (startBtn) startBtn.disabled = !canStartEffective;
@@ -455,15 +542,68 @@ let statusBadge = null;
 const powerUpState = {
   speedMultiplier: 1,
   shield: false,
+  magnetUntil: 0,
+  freezeUntil: 0,
   timers: {},
   uiDiv: null,
 };
+const POWERUP_MAGNET_RADIUS = 3.6;
+const POWERUP_FREEZE_OTHER_MULT = 0.45;
 
 lobby.getLeaderBoard();
 
 let gameInitialized = false;
 let clientGameStarted = false;
 let uiBound = false;
+let currentSessionId = null;
+let lastPositionEventAt = 0;
+let eventStats = {
+  trash_collected: 0,
+  marine_hit: 0,
+  powerup_collected: 0,
+  trail_crossed: 0,
+  player_frozen: 0,
+};
+let mobileInput = { throttle: 0, steer: 0, active: false };
+
+function resetGameplayTelemetry() {
+  currentSessionId = `${roomId || "ROOM"}:${yourId}:${Date.now()}`;
+  lastPositionEventAt = 0;
+  eventStats = {
+    trash_collected: 0,
+    marine_hit: 0,
+    powerup_collected: 0,
+    trail_crossed: 0,
+    player_frozen: 0,
+  };
+}
+
+function currentPlayerPosition() {
+  return player
+    ? { x: Number(player.position.x || 0), y: Number(player.position.y || 0), z: Number(player.position.z || 0) }
+    : null;
+}
+
+function emitGameplayEvent(type, metadata = {}) {
+  try {
+    if (!worker || !type) return;
+    const payload = {
+      type,
+      session_id: currentSessionId || `${roomId || "ROOM"}:${yourId}:pending`,
+      room_id: roomId || null,
+      player_id: yourId,
+      player_name: playerName || localStorage.getItem("yourName") || "Default",
+      score: Number(localScore || 0),
+      position: metadata.position || currentPlayerPosition(),
+      occurred_at: new Date().toISOString(),
+      related_player_id: metadata.related_player_id || metadata.relatedPlayerId || null,
+      related_item_id: metadata.related_item_id || metadata.relatedItemId || metadata.itemId || null,
+      powerup_type: metadata.powerup_type || metadata.powerupType || null,
+      metadata,
+    };
+    worker.postMessage({ type: "game.event", body: payload });
+  } catch (_) {}
+}
 
 // Helper: request a match start on the current room with retries if server ack is slow
 function requestMatchStart() {
@@ -505,9 +645,61 @@ function requestMatchStart() {
   } catch (_) {}
 }
 
+function setupTouchJoystick() {
+  if (document.getElementById("touch-joystick")) return;
+  const wrap = document.createElement("div");
+  wrap.id = "touch-joystick";
+  wrap.className = "touch-joystick";
+  wrap.setAttribute("aria-label", "Touch steering control");
+  const knob = document.createElement("div");
+  knob.className = "touch-joystick-knob";
+  wrap.appendChild(knob);
+  document.body.appendChild(wrap);
+
+  const reset = () => {
+    mobileInput = { throttle: 0, steer: 0, active: false };
+    wrap.classList.remove("active");
+    knob.style.transform = "translate(-50%, -50%)";
+  };
+
+  const update = (clientX, clientY) => {
+    const rect = wrap.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const radius = rect.width / 2;
+    const dx = Math.max(-radius, Math.min(radius, clientX - cx));
+    const dy = Math.max(-radius, Math.min(radius, clientY - cy));
+    const distance = Math.hypot(dx, dy);
+    const scale = distance > radius && distance > 0 ? radius / distance : 1;
+    const x = dx * scale;
+    const y = dy * scale;
+    mobileInput = {
+      throttle: Math.max(-1, Math.min(1, -y / radius)),
+      steer: Math.max(-1, Math.min(1, x / radius)),
+      active: true,
+    };
+    wrap.classList.add("active");
+    knob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+  };
+
+  wrap.addEventListener("pointerdown", (event) => {
+    try { wrap.setPointerCapture(event.pointerId); } catch (_) {}
+    event.preventDefault();
+    update(event.clientX, event.clientY);
+  });
+  wrap.addEventListener("pointermove", (event) => {
+    if (!mobileInput.active) return;
+    event.preventDefault();
+    update(event.clientX, event.clientY);
+  });
+  wrap.addEventListener("pointerup", reset);
+  wrap.addEventListener("pointercancel", reset);
+}
+
 function bindGlobalUI() {
   if (uiBound) return;
   uiBound = true;
+  setupTouchJoystick();
 
   // Main Menu "Play" continues into initialization (Access -> Main Menu -> Lobby)
   const playStartBtn = document.getElementById("startButton");
@@ -861,6 +1053,7 @@ if (document.readyState === "loading") {
 try {
   const url = new URL(window.location.href);
   if (url.searchParams.get("autostart") === "1") {
+    autoStartMatch = true;
     setTimeout(() => { if (!gameInitialized) init(); }, 100);
   }
 } catch (_) {}
@@ -879,6 +1072,9 @@ try {
     if (nameParam && nameParam.trim()) {
       localStorage.setItem("yourName", nameParam.trim());
       playerName = nameParam.trim();
+      if (currentPhase === "ACCESS") {
+        setPhase("MENU");
+      }
     }
     if (roomParam && roomParam.trim()) {
       const desired = normalizeRoomId(roomParam);
@@ -908,6 +1104,20 @@ function toggleHudDebug() {
   localStorage.setItem("debugHUD", cur ? "0" : "1");
   applyHudMode();
 }
+
+function clearCullingDebugHelpers(sceneRef) {
+  for (const helper of cullingHelpers.values()) {
+    try { if (sceneRef) sceneRef.remove(helper); } catch (_) {}
+  }
+  cullingHelpers.clear();
+}
+
+function toggleCullingDebug(sceneRef) {
+  cullingDebugEnabled = !cullingDebugEnabled;
+  if (!cullingDebugEnabled) {
+    clearCullingDebugHelpers(sceneRef);
+  }
+}
 (function setupHudDebugToggle() {
   try {
     const url = new URL(window.location.href);
@@ -935,6 +1145,11 @@ function toggleHudDebug() {
     if (isF2 || macAlt) {
       e.preventDefault();
       toggleHudDebug();
+      return;
+    }
+    if (e.code === "F4" || e.key === "F4") {
+      e.preventDefault();
+      toggleCullingDebug(scene);
     }
   });
   applyHudMode();
@@ -968,9 +1183,11 @@ async function init() {
   const turtleModel = assets.models.turtle;
   const boxModel = assets.models.box;
   const waternormals = assets.textures.waternormals;
+  const atlasTexture = assets.textures.atlas;
+  const atlasMap = assets.atlasMap || null;
 
   // Example: progressive preloading for non-critical assets (placeholder)
-  progressivePreload([]);
+  progressivePreload([preloadNonCriticalAssets]);
 
   // Materials and geometries for pooled items
   const geometries = [
@@ -979,20 +1196,169 @@ async function init() {
     new THREE.TetrahedronGeometry(0.75, 2), // power-up placeholder
   ];
 
+  function makeAtlasMap(tileKey) {
+    if (!atlasTexture || !atlasMap || !atlasMap[tileKey]) return null;
+    const tex = atlasTexture.clone();
+    const region = atlasMap[tileKey];
+    tex.offset.set(region.u, region.v);
+    tex.repeat.set(region.w, region.h);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
   const materials = [
     new THREE.MeshPhongMaterial({ color: 0x90ee90 }), // wildlife (green)
-    new THREE.MeshPhongMaterial({ color: 0xbb8e51 }), // trash (brown)
-    new THREE.MeshPhongMaterial({
+    new THREE.MeshLambertMaterial({
+      color: 0xbb8e51,
+      emissive: 0x2a2418,
+      emissiveIntensity: 0.35,
+      flatShading: true,
+      map: makeAtlasMap("trash"),
+    }), // trash (cheaper shader)
+    new THREE.MeshLambertMaterial({
       color: 0xffd700,
       emissive: 0x332200,
-      emissiveIntensity: 0.6,
-      shininess: 100,
-    }), // power-up (gold)
+      emissiveIntensity: 0.9,
+      flatShading: true,
+      map: makeAtlasMap("powerup"),
+    }), // power-up (cheaper shader)
   ];
 
-  // Object Pooling for wildlife
-  const wildlifePool = [];
-  const POOL_SIZE = 100;
+  // Instanced trash rendering (reduces draw calls)
+  const TRASH_INSTANCE_MAX = 500;
+  const trashGeometry = geometries[1];
+  const trashMaterial = materials[1];
+  const powerupGeometry = new THREE.ConeGeometry(0.6, 1.6, 12);
+  const powerupMaterial = materials[2];
+
+  function initTrashInstancing() {
+    const mesh = new THREE.InstancedMesh(trashGeometry, trashMaterial, TRASH_INSTANCE_MAX);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 2;
+    scene.add(mesh);
+    const free = [];
+    for (let i = 0; i < TRASH_INSTANCE_MAX; i++) {
+      free.push(i);
+      trashTmpMatrix.identity();
+      trashTmpMatrix.setPosition(1e6, 1e6, 1e6);
+      mesh.setMatrixAt(i, trashTmpMatrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    return { mesh, free, map: new Map(), max: TRASH_INSTANCE_MAX };
+  }
+
+  trashInstances = initTrashInstancing();
+
+  function setTrashInstance(itemId, position, size) {
+    if (!trashInstances) return false;
+    if (trashInstances.map.has(itemId)) return true;
+    if (!trashInstances.free.length) return false;
+    const idx = trashInstances.free.pop();
+    trashInstances.map.set(itemId, idx);
+    const s = Number(size) || 1;
+    trashTmpScale.set(s, s, s);
+    const waterY = typeof position?.y === "number" ? position.y : 0;
+    trashTmpPos.set(position.x, waterY + 0.2, position.z);
+    trashTmpMatrix.identity();
+    trashTmpMatrix.compose(trashTmpPos, new THREE.Quaternion(), trashTmpScale);
+    trashInstances.mesh.setMatrixAt(idx, trashTmpMatrix);
+    trashInstances.mesh.instanceMatrix.needsUpdate = true;
+    return true;
+  }
+
+  clearTrashInstances = function () {
+    if (!trashInstances) return;
+    for (const idx of trashInstances.map.values()) {
+      trashTmpMatrix.identity();
+      trashTmpMatrix.setPosition(1e6, 1e6, 1e6);
+      trashInstances.mesh.setMatrixAt(idx, trashTmpMatrix);
+      trashInstances.free.push(idx);
+    }
+    trashInstances.map.clear();
+    trashInstances.mesh.instanceMatrix.needsUpdate = true;
+  };
+
+  function initPowerupInstancing() {
+    const mesh = new THREE.InstancedMesh(powerupGeometry, powerupMaterial, 200);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 2;
+    scene.add(mesh);
+    const free = [];
+    for (let i = 0; i < mesh.count; i++) {
+      free.push(i);
+      powerupTmpMatrix.identity();
+      powerupTmpMatrix.setPosition(1e6, 1e6, 1e6);
+      mesh.setMatrixAt(i, powerupTmpMatrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    return { mesh, free, map: new Map(), max: mesh.count };
+  }
+
+  powerupInstances = initPowerupInstancing();
+
+  function setPowerupInstance(itemId, position, size) {
+    if (!powerupInstances) return false;
+    if (powerupInstances.map.has(itemId)) return true;
+    if (!powerupInstances.free.length) return false;
+    const idx = powerupInstances.free.pop();
+    powerupInstances.map.set(itemId, { idx, rot: Math.random() * Math.PI * 2 });
+    const s = Number(size) || 1;
+    powerupTmpScale.set(s, s, s);
+    const waterY = typeof position?.y === "number" ? position.y : 0;
+    powerupTmpPos.set(position.x, waterY + 0.2, position.z);
+    powerupTmpEuler.set(0, Math.random() * Math.PI * 2, 0);
+    powerupTmpQuat.setFromEuler(powerupTmpEuler);
+    powerupTmpMatrix.compose(powerupTmpPos, powerupTmpQuat, powerupTmpScale);
+    powerupInstances.mesh.setMatrixAt(idx, powerupTmpMatrix);
+    powerupInstances.mesh.instanceMatrix.needsUpdate = true;
+    return true;
+  }
+
+  releasePowerupInstance = function (itemId) {
+    if (!powerupInstances) return;
+    const entry = powerupInstances.map.get(itemId);
+    if (!entry) return;
+    powerupInstances.map.delete(itemId);
+    powerupTmpMatrix.identity();
+    powerupTmpMatrix.setPosition(1e6, 1e6, 1e6);
+    powerupInstances.mesh.setMatrixAt(entry.idx, powerupTmpMatrix);
+    powerupInstances.mesh.instanceMatrix.needsUpdate = true;
+    powerupInstances.free.push(entry.idx);
+  };
+
+  clearPowerupInstances = function () {
+    if (!powerupInstances) return;
+    for (const entry of powerupInstances.map.values()) {
+      powerupTmpMatrix.identity();
+      powerupTmpMatrix.setPosition(1e6, 1e6, 1e6);
+      powerupInstances.mesh.setMatrixAt(entry.idx, powerupTmpMatrix);
+      powerupInstances.free.push(entry.idx);
+    }
+    powerupInstances.map.clear();
+    powerupInstances.mesh.instanceMatrix.needsUpdate = true;
+  };
+
+  releaseTrashInstance = function (itemId) {
+    if (!trashInstances) return;
+    const idx = trashInstances.map.get(itemId);
+    if (idx == null) return;
+    trashInstances.map.delete(itemId);
+    trashTmpMatrix.identity();
+    trashTmpMatrix.setPosition(1e6, 1e6, 1e6);
+    trashInstances.mesh.setMatrixAt(idx, trashTmpMatrix);
+    trashInstances.mesh.instanceMatrix.needsUpdate = true;
+    trashInstances.free.push(idx);
+  };
+
+  // Object pooling for wildlife
+  const WILDLIFE_POOL_INITIAL = 100;
+  const WILDLIFE_POOL_MAX = 280;
 
   function createWildlifeMesh() {
     // Group wrapper so we can keep the turtle child pitched flat (-90deg X)
@@ -1005,25 +1371,48 @@ async function init() {
       }
     });
     turtle.rotation.set(-Math.PI / 2, 0, 0); // lie flat on water
+    turtle.userData.baseRotX = turtle.rotation.x;
+    turtle.userData.baseRotY = turtle.rotation.y;
+    turtle.userData.baseRotZ = turtle.rotation.z;
     group.add(turtle);
+    // Low LOD fallback (simple sphere)
+    const lodLow = new THREE.Mesh(
+      new THREE.SphereGeometry(0.4, 8, 6),
+      new THREE.MeshLambertMaterial({ color: 0x6aa84f, flatShading: true })
+    );
+    lodLow.visible = false;
+    group.add(lodLow);
+    group.userData.lodHigh = turtle;
+    group.userData.lodLow = lodLow;
     group.renderOrder = 2;
     group.userData.turtle = turtle;
+    group.userData.boatVisual = turtle;
     group.visible = false;
     scene.add(group);
     return group;
   }
 
-  // Pre-allocate pool
-  for (let i = 0; i < POOL_SIZE; i++) {
-    wildlifePool.push(createWildlifeMesh());
-  }
+  wildlifePool = new ObjectPool({
+    name: "wildlife",
+    initialSize: WILDLIFE_POOL_INITIAL,
+    maxSize: WILDLIFE_POOL_MAX,
+    objectSizeBytes: 2200,
+    create: createWildlifeMesh,
+    reset: (group) => {
+      if (!group) return;
+      group.visible = false;
+      group.position.set(0, 0, 0);
+      group.rotation.set(0, 0, 0);
+      group.scale.set(1, 1, 1);
+      if (group.userData && group.userData.turtle) {
+        group.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
+      }
+    },
+  });
 
   function getWildlifeFromPool() {
-    let group = wildlifePool.find((m) => !m.visible);
-    if (!group) {
-      group = createWildlifeMesh();
-      wildlifePool.push(group);
-    }
+    const group = wildlifePool ? wildlifePool.acquire() : createWildlifeMesh();
+    if (!group) return createWildlifeMesh();
     // Ensure correct orientation every time it's reused
     if (group.userData && group.userData.turtle) {
       group.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
@@ -1033,11 +1422,15 @@ async function init() {
   }
 
   function returnToPoolLocal(mesh) {
+    if (wildlifePool) {
+      wildlifePool.release(mesh);
+      return;
+    }
+    if (!mesh) return;
     mesh.visible = false;
     mesh.position.set(0, 0, 0);
     mesh.rotation.set(0, 0, 0);
     mesh.scale.set(1, 1, 1);
-    // Keep turtle child pitched flat for next reuse
     if (mesh.userData && mesh.userData.turtle) {
       mesh.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
     }
@@ -1171,6 +1564,22 @@ async function init() {
         console.log(body);
         appendEventConsole("log", body);
         break;
+      case "commentary.ready": {
+        const text = body && (body.commentary || body.text || body.script);
+        let el = document.getElementById("results-commentary");
+        if (!el) {
+          const summary = document.getElementById("results-summary");
+          if (summary) {
+            el = document.createElement("div");
+            el.id = "results-commentary";
+            el.className = "results-commentary";
+            summary.appendChild(el);
+          }
+        }
+        if (el && text) el.textContent = text;
+        appendEventConsole("commentary.ready", body);
+        break;
+      }
       case "server.info":
         serverVersion = body.version;
         gameDuration = body.gameDuration;
@@ -1181,6 +1590,12 @@ async function init() {
         if (hudVersionEl) {
           hudVersionEl.innerHTML = "Version: " + (serverVersion || "-");
         }
+        // Keep shared timer aligned with authoritative server duration while not running.
+        if (Number.isFinite(gameDuration) && gameState !== "RUNNING" && gameState !== "STARTING") {
+          lastServerTimeSyncValue = Number(gameDuration);
+          lastServerTimeSyncAtMs = Date.now();
+          renderTimeValue(gameDuration);
+        }
         break;
       case "game.on":
         {
@@ -1190,6 +1605,23 @@ async function init() {
           }
           const sp = body && body.startPosition ? body.startPosition : null;
           startPosition = sp;
+          if (gameState !== "RUNNING") {
+            gameState = "RUNNING";
+            setPhase("GAMEPLAY");
+            resetGameplayTelemetry();
+            emitGameplayEvent("game_started", {
+              position: sp || currentPlayerPosition(),
+              start_position: sp || null,
+            });
+            clearCountdown();
+            if (!Number.isFinite(lastServerTimeSyncValue) && Number.isFinite(gameDuration)) {
+              lastServerTimeSyncValue = Number(gameDuration);
+              lastServerTimeSyncAtMs = Date.now();
+              renderTimeValue(gameDuration);
+            }
+            startLocalTimeTicker();
+            try { if (typeof updateControls === "function") updateControls(); } catch (_) {}
+          }
           worker.postMessage({
             type: "game.start",
             body: { playerId: yourId, playerName },
@@ -1239,6 +1671,24 @@ async function init() {
           const itemIdToDestroy = body;
           const item = items[itemIdToDestroy];
           const mesh = itemMeshes[itemIdToDestroy];
+          if (item && isPowerUp(item.type)) {
+            releasePowerupInstance(itemIdToDestroy);
+            delete items[itemIdToDestroy];
+            if (mesh && mesh.isObject3D) {
+              scene.remove(mesh);
+              delete itemMeshes[itemIdToDestroy];
+            }
+            break;
+          }
+          if (item && !isMarineLife(item.type) && !isPowerUp(item.type)) {
+            releaseTrashInstance(itemIdToDestroy);
+            delete items[itemIdToDestroy];
+            if (mesh && mesh.isObject3D) {
+              scene.remove(mesh);
+              delete itemMeshes[itemIdToDestroy];
+            }
+            break;
+          }
           if (item && mesh) {
             scene.remove(mesh);
             if (isMarineLife(item.type)) returnToPool(mesh);
@@ -1308,12 +1758,27 @@ async function init() {
           break;
         }
         if (body === "WAITING") {
+          const statusEl = document.getElementById("lobby-status");
+          if (statusEl) statusEl.textContent = "Waiting for game...";
+          if (Number.isFinite(gameDuration)) {
+            lastServerTimeSyncValue = Number(gameDuration);
+            lastServerTimeSyncAtMs = Date.now();
+            renderTimeValue(gameDuration);
+          }
+          stopLocalTimeTicker();
           setPhase("LOBBY");
         } else if (body === "STARTING") {
+          stopLocalTimeTicker();
           setPhase("STARTING");
         } else if (body === "RUNNING") {
+          if (!Number.isFinite(lastServerTimeSyncValue) && Number.isFinite(gameDuration)) {
+            lastServerTimeSyncValue = Number(gameDuration);
+            lastServerTimeSyncAtMs = Date.now();
+          }
+          startLocalTimeTicker();
           setPhase("GAMEPLAY");
         } else if (body === "ENDED") {
+          stopLocalTimeTicker();
           endGame();
           setPhase("POST_GAME");
         }
@@ -1321,12 +1786,9 @@ async function init() {
         break;
       }
       case "game.time":
-        remainingTime = body;
-        if (hudTimeEl) hudTimeEl.innerHTML = "Time: " + remainingTime;
-        if (compactTimeEl) compactTimeEl.innerHTML = "Time: " + remainingTime;
-        if (!hudTimeEl && !compactTimeEl && timerDivRef) {
-          timerDivRef.innerHTML = "Time: " + remainingTime;
-        }
+        lastServerTimeSyncValue = Number(body);
+        lastServerTimeSyncAtMs = Date.now();
+        renderTimeValue(body);
         break;
       case "player.state":
         if (body && body.states) {
@@ -1336,6 +1798,18 @@ async function init() {
         break;
       case "server.metrics":
         updateMonitor(body || {});
+        break;
+      case "network.stats":
+        if (body && typeof body === "object") {
+          networkStats = {
+            upKbps: Number(body.upKbps) || 0,
+            downKbps: Number(body.downKbps) || 0,
+            rttMs: Number.isFinite(body.rttMs) ? Number(body.rttMs) : null,
+            quality: body.quality || "unknown",
+            lossRate: Number(body.lossRate) || 0,
+          };
+          updateNetworkMonitorOnly();
+        }
         break;
       case "rooms.update": {
         roomsDirectory = body || null;
@@ -1371,6 +1845,12 @@ async function init() {
               try { requestMatchStart(); } catch (_) {}
             }, 50);
           }
+          if (autoStartMatch && currentPhase === "LOBBY") {
+            setTimeout(() => {
+              try { if (worker) worker.postMessage({ type: "admin.claim" }); } catch (_) {}
+              try { requestMatchStart(); } catch (_) {}
+            }, 120);
+          }
         }
         break;
       }
@@ -1378,6 +1858,12 @@ async function init() {
         const adminId = body && body.id ? String(body.id) : null;
         isAdmin = adminId === yourId;
         if (typeof updateControls === "function") updateControls();
+        if (autoStartMatch && currentPhase === "LOBBY") {
+          setTimeout(() => {
+            try { if (worker) worker.postMessage({ type: "admin.claim" }); } catch (_) {}
+            try { requestMatchStart(); } catch (_) {}
+          }, 120);
+        }
         break;
       }
       case "chat.history": {
@@ -1435,6 +1921,8 @@ async function init() {
       case "startingGame": {
         // Do not force STARTING if user navigated back to Menu/Access
         if (currentPhase === "MENU" || currentPhase === "ACCESS") break;
+        // Ignore late countdown events once gameplay is already running
+        if (gameState === "RUNNING" || currentPhase === "GAMEPLAY") break;
         gameState = "STARTING";
         setPhase("STARTING");
         const startsAt = body && (body.startsAt || body.startAt);
@@ -1484,8 +1972,7 @@ async function init() {
     worker.postMessage({ type: "close" });
   });
 
-  // Object Pooling for boats (other players)
-  const boatPool = [];
+  // Object pooling for boats (other players)
   const BOAT_POOL_SIZE = 50;
 
   function createBoatGroup() {
@@ -1495,34 +1982,74 @@ async function init() {
     return group;
   }
 
-  // Pre-allocate boat pool
-  for (let i = 0; i < BOAT_POOL_SIZE; i++) {
-    boatPool.push(createBoatGroup());
-  }
+  boatPool = new ObjectPool({
+    name: "boats",
+    initialSize: BOAT_POOL_SIZE,
+    maxSize: 140,
+    objectSizeBytes: 6400,
+    create: createBoatGroup,
+    reset: (group) => {
+      if (!group) return;
+      group.visible = false;
+      group.position.set(0, 0, 0);
+      group.rotation.set(0, 0, 0);
+      while (group.children.length) {
+        const ch = group.children[0];
+        group.remove(ch);
+        if (ch && ch.name === "nameTag" && uiNameTagPool) {
+          uiNameTagPool.release(ch);
+        }
+      }
+    },
+  });
 
   function getBoatFromPool() {
-    let group = boatPool.find((g) => !g.visible);
-    if (!group) {
-      group = createBoatGroup();
-      boatPool.push(group);
-    }
+    const group = boatPool ? boatPool.acquire() : createBoatGroup();
+    if (!group) return createBoatGroup();
     group.visible = true;
     return group;
   }
 
   function returnBoatToPool(group) {
     if (!group) return;
+    if (boatPool) {
+      boatPool.release(group);
+      return;
+    }
     group.visible = false;
     group.position.set(0, 0, 0);
     group.rotation.set(0, 0, 0);
-    while (group.children.length) {
-      group.remove(group.children[0]);
+    while (group.children.length) group.remove(group.children[0]);
+  }
+
+  function serializableUserData(userData) {
+    const safe = {};
+    for (const [key, value] of Object.entries(userData || {})) {
+      if (value && value.isObject3D) continue;
+      if (typeof value === "function") continue;
+      try {
+        JSON.stringify(value);
+        safe[key] = value;
+      } catch (_) {
+        // Three.js clones userData through JSON; skip circular debug/runtime refs.
+      }
+    }
+    return safe;
+  }
+
+  function cloneModelForRemotePlayer(playerMesh) {
+    const originalUserData = playerMesh.userData;
+    playerMesh.userData = serializableUserData(originalUserData);
+    try {
+      return playerMesh.clone();
+    } finally {
+      playerMesh.userData = originalUserData;
     }
   }
 
   function makePlayerMesh(playerMesh, id) {
     const group = getBoatFromPool();
-    const mesh = playerMesh.clone();
+    const mesh = cloneModelForRemotePlayer(playerMesh);
     mesh.position.set(0, 0, 0);
     mesh.rotation.set(0, 0, 0);
     mesh.traverse((object) => {
@@ -1532,6 +2059,16 @@ async function init() {
       }
     });
     group.add(mesh);
+    // Low LOD boat (simple box)
+    const lodLow = new THREE.Mesh(
+      new THREE.BoxGeometry(0.9, 0.25, 1.6),
+      new THREE.MeshLambertMaterial({ color: 0x547ea5, flatShading: true })
+    );
+    lodLow.visible = false;
+    group.add(lodLow);
+    group.userData.lodHigh = mesh;
+    group.userData.lodLow = lodLow;
+    group.userData.boatVisual = mesh;
     const label =
       (otherPlayersInfo[id] && otherPlayersInfo[id].name)
         ? otherPlayersInfo[id].name
@@ -1540,31 +2077,23 @@ async function init() {
     return group;
   }
 
-  function isPowerUp(type) {
-    return String(type || "").startsWith("powerup_");
-  }
-
   // Create a random trash or wildlife or power-up object
   function createItemMesh(itemId, itemType, position, size) {
     let itemMesh;
     if (isMarineLife(itemType)) {
       itemMesh = getWildlifeFromPool();
     } else if (isPowerUp(itemType)) {
-      // Blue cone power-up
-      const geometry = new THREE.ConeGeometry(0.6, 1.6, 24);
-      const material = new THREE.MeshPhongMaterial({
-        color: 0x3388ff,
-        emissive: 0x112244,
-        emissiveIntensity: 0.4,
-        shininess: 80,
-      });
-      itemMesh = new THREE.Mesh(geometry, material);
+      const placed = setPowerupInstance(itemId, position, size);
+      if (placed) return null;
+      itemMesh = new THREE.Mesh(powerupGeometry, powerupMaterial);
       itemMesh.castShadow = true;
       itemMesh.receiveShadow = true;
       itemMesh.rotation.y = Math.random() * Math.PI; // subtle idle spin
       scene.add(itemMesh);
       try { disableReflectionForObject(itemMesh); } catch (_) {}
     } else {
+      const placed = setTrashInstance(itemId, position, size);
+      if (placed) return null;
       const geometry = geometries[1];
       const material = materials[1];
       itemMesh = new THREE.Mesh(geometry, material);
@@ -1688,15 +2217,68 @@ function addTrailPoint(id, position) {
   }
 }
 
+function applyTextureQuality(target, level) {
+  if (!target) return;
+  if (!target.userData) target.userData = {};
+  if (target.userData.textureQuality === level) return;
+  const maxAniso = renderer?.capabilities?.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1;
+  const anisotropy = level === "low" ? 1 : Math.min(4, maxAniso || 1);
+  const textureKeys = ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap"];
+  target.traverse((obj) => {
+    if (!obj || !obj.isMesh || !obj.material) return;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    mats.forEach((mat) => {
+      if (!mat) return;
+      textureKeys.forEach((key) => {
+        const tex = mat[key];
+        if (!tex) return;
+        tex.anisotropy = anisotropy;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.generateMipmaps = true;
+        tex.needsUpdate = true;
+      });
+    });
+  });
+  target.userData.textureQuality = level;
+}
+
+function applyLodForGroup(group) {
+  if (!group || !camera) return;
+  const lodHigh = group.userData && group.userData.lodHigh;
+  const lodLow = group.userData && group.userData.lodLow;
+  if (!lodHigh || !lodLow) return;
+  const dist = camera.position.distanceTo(group.position);
+  const useLow = dist > LOD_DISTANCES.medium;
+  lodHigh.visible = !useLow;
+  lodLow.visible = useLow;
+  applyTextureQuality(lodHigh, useLow ? "low" : "high");
+}
+
 /**
  * Name tags above boats
  */
 function createNameSprite(text) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
-  const fontSize = 48;
   canvas.width = 256;
   canvas.height = 64;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(1.6, 0.4, 1);
+  sprite.userData.canvas = canvas;
+  sprite.userData.ctx = ctx;
+  setNameSpriteText(sprite, text || "");
+  return sprite;
+}
+
+function setNameSpriteText(sprite, text) {
+  if (!sprite || !sprite.userData || !sprite.userData.canvas || !sprite.userData.ctx) return;
+  const canvas = sprite.userData.canvas;
+  const ctx = sprite.userData.ctx;
+  const fontSize = 48;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.font = `bold ${fontSize}px Arial`;
   ctx.fillStyle = "white";
@@ -1708,30 +2290,55 @@ function createNameSprite(text) {
   ctx.strokeStyle = "black";
   ctx.strokeText(text, canvas.width / 2, canvas.height / 2);
   ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
-  const sprite = new THREE.Sprite(material);
-  sprite.scale.set(1.6, 0.4, 1);
-  return sprite;
+  if (sprite.material && sprite.material.map) {
+    sprite.material.map.needsUpdate = true;
+  }
+}
+
+function ensureUiPools() {
+  if (uiNameTagPool) return;
+  uiNameTagPool = new ObjectPool({
+    name: "uiNameTags",
+    initialSize: 24,
+    maxSize: 120,
+    objectSizeBytes: 1024,
+    create: () => createNameSprite(""),
+    reset: (sprite) => {
+      if (!sprite) return;
+      sprite.visible = false;
+      sprite.position.set(0, 1.4, 0);
+      setNameSpriteText(sprite, "");
+    },
+  });
 }
 function addNameTag(object3d, name) {
-  const sprite = createNameSprite(name);
+  ensureUiPools();
+  const sprite = uiNameTagPool ? uiNameTagPool.acquire() : createNameSprite(name);
+  if (!sprite) return null;
   sprite.name = "nameTag";
+  setNameSpriteText(sprite, name || "");
   sprite.position.set(0, 1.4, 0);
+  sprite.visible = true;
   object3d.add(sprite);
   return sprite;
 }
 function updateNameTag(object3d, name) {
   if (!object3d) return;
+  let tag = null;
   try {
-    const toRemove = [];
     for (const c of object3d.children) {
-      if (c && c.name === "nameTag") toRemove.push(c);
+      if (c && c.name === "nameTag") {
+        tag = c;
+        break;
+      }
     }
-    toRemove.forEach((c) => object3d.remove(c));
   } catch (_) {}
-  addNameTag(object3d, name);
+  if (!tag) {
+    addNameTag(object3d, name);
+    return;
+  }
+  setNameSpriteText(tag, name || "");
+  tag.visible = true;
 }
 function refreshNameTagForPlayer(id) {
   if (!id) return;
@@ -1815,6 +2422,8 @@ function updatePowerUpBadge() {
   // Effects
   if (powerUpState.speedMultiplier > 1) icons.push("⚡");
   if (powerUpState.shield) icons.push("🛡️");
+  if (Date.now() < (powerUpState.magnetUntil || 0)) icons.push("🧲");
+  if (Date.now() < (powerUpState.freezeUntil || 0)) icons.push("❄️");
   // Freeze indicator while active
   const freezeActive = Date.now() < (freezeUntilMs || 0);
   if (freezeActive) icons.push("❄️");
@@ -1848,7 +2457,97 @@ function updatePlayersHud() {
   try {
     const count = 1 + Object.keys(otherPlayersMeshes || {}).length;
     hudPlayersEl.innerHTML = "Players: " + count;
+    optimizePoolSizesForPlayers(count);
   } catch (_) {}
+}
+
+function optimizePoolSizesForPlayers(playerCount) {
+  const p = Math.max(1, Number(playerCount) || 1);
+  try {
+    if (wildlifePool) {
+      wildlifePool.resize(Math.min(240, 60 + p * 18), 280);
+    }
+    if (boatPool) {
+      boatPool.resize(Math.min(120, 20 + p * 8), 140);
+    }
+    if (uiNameTagPool) {
+      uiNameTagPool.resize(Math.min(100, 12 + p * 5), 120);
+    }
+  } catch (_) {}
+}
+
+function collectPoolMetrics() {
+  const wildlife = wildlifePool ? wildlifePool.metrics() : null;
+  const boats = boatPool ? boatPool.metrics() : null;
+  const ui = uiNameTagPool ? uiNameTagPool.metrics() : null;
+  let particles = null;
+  try {
+    if (emitters && typeof emitters.metrics === "function") {
+      particles = emitters.metrics();
+    }
+  } catch (_) {}
+  let totalBytes = 0;
+  [wildlife, boats, ui].forEach((m) => {
+    if (m && Number.isFinite(m.memoryEstimateBytes)) totalBytes += m.memoryEstimateBytes;
+  });
+  if (particles && Number.isFinite(particles.memoryEstimateBytes)) {
+    totalBytes += particles.memoryEstimateBytes;
+  }
+  latestPoolMetrics = { wildlife, boats, ui, particles, totalBytes };
+  return latestPoolMetrics;
+}
+
+function updateNetworkMonitorOnly() {
+  const setText = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = String(v);
+  };
+  setText("mon-net-up", `${(Number(networkStats.upKbps) || 0).toFixed(2)} kbps`);
+  setText("mon-net-down", `${(Number(networkStats.downKbps) || 0).toFixed(2)} kbps`);
+  setText("mon-net-rtt", networkStats.rttMs != null ? `${networkStats.rttMs} ms` : "-");
+  setText("mon-net-loss", `${(Number(networkStats.lossRate) * 100).toFixed(1)}%`);
+  setText("mon-net-quality", networkStats.quality || "unknown");
+  const pm = collectPoolMetrics();
+  if (pm) {
+      const fmt = (m) =>
+        m
+          ? `${m.inUse}/${m.total} avg ${m.avgAcquireMs}ms/${m.avgReleaseMs}ms life ${m.avgLifetimeMs}ms err ${m.errors}`
+          : "-";
+    setText("mon-pool-wildlife", fmt(pm.wildlife));
+    setText("mon-pool-boats", fmt(pm.boats));
+    setText("mon-pool-ui", fmt(pm.ui));
+    setText("mon-pool-particles", pm.particles ? `${pm.particles.alive}/${pm.particles.capacity}` : "-");
+    setText("mon-pool-memory", `${Math.round((pm.totalBytes || 0) / 1024)} KB`);
+  }
+  const rs = collectRenderMetrics();
+  if (rs) {
+    setText("mon-render-fps", rs.fps.toFixed(1));
+    setText("mon-render-frame", `${rs.frameMs.toFixed(2)} ms`);
+    setText("mon-render-draws", rs.drawCalls);
+    setText("mon-render-tris", rs.triangles.toLocaleString());
+    const programText = Number.isFinite(rs.programs) ? rs.programs : "-";
+    setText("mon-render-memory", `${rs.geometries}/${rs.textures}/${programText}`);
+  }
+  const assetStats = getAssetCacheStats();
+    setText("mon-asset-models", assetStats.models);
+    setText("mon-asset-textures", assetStats.textures);
+    setText("mon-asset-preload", assetStats.preloadStarted ? "ready" : "idle");
+    setText("mon-lod", `H<${LOD_DISTANCES.high} M<${LOD_DISTANCES.medium} L<${LOD_DISTANCES.low}`);
+}
+
+function collectRenderMetrics() {
+  if (!renderer || !renderer.info) return renderStats;
+  const info = renderer.info;
+  renderStats = {
+    fps: smoothedFrameMs > 0 ? 1000 / smoothedFrameMs : 0,
+    frameMs: smoothedFrameMs,
+    drawCalls: Number(info.render.calls) || 0,
+    triangles: Number(info.render.triangles) || 0,
+    geometries: Number(info.memory.geometries) || 0,
+    textures: Number(info.memory.textures) || 0,
+    programs: Array.isArray(info.programs) ? info.programs.length : null,
+  };
+  return renderStats;
 }
 
 // Debug Object Monitor rendering
@@ -1878,6 +2577,7 @@ function updateMonitor(m) {
   setText("mon-target-marine", m.targets && m.targets.marine != null ? m.targets.marine : "-");
   setText("mon-target-power", m.targets && m.targets.powerups != null ? m.targets.powerups : "-");
   setText("mon-next-spawn", m.spawn && m.spawn.nextTickMs != null ? m.spawn.nextTickMs : "-");
+  updateNetworkMonitorOnly();
 }
 
 function distPointToSegmentSq(p, a, b) {
@@ -1904,6 +2604,19 @@ function checkTrailCollisionsWithPlayer() {
       ) {
         // Apply freeze effect for 5 seconds
         freezeUntilMs = Date.now() + 5000;
+        eventStats.trail_crossed++;
+        eventStats.player_frozen++;
+        emitGameplayEvent("trail_crossed", {
+          related_player_id: id,
+          trail_segment: {
+            from: { x: Number(pts[i].x || 0), y: Number(pts[i].y || 0), z: Number(pts[i].z || 0) },
+            to: { x: Number(pts[i + 1].x || 0), y: Number(pts[i + 1].y || 0), z: Number(pts[i + 1].z || 0) },
+          },
+        });
+        emitGameplayEvent("player_frozen", {
+          related_player_id: id,
+          freeze_ms: 5000,
+        });
         if (!freezeDiv) {
           freezeDiv = document.createElement("div");
           freezeDiv.style.position = "absolute";
@@ -1967,7 +2680,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.55;
+  renderer.toneMappingExposure = 0.68;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
@@ -2007,6 +2720,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
   scene.add(boat);
   player = boat;
+  player.userData.boatVisual = boat;
+  boat.userData.baseRotX = boat.rotation.x || 0;
+  boat.userData.baseRotY = boat.rotation.y || 0;
+  boat.userData.baseRotZ = boat.rotation.z || 0;
   if (startPosition && typeof startPosition.x === "number" && typeof startPosition.z === "number") {
     player.position.set(startPosition.x, (startPosition.y || 0), startPosition.z);
   }
@@ -2027,11 +2744,11 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   // No local name tag (only show names above other boats)
 
   // lights
-  const ambientLight = new THREE.AmbientLight(0x404040, 13);
+  const ambientLight = new THREE.AmbientLight(0x3a4650, 5.2);
   player.add(ambientLight);
-  const hemi = new THREE.HemisphereLight(0xbcdfff, 0x244057, 0.7);
+  const hemi = new THREE.HemisphereLight(0xbcdbe9, 0x1f2f3d, 1.05);
   scene.add(hemi);
-  dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight = new THREE.DirectionalLight(0xfff6ea, 0.85);
   scene.add(dirLight);
 
   // audio (autoplay-safe across browsers)
@@ -2155,11 +2872,16 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const { y: rotY } = player.rotation;
     const trace = {
       id: yourId,
-      x: x.toFixed(10),
-      z: z.toFixed(10),
-      rotY: rotY.toFixed(10),
+      x: Number(x.toFixed(3)),
+      z: Number(z.toFixed(3)),
+      rotY: Number(rotY.toFixed(4)),
     };
-    if (JSON.stringify(trace) !== JSON.stringify(lastTrace)) {
+    const changed =
+      !lastTrace ||
+      Math.abs(trace.x - lastTrace.x) >= 0.02 ||
+      Math.abs(trace.z - lastTrace.z) >= 0.02 ||
+      Math.abs(trace.rotY - lastTrace.rotY) >= 0.01;
+    if (changed) {
       worker.postMessage({ type: "player.trace.change", body: trace });
       lastTrace = trace;
     }
@@ -2250,6 +2972,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const active = [];
     if (powerUpState.speedMultiplier > 1) active.push("Speed x" + powerUpState.speedMultiplier);
     if (powerUpState.shield) active.push("Shield");
+    if (Date.now() < (powerUpState.magnetUntil || 0)) active.push("Magnet");
+    if (Date.now() < (powerUpState.freezeUntil || 0)) active.push("Time Freeze");
     powerUpState.uiDiv.innerHTML = "Power-ups: " + (active.length ? active.join(", ") : "none");
     updatePowerUpBadge();
   }
@@ -2259,8 +2983,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   function restart() {
     restartBtn.style.display = "none";
     for (const [, mesh] of Object.entries(itemMeshes)) {
-      scene.remove(mesh);
+      if (mesh && mesh.isObject3D) scene.remove(mesh);
     }
+    clearTrashInstances();
+    clearPowerupInstances();
     player.position.set(0, 0, 0);
     localScore = 0;
     scoreElement.innerHTML = "Score: " + localScore;
@@ -2290,12 +3016,54 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const tSec = performance.now() * 0.001;
     const halfW = (boundaries?.width || 100) / 2 - 1;
     const halfH = (boundaries?.height || 100) / 2 - 1;
-    const dt = frameDt || 0.016;
+    const timeFreezeActive = Date.now() < (powerUpState.freezeUntil || 0);
+    const dt = (frameDt || 0.016) * (timeFreezeActive ? POWERUP_FREEZE_OTHER_MULT : 1);
+    const px = player ? player.position.x : 0;
+    const pz = player ? player.position.z : 0;
+
+    if (powerupInstances) {
+      const bob = Math.sin(tSec * 2.4) * 0.03;
+      for (const [itemId, entry] of powerupInstances.map.entries()) {
+        const item = items[itemId];
+        if (!item) continue;
+        entry.rot += 0.6 * dt;
+        const s = Number(item.size) || 1;
+        powerupTmpScale.set(s, s, s);
+        const ix = Number(item.position?.x) || 0;
+        const iz = Number(item.position?.z) || 0;
+        const waterY = typeof item.position?.y === "number" ? item.position.y : 0;
+        powerupTmpPos.set(ix, waterY + 0.2 + bob, iz);
+        powerupTmpEuler.set(0, entry.rot, 0);
+        powerupTmpQuat.setFromEuler(powerupTmpEuler);
+        powerupTmpMatrix.compose(powerupTmpPos, powerupTmpQuat, powerupTmpScale);
+        powerupInstances.mesh.setMatrixAt(entry.idx, powerupTmpMatrix);
+      }
+      powerupInstances.mesh.instanceMatrix.needsUpdate = true;
+    }
+
+    if (trashInstances) {
+      for (const [itemId, idx] of trashInstances.map.entries()) {
+        const item = items[itemId];
+        if (!item) continue;
+        const s = Number(item.size) || 1;
+        const ix = Number(item.position?.x) || 0;
+        const iz = Number(item.position?.z) || 0;
+        const waterY = typeof item.position?.y === "number" ? item.position.y : 0;
+        trashTmpScale.set(s, s, s);
+        trashTmpPos.set(ix, waterY + 0.2, iz);
+        trashTmpMatrix.identity();
+        trashTmpMatrix.compose(trashTmpPos, new THREE.Quaternion(), trashTmpScale);
+        trashInstances.mesh.setMatrixAt(idx, trashTmpMatrix);
+      }
+      trashInstances.mesh.instanceMatrix.needsUpdate = true;
+    }
 
     for (const [, mesh] of Object.entries(itemMeshes)) {
+      if (!mesh || !mesh.isObject3D) continue;
       if (mesh.outOfBounds) continue;
 
       if (String(mesh.itemType || "") === "turtle") {
+        applyLodForGroup(mesh);
         // Simple wandering AI within bounds
         if (!mesh.userData.ai) {
           mesh.userData.ai = {
@@ -2333,12 +3101,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           mesh.rotation.y = THREE.MathUtils.lerp(mesh.rotation.y, yaw, 0.15);
         }
 
-        // Buoyancy (halved effect): subtle vertical + tilt
-        const bh = getHeightAndNormal(mesh.position.x, mesh.position.z, tSec);
-        // Smooth vertical approach (small step)
-        mesh.position.y = THREE.MathUtils.lerp(mesh.position.y, bh.height, 0.05);
-        // Half-strength tilt
-        applyTilt(mesh, bh.normal, 0.025, 0.12);
       } else {
         // Simple idle bobbing for non-turtles above the water line
         const t = tSec;
@@ -2432,8 +3194,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const rotY = player ? Number(player.rotation.y || 0) : 0;
     const spd = __effectiveSpeedForFrame();
     const ts = Date.now();
-    const throttle = (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0);
-    const steer = (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0);
+    const throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
+    const steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) + Number(mobileInput.steer || 0)));
     return {
       ts,
       timeISO: new Date(ts).toISOString(),
@@ -2530,16 +3292,142 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         updatePowerUpUI();
       }, 5000);
       updatePowerUpUI();
+    } else if (type === "powerup_magnet") {
+      powerUpState.magnetUntil = Date.now() + 8000;
+      if (powerUpState.timers.magnet) clearTimeout(powerUpState.timers.magnet);
+      powerUpState.timers.magnet = setTimeout(() => {
+        powerUpState.magnetUntil = 0;
+        updatePowerUpUI();
+      }, 8000);
+      updatePowerUpUI();
+    } else if (type === "powerup_freeze") {
+      powerUpState.freezeUntil = Date.now() + 4000;
+      if (powerUpState.timers.freeze) clearTimeout(powerUpState.timers.freeze);
+      powerUpState.timers.freeze = setTimeout(() => {
+        powerUpState.freezeUntil = 0;
+        updatePowerUpUI();
+      }, 4000);
+      updatePowerUpUI();
     }
   }
 
   function checkCollisions() {
     const playerBox = new THREE.Box3().setFromObject(player);
+    const trashBox = new THREE.Box3();
+    const trashCenter = new THREE.Vector3();
+    const trashSize = new THREE.Vector3();
+    const magnetActive = Date.now() < (powerUpState.magnetUntil || 0);
+    const magnetRadius = magnetActive ? POWERUP_MAGNET_RADIUS : 0;
+
+    for (const [key, item] of Object.entries(items || {})) {
+      if (!item) continue;
+      if (isMarineLife(item.type) || isPowerUp(item.type)) continue;
+      if (!trashInstances || !trashInstances.map.has(key)) continue;
+
+      const s = Number(item.size) || 1;
+      const px = Number(item.position && item.position.x) || 0;
+      const pz = Number(item.position && item.position.z) || 0;
+      const py = (typeof item.position?.y === "number" ? item.position.y : 0) + 0.08;
+      trashCenter.set(px, py, pz);
+      trashSize.set(s, s, s);
+      trashBox.setFromCenterAndSize(trashCenter, trashSize);
+      if (!playerBox.intersectsBox(trashBox)) {
+        if (!magnetActive) continue;
+        const dx = (player.position?.x || 0) - px;
+        const dz = (player.position?.z || 0) - pz;
+        if (Math.hypot(dx, dz) > magnetRadius) continue;
+      }
+
+      const collisionData = {
+        itemId: key,
+        localScore,
+        playerId: yourId,
+        playerName: playerName,
+      };
+
+      worker.postMessage({
+        type: "items.collision",
+        body: collisionData,
+      });
+
+      if (emitters) emitters.collision.trigger(player.position);
+
+      try {
+        triggerReplayMoment("trash_collect", {
+          itemId: key,
+          worldPos: { x: px, y: py, z: pz }
+        });
+      } catch (_) {}
+
+      localScore++;
+      eventStats.trash_collected++;
+      emitGameplayEvent("trash_collected", {
+        itemId: key,
+        related_item_id: key,
+        item_type: item.type || "trash",
+        item_position: { x: px, y: py, z: pz },
+      });
+      releaseTrashInstance(key);
+      delete items[key];
+      scoreElement.innerHTML = "Score: " + localScore;
+      if (compactScoreEl) compactScoreEl.innerHTML = "Score: " + localScore;
+    }
+
+    for (const [key, item] of Object.entries(items || {})) {
+      if (!item) continue;
+      if (!isPowerUp(item.type)) continue;
+      if (!powerupInstances || !powerupInstances.map.has(key)) continue;
+
+      const s = Number(item.size) || 1;
+      const px = Number(item.position && item.position.x) || 0;
+      const pz = Number(item.position && item.position.z) || 0;
+      const py = (typeof item.position?.y === "number" ? item.position.y : 0) + 0.08;
+      trashCenter.set(px, py, pz);
+      trashSize.set(s, s, s);
+      trashBox.setFromCenterAndSize(trashCenter, trashSize);
+      if (!playerBox.intersectsBox(trashBox)) {
+        if (!magnetActive) continue;
+        const dx = (player.position?.x || 0) - px;
+        const dz = (player.position?.z || 0) - pz;
+        if (Math.hypot(dx, dz) > magnetRadius) continue;
+      }
+
+      const collisionData = {
+        itemId: key,
+        localScore,
+        playerId: yourId,
+        playerName: playerName,
+      };
+
+      applyPowerUp(item.type);
+      worker.postMessage({
+        type: "items.collision",
+        body: collisionData,
+      });
+      if (emitters) emitters.collision.trigger(player.position);
+      eventStats.powerup_collected++;
+      emitGameplayEvent("powerup_collected", {
+        itemId: key,
+        related_item_id: key,
+        powerup_type: item.type,
+        item_type: item.type,
+        item_position: { x: px, y: py, z: pz },
+      });
+      releasePowerupInstance(key);
+      delete items[key];
+    }
+
     for (const [key, mesh] of Object.entries(itemMeshes)) {
+      if (!mesh || !mesh.isObject3D) continue;
       if (mesh.outOfBounds) continue;
 
       const itemMeshBox = new THREE.Box3().setFromObject(mesh);
-      const collision = playerBox.intersectsBox(itemMeshBox);
+      let collision = playerBox.intersectsBox(itemMeshBox);
+      if (!collision && magnetActive && !isMarineLife(mesh.itemType)) {
+        const dx = (player.position?.x || 0) - (mesh.position?.x || 0);
+        const dz = (player.position?.z || 0) - (mesh.position?.z || 0);
+        if (Math.hypot(dx, dz) <= magnetRadius) collision = true;
+      }
       if (!collision) continue;
 
       // Shield: ignore marine life penalty and do not remove the turtle
@@ -2564,6 +3452,14 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           body: collisionData,
         });
         if (emitters) emitters.collision.trigger(player.position);
+        eventStats.powerup_collected++;
+        emitGameplayEvent("powerup_collected", {
+          itemId: key,
+          related_item_id: key,
+          powerup_type: mesh.itemType,
+          item_type: mesh.itemType,
+          item_position: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) },
+        });
         scene.remove(mesh);
         delete itemMeshes[key];
         continue;
@@ -2596,6 +3492,23 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       else scene.remove(mesh);
 
       isMarineLife(mesh.itemType) ? localScore-- : localScore++;
+      if (isMarineLife(mesh.itemType)) {
+        eventStats.marine_hit++;
+        emitGameplayEvent("marine_hit", {
+          itemId: key,
+          related_item_id: key,
+          item_type: mesh.itemType,
+          item_position: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) },
+        });
+      } else {
+        eventStats.trash_collected++;
+        emitGameplayEvent("trash_collected", {
+          itemId: key,
+          related_item_id: key,
+          item_type: mesh.itemType || "trash",
+          item_position: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) },
+        });
+      }
       scoreElement.innerHTML = "Score: " + localScore;
       if (compactScoreEl) compactScoreEl.innerHTML = "Score: " + localScore;
       delete itemMeshes[key];
@@ -2676,8 +3589,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const authFreshForYou = !!(authFreshGlobal && authStates && authStates[yourId]);
     const movement = new THREE.Vector3(0, 0, 0);
     const lateralVelocity = new THREE.Vector3(0, 0, 0);
-    const throttle = (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0);
-    const steer = (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0);
+    const throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
+    const steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) + Number(mobileInput.steer || 0)));
     if (serverAuthEnabled) {
       inputSeq++;
       worker.postMessage({
@@ -2765,7 +3678,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     camera.position.lerp(targetCameraPosition, SPRING_STRENGTH);
     camera.lookAt(player.position);
 
-
     // Reconcile local player to authoritative server state (smoothly)
     if (authFreshForYou) {
       const s = authStates[yourId];
@@ -2795,6 +3707,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
   function animateOtherPlayers(playerMeshes) {
     if (!playerMeshes) return;
+    const timeFreezeActive = Date.now() < (powerUpState.freezeUntil || 0);
+    const lerpFactor = timeFreezeActive ? 0.12 : 0.35;
     if (serverAuthEnabled && authStates) {
       Object.keys(playerMeshes).forEach((id) => {
         if (id === yourId) return;
@@ -2803,10 +3717,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         const m = playerMeshes[id];
         if (!m) return;
         // Smoothly approach authoritative state
-        m.position.x = THREE.MathUtils.lerp(m.position.x, s.x, 0.35);
-        m.position.z = THREE.MathUtils.lerp(m.position.z, s.z, 0.35);
+        m.position.x = THREE.MathUtils.lerp(m.position.x, s.x, lerpFactor);
+        m.position.z = THREE.MathUtils.lerp(m.position.z, s.z, lerpFactor);
         const delta = ((s.rotY - m.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
-        m.rotation.y += delta * 0.35;
+        m.rotation.y += delta * lerpFactor;
         // Trail for remote players
         addTrailPoint(id, m.position);
       });
@@ -2815,9 +3729,11 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     // Fallback to legacy traces
     Object.keys(playerMeshes).forEach((id) => {
       if (otherPlayers[id]) {
-        playerMeshes[id].position.x = otherPlayers[id].x;
-        playerMeshes[id].position.z = otherPlayers[id].z;
-        playerMeshes[id].rotation.y = otherPlayers[id].rotY;
+        playerMeshes[id].position.x = THREE.MathUtils.lerp(playerMeshes[id].position.x, otherPlayers[id].x, lerpFactor);
+        playerMeshes[id].position.z = THREE.MathUtils.lerp(playerMeshes[id].position.z, otherPlayers[id].z, lerpFactor);
+        const delta = ((otherPlayers[id].rotY - playerMeshes[id].rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
+        playerMeshes[id].rotation.y += delta * lerpFactor;
+        applyLodForGroup(playerMeshes[id]);
         // Leave a trail point for remote players
         addTrailPoint(id, playerMeshes[id].position);
       }
@@ -2830,6 +3746,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const dt = (now - lastFrameTs) / 1000;
     lastFrameTs = now;
     frameDt = dt;
+    const frameMs = dt * 1000;
+    smoothedFrameMs = smoothedFrameMs * 0.9 + frameMs * 0.1;
     if (hudDebugEl) {
       const nowDbg = performance.now();
       const lag = serverAuthEnabled ? Math.max(0, Math.round(nowDbg - (authStatesTime || nowDbg))) : 0;
@@ -2838,10 +3756,27 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       const sp = typeof playerSpeed === "number" ? playerSpeed.toFixed(2) : "0.00";
       const px = player ? player.position.x.toFixed(2) : "0.00";
       const pz = player ? player.position.z.toFixed(2) : "0.00";
-      hudDebugEl.innerText = `Auth: ${serverAuthEnabled ? "on" : "off"} | admin: ${isAdmin ? "yes" : "no"} | lag: ${lag}ms | th:${th} st:${st} sp:${sp} pos:${px},${pz}`;
+      const netQ = networkStats.quality || "unknown";
+      const netRtt = networkStats.rttMs != null ? `${networkStats.rttMs}ms` : "-";
+      const netUp = `${(Number(networkStats.upKbps) || 0).toFixed(1)}k`;
+      const netDown = `${(Number(networkStats.downKbps) || 0).toFixed(1)}k`;
+      const fps = Number.isFinite(renderStats.fps) ? renderStats.fps.toFixed(1) : "-";
+      const draws = Number.isFinite(renderStats.drawCalls) ? renderStats.drawCalls : "-";
+      const tris = Number.isFinite(renderStats.triangles) ? Math.round(renderStats.triangles / 1000) : "-";
+      hudDebugEl.innerText = `Auth: ${serverAuthEnabled ? "on" : "off"} | admin: ${isAdmin ? "yes" : "no"} | lag: ${lag}ms | fps:${fps} draw:${draws} tri:${tris}k | net:${netQ}/${netRtt} up:${netUp} down:${netDown} | cull:${lastCullingNodeCount} | th:${th} st:${st} sp:${sp} pos:${px},${pz}`;
     }
     if (emitters) emitters.update(dt);
     updatePlayerPosition();
+    if (gameState === "RUNNING" && player && now - lastPositionEventAt > 2000) {
+      lastPositionEventAt = now;
+      emitGameplayEvent("position_sample", {
+        speed: Number(__effectiveSpeedForFrame() || 0),
+        input: {
+          throttle: (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0),
+          steer: (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) + Number(mobileInput.steer || 0),
+        },
+      });
+    }
     if (gameState === "RUNNING") {
       checkCollisions();
       // Check collisions with other players' trails (Tron-like)
@@ -2850,6 +3785,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     cleanupOldTrails();
     __pushReplayFrame();
     render();
+    if ((now - lastClientMonitorUpdateAt) > 250) {
+      lastClientMonitorUpdateAt = now;
+      updateNetworkMonitorOnly();
+    }
     // Throttle sky/PMREM updates for Firefox/low-end GPUs
     if (!window.__lastSunUpdate) window.__lastSunUpdate = 0;
     if ((now - window.__lastSunUpdate) > 1000) { updateSun(); window.__lastSunUpdate = now; }
@@ -2859,6 +3798,12 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   }
 
   const frustum = new THREE.Frustum();
+  const cullMatrix = new THREE.Matrix4();
+  const tmpBox = new THREE.Box3();
+  const tmpWorldBox = new THREE.Box3();
+  const cullCandidates = [];
+  const tmpColor = new THREE.Color();
+  let cullRebuildCounter = 0;
   animate();
 
   function render() {
@@ -2867,27 +3812,65 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
     // Frustum culling
     camera.updateMatrixWorld();
-    frustum.setFromProjectionMatrix(
-      new THREE.Matrix4().multiplyMatrices(
-        camera.projectionMatrix,
-        camera.matrixWorldInverse
-      )
-    );
+    cullMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(cullMatrix);
 
-    // Cull items by bounding boxes (safe for Mesh/Group) - throttled for perf
+    // Cull items/players using octree spatial partitioning + frustum query
     window.__cullFrame = (window.__cullFrame | 0) + 1;
     if ((window.__cullFrame % 3) === 0) {
-      Object.values(itemMeshes).forEach((m) => {
-        if (!m) return;
-        const box = new THREE.Box3().setFromObject(m);
-        m.visible = frustum.intersectsBox(box);
-      });
+      cullRebuildCounter++;
+      cullCandidates.length = 0;
+      Object.values(itemMeshes).forEach((m) => { if (m) cullCandidates.push(m); });
+      Object.values(otherPlayersMeshes).forEach((g) => { if (g) cullCandidates.push(g); });
 
-      Object.values(otherPlayersMeshes).forEach((g) => {
-        if (!g) return;
-        const box = new THREE.Box3().setFromObject(g);
-        g.visible = frustum.intersectsBox(box);
-      });
+      if (cullCandidates.length) {
+        tmpWorldBox.makeEmpty();
+        for (const m of cullCandidates) {
+          tmpBox.setFromObject(m);
+          tmpWorldBox.union(tmpBox);
+        }
+        tmpWorldBox.min.x -= 4; tmpWorldBox.min.y -= 4; tmpWorldBox.min.z -= 4;
+        tmpWorldBox.max.x += 4; tmpWorldBox.max.y += 4; tmpWorldBox.max.z += 4;
+        if (!cullingOctree || (cullRebuildCounter % 15) === 1) {
+          cullingOctree = new SpatialOctree(tmpWorldBox, { maxDepth: 5, capacity: 20 });
+        } else {
+          cullingOctree.clear();
+          cullingOctree.root.box.copy(tmpWorldBox);
+        }
+        for (const m of cullCandidates) {
+          tmpBox.setFromObject(m);
+          cullingOctree.insertBox(tmpBox, { mesh: m, uuid: m.uuid });
+        }
+        const visibleEntries = cullingOctree.queryFrustum(frustum);
+        const visibleUuids = new Set(visibleEntries.map((e) => e.uuid));
+        lastCullingNodeCount = visibleEntries.length;
+        for (const m of cullCandidates) {
+          m.visible = visibleUuids.has(m.uuid);
+        }
+      }
+
+      if (cullingDebugEnabled) {
+        for (const m of cullCandidates) {
+          let helper = cullingHelpers.get(m.uuid);
+          if (!helper) {
+            helper = new THREE.BoxHelper(m, 0x00ff00);
+            helper.userData.meshUuid = m.uuid;
+            cullingHelpers.set(m.uuid, helper);
+            scene.add(helper);
+          }
+          tmpColor.set(m.visible ? 0x00ff00 : 0xff3333);
+          helper.material.color.copy(tmpColor);
+          helper.visible = true;
+          helper.update();
+        }
+        for (const [uuid, helper] of cullingHelpers.entries()) {
+          const meshAlive = cullCandidates.some((m) => m && m.uuid === uuid);
+          if (!meshAlive || !cullingDebugEnabled) {
+            try { scene.remove(helper); } catch (_) {}
+            cullingHelpers.delete(uuid);
+          }
+        }
+      }
     }
 
     renderer.render(scene, camera);
@@ -2905,14 +3888,33 @@ function isMarineLife(type) {
   }
 }
 
+function isPowerUp(type) {
+  return String(type || "").startsWith("powerup_");
+}
+
 function endGame() {
-  try { worker.postMessage({ type: "close" }); } catch (_) {}
+  stopLocalTimeTicker();
+  emitGameplayEvent("game_over", {
+    final_score: Number(localScore || 0),
+    time_remaining: Number(remainingTime || 0),
+    stats: { ...eventStats },
+    powerups_active_at_end: {
+      speed: Number(powerUpState.speedMultiplier || 1),
+      shield: !!powerUpState.shield,
+      magnet: Date.now() < (powerUpState.magnetUntil || 0),
+      freeze: Date.now() < (powerUpState.freezeUntil || 0),
+    },
+  });
   gameOverFlag = true;
   keyboard = {};
+  mobileInput = { throttle: 0, steer: 0, active: false };
+  clearCullingDebugHelpers(scene);
 
   for (const [, mesh] of Object.entries(itemMeshes)) {
-    scene.remove(mesh);
+    if (mesh && mesh.isObject3D) scene.remove(mesh);
   }
+  clearTrashInstances();
+  clearPowerupInstances();
   // Cleanup trails and freeze UI
   for (const t of Object.values(trails)) {
     scene.remove(t.line);
@@ -2929,6 +3931,17 @@ function endGame() {
   if (rn) rn.textContent = "Name: " + (playerName || "Default");
   const rs = document.getElementById("results-score");
   if (rs) rs.textContent = "Score: " + localScore;
+  let rc = document.getElementById("results-commentary");
+  if (!rc) {
+    const summary = document.getElementById("results-summary");
+    if (summary) {
+      rc = document.createElement("div");
+      rc.id = "results-commentary";
+      rc.className = "results-commentary";
+      summary.appendChild(rc);
+    }
+  }
+  if (rc) rc.textContent = "Commentary is being drafted...";
 
   setPhase("POST_GAME");
   clearTimeout(timerId);
@@ -2947,3 +3960,32 @@ function showStarting() {
 function hideMessages() {
   clearCountdown();
 }
+
+function renderGameToText() {
+  const payload = {
+    mode: gameState,
+    coordinateSystem: "World origin is center; +x right, +z forward, +y up",
+    player: player
+      ? { x: Number(player.position.x || 0), y: Number(player.position.y || 0), z: Number(player.position.z || 0) }
+      : null,
+    score: Number(localScore || 0),
+    timeRemaining: Number(remainingTime || 0),
+    playersVisible: Object.keys(otherPlayers || {}).length,
+    itemsVisible: Object.keys(items || {}).length,
+    trashInstances: trashInstances && trashInstances.map ? trashInstances.map.size : 0,
+    powerupInstances: powerupInstances && powerupInstances.map ? powerupInstances.map.size : 0,
+    powerUps: {
+      speed: Number(powerUpState.speedMultiplier || 1),
+      shield: !!powerUpState.shield,
+      magnet: Date.now() < (powerUpState.magnetUntil || 0),
+      freeze: Date.now() < (powerUpState.freezeUntil || 0),
+    },
+  };
+  return JSON.stringify(payload);
+}
+
+window.render_game_to_text = renderGameToText;
+window.advanceTime = async (ms) => {
+  const delay = Number.isFinite(ms) ? Math.max(0, ms) : 0;
+  await new Promise((resolve) => setTimeout(resolve, delay));
+};

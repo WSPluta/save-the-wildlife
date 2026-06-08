@@ -4,9 +4,10 @@ import * as dotenv from "dotenv";
 import short from "short-uuid";
 import pino from "pino";
 import { deleteCurrentScore, postCurrentScore } from "./score.js";
-import pkg from "./package.json" assert { type: "json" };
+import pkg from "./package.json" with { type: "json" };
 import ObjectPool from './object-pool.js';
 import { updateRuntimeMetrics } from "./metrics.js";
+import { buildCommentary, recordGameEvent } from "./lib/gameEvents.js";
 
 dotenv.config();
 dotenv.config({ path: "config/.env" });
@@ -176,6 +177,45 @@ const GAME_DURATION_IN_SECONDS = process.env.GAME_DURATION_IN_SECONDS
   ? parseInt(process.env.GAME_DURATION_IN_SECONDS)
   : 180;
 
+const BOAT_TYPES = {
+  speed: {
+    maxSpeed: 100,
+    handling: 0.8,
+    capacity: 5,
+    mass: 1000,
+    drag: 0.1,
+    angularDrag: 0.05,
+    acceleration: 8,
+    brake: 4,
+    turnSpeed: 0.6,
+    driftFactor: 0.1
+  },
+  fishing: {
+    maxSpeed: 60,
+    handling: 0.6,
+    capacity: 15,
+    mass: 2000,
+    drag: 0.3,
+    angularDrag: 0.15,
+    acceleration: 4,
+    brake: 3,
+    turnSpeed: 0.4,
+    driftFactor: 0.05
+  },
+  rescue: {
+    maxSpeed: 80,
+    handling: 0.7,
+    capacity: 10,
+    mass: 1500,
+    drag: 0.2,
+    angularDrag: 0.1,
+    acceleration: 6,
+    brake: 3.5,
+    turnSpeed: 0.5,
+    driftFactor: 0.08
+  }
+};
+
 const PHYSICS_CONFIG = {
   acceleration: parseFloat(process.env.PHYS_ACCELERATION ?? "6"),
   brake: parseFloat(process.env.PHYS_BRAKE ?? "3"),
@@ -192,6 +232,10 @@ const COLLISION_VALIDATE_RADIUS = parseFloat(process.env.COLLISION_VALIDATE_RADI
 const POWERUP_SPEED_MULTIPLIER = parseFloat(process.env.POWERUP_SPEED_MULTIPLIER ?? "2");
 const POWERUP_SPEED_DURATION_MS = parseInt(process.env.POWERUP_SPEED_DURATION_MS ?? "10000");
 const POWERUP_SHIELD_DURATION_MS = parseInt(process.env.POWERUP_SHIELD_DURATION_MS ?? "5000");
+const POWERUP_MAGNET_DURATION_MS = parseInt(process.env.POWERUP_MAGNET_DURATION_MS ?? "8000");
+const POWERUP_FREEZE_DURATION_MS = parseInt(process.env.POWERUP_FREEZE_DURATION_MS ?? "4000");
+const POWERUP_MAGNET_RADIUS = parseFloat(process.env.POWERUP_MAGNET_RADIUS ?? "3.5");
+const POWERUP_FREEZE_OTHER_MULT = parseFloat(process.env.POWERUP_FREEZE_OTHER_MULT ?? "0.45");
 
  // Lobby chat (per-room buffer) and settings
  const CHAT_HISTORY_LIMIT = 100;
@@ -222,6 +266,28 @@ function normalizeRoom(r) {
 const roomDirectory = new Map();
 let roomsUpdateTimer = null;
 
+async function humansInRoomDirectory(room) {
+  const want = room || GLOBAL_ROOM;
+  let info = {};
+  try {
+    if (ENABLE_COHERENCE_BACKEND && mapPlayersInfo) {
+      info = await readCacheEntries(mapPlayersInfo);
+    } else {
+      info = mapPlayersInfo || {};
+    }
+  } catch (_) {
+    info = {};
+  }
+  let humans = 0;
+  for (const [id, v] of Object.entries(info || {})) {
+    const r = playerRooms.get(id) || DEFAULT_ROOM_ID;
+    if (r !== want) continue;
+    const name = v && v.name ? String(v.name) : "";
+    if (!name.toLowerCase().startsWith("bot ")) humans++;
+  }
+  return humans;
+}
+
 async function buildRoomsPayload() {
   // Discover rooms: default + any with timers + any where players are present
   const set = new Set([DEFAULT_ROOM_ID]);
@@ -231,7 +297,7 @@ async function buildRoomsPayload() {
   const rooms = [];
   for (const id of set.values()) {
     const rs = roomTimers.get(id) || { state: 'WAITING', startTime: null, startingAt: null };
-    const humans = await humansInRoom(id);
+    const humans = await humansInRoomDirectory(id);
     const bots = 0; // optional: compute from player list if needed
     rooms.push({
       id,
@@ -293,6 +359,13 @@ const playerRooms = new Map();
 // Per-room admin: the first human in a room becomes admin unless reassigned
 const roomAdmin = new Map();
 
+function sessionIdForRoom(room) {
+  const wanted = room || GLOBAL_ROOM;
+  const rs = roomTimers.get(wanted);
+  const start = rs && rs.startTime ? rs.startTime : gameStartTime;
+  return `${wanted}:${start || "pending"}`;
+}
+
 function createObject() {
   // Spawn nearer to the center by default so new players immediately see items.
   // Tunable via WORLD_SPAWN_SPREAD (0.1..1.0); default 0.6 (60% of world span).
@@ -344,6 +417,17 @@ export async function start(
   if (pubClient && subClient) {
     io.adapter(createAdapter(pubClient, subClient));
   }
+
+  const serverInfoPayload = () => ({
+    id: serverId,
+    version: version,
+    gameDuration: GAME_DURATION_IN_SECONDS,
+    worldSizeX: worldSizeX,
+    worldSizeZ: worldSizeZ,
+    serverAuthEnabled: SERVER_AUTH_ENABLED,
+    physics: PHYSICS_CONFIG,
+    boatTypes: BOAT_TYPES
+  });
 
   if (ENABLE_COHERENCE_BACKEND) {
     mapPlayersTraces = await cacheSession.getMap("playerTraces");
@@ -462,81 +546,87 @@ export async function start(
   }
 
   // Per-room match lifecycle: separate STARTING/RUNNING/ENDED timers per room (time only; items remain global)
-  function startRoomMatch(room) {
-    if (!room) return;
-    const existing = roomTimers.get(room) || { state: 'WAITING', startTime: null, startingAt: null, timerId: null };
-    if (existing.state !== 'WAITING') return;
-
-    existing.state = 'STARTING';
-    existing.startingAt = Date.now() + 10000;
-    roomTimers.set(room, existing);
-    persistRoomState(room, existing);
-
-    io.to(room).emit("game.state", 'STARTING');
-    scheduleRoomsUpdate(io);
-    io.to(room).emit("startingGame", { startsAt: existing.startingAt, countdownMs: 10000 });
-
-    setTimeout(() => {
-      const rs = roomTimers.get(room) || existing;
-      rs.state = 'RUNNING';
-      rs.startingAt = null;
-      rs.startTime = Date.now();
-      persistRoomState(room, rs);
-      // One shared start position for the room (simple + safe)
-      const startX = randSpawnCoord(worldSizeX);
-      const startZ = randSpawnCoord(worldSizeZ);
-      io.to(room).emit("game.state", 'RUNNING');
-      scheduleRoomsUpdate(io);
-      io.to(room).emit("game.on", { startPosition: { x: startX, y: 0, z: startZ } });
-      if (rs.timerId) clearInterval(rs.timerId);
-      rs.timerId = setInterval(() => {
-        const elapsed = Date.now() - (rs.startTime || Date.now());
-        const remaining = GAME_DURATION_IN_SECONDS * 1000 - elapsed;
-        io.to(room).emit("game.time", Math.max(0, Math.round(remaining / 1000)));
-        if (remaining <= 0) {
-          clearInterval(rs.timerId);
-          rs.timerId = null;
-          rs.state = 'ENDED';
-          persistRoomState(room, rs);
-          io.to(room).emit("game.state", 'ENDED');
-          scheduleRoomsUpdate(io);
-          io.to(room).emit("game.end");
-          setTimeout(() => {
-            const r2 = roomTimers.get(room) || rs;
-            r2.state = 'WAITING';
-            roomTimers.set(room, r2);
-            persistRoomState(room, r2);
-            io.to(room).emit("game.state", 'WAITING');
-            scheduleRoomsUpdate(io);
-          }, 10000);
-          roomTimers.set(room, rs);
-        }
-      }, 1000);
-      roomTimers.set(room, rs);
-    }, 10000);
-  }
-
-  function endRoomMatch(room) {
-    if (!room) return;
-    const rs = roomTimers.get(room);
-    if (!rs) return;
-    if (rs.timerId) clearInterval(rs.timerId);
-    rs.timerId = null;
-    rs.state = 'ENDED';
-    rs.startingAt = null;
+function broadcastRoomState(room, state, extra = {}) {
+  if (!room) return;
+  const rs = roomTimers.get(room) || { state: 'WAITING', startTime: null, startingAt: null, timerId: null };
+  rs.state = state;
+  if (state === "WAITING" || state === "ENDED") {
     rs.startTime = null;
-    roomTimers.set(room, rs);
-    persistRoomState(room, rs);
-    io.to(room).emit("game.state", 'ENDED');
-    io.to(room).emit("game.end");
-    setTimeout(() => {
-      const r2 = roomTimers.get(room) || { state: 'WAITING' };
-      r2.state = 'WAITING';
-      roomTimers.set(room, r2);
-      persistRoomState(room, r2);
-      io.to(room).emit("game.state", 'WAITING');
-    }, 10000);
+    rs.startingAt = null;
   }
+  if (state === "STARTING" && extra.startsAt) {
+    rs.startingAt = extra.startsAt;
+  }
+  if (state === "RUNNING") {
+    rs.startingAt = null;
+  }
+  roomTimers.set(room, rs);
+  persistRoomState(room, rs);
+  io.to(room).emit("game.state", state);
+  scheduleRoomsUpdate(io);
+  if (extra.startsAt) io.to(room).emit("startingGame", extra);
+  if (extra.startPosition) io.to(room).emit("game.on", extra);
+  if (extra.remaining) io.to(room).emit("game.time", extra.remaining);
+  if (extra.end) io.to(room).emit("game.end", extra.end);
+}
+
+function startRoomMatch(room) {
+  if (!room) return;
+  const existing = roomTimers.get(room) || { state: 'WAITING', startTime: null, startingAt: null, timerId: null };
+  if (existing.state !== 'WAITING') return;
+
+  const startingAt = Date.now() + 10000;
+  existing.state = "STARTING";
+  existing.startingAt = startingAt;
+  existing.startTime = null;
+  roomTimers.set(room, existing);
+  persistRoomState(room, existing);
+  io.to(room).emit("server.info", serverInfoPayload());
+  broadcastRoomState(room, 'STARTING', { startsAt: startingAt, countdownMs: 10000 });
+
+  setTimeout(() => {
+    const rs = roomTimers.get(room) || { state: 'WAITING' };
+    if (rs.state !== 'STARTING') return; // Prevent race conditions
+
+    const startTime = Date.now();
+    const startX = randSpawnCoord(worldSizeX);
+    const startZ = randSpawnCoord(worldSizeZ);
+    rs.startTime = startTime;
+    rs.startingAt = null;
+    broadcastRoomState(room, 'RUNNING', { startPosition: { x: startX, y: 0, z: startZ } });
+
+    if (rs.timerId) clearInterval(rs.timerId);
+    rs.timerId = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const remaining = GAME_DURATION_IN_SECONDS * 1000 - elapsed;
+      if (remaining <= 0) {
+        clearInterval(rs.timerId);
+        rs.timerId = null;
+        broadcastRoomState(room, 'ENDED', { end: { room } });
+        setTimeout(() => {
+          broadcastRoomState(room, 'WAITING');
+        }, 10000);
+        return;
+      }
+      io.to(room).emit("game.time", Math.max(0, Math.round(remaining / 1000)));
+    }, 1000);
+    roomTimers.set(room, rs);
+  }, 10000);
+}
+
+function endRoomMatch(room) {
+  if (!room) return;
+  const rs = roomTimers.get(room);
+  if (!rs) return;
+  if (rs.timerId) clearInterval(rs.timerId);
+  rs.timerId = null;
+  rs.startingAt = null;
+  rs.startTime = null;
+  broadcastRoomState(room, 'ENDED', { end: { room } });
+  setTimeout(() => {
+    broadcastRoomState(room, 'WAITING');
+  }, 10000);
+}
 
   async function emitPlayerCount() {
     try {
@@ -558,15 +648,7 @@ export async function start(
   io.on("connection", async (socket) => {
     let playerIdForSocket;
 
-    socket.emit("server.info", {
-      id: serverId,
-      version: version,
-      gameDuration: GAME_DURATION_IN_SECONDS,
-      worldSizeX: worldSizeX,
-      worldSizeZ: worldSizeZ,
-      serverAuthEnabled: SERVER_AUTH_ENABLED,
-      physics: PHYSICS_CONFIG,
-    });
+    socket.emit("server.info", serverInfoPayload());
 
     const initialItems = await getItemsForRoom(DEFAULT_ROOM_ID);
     socket.emit("items.all", initialItems);
@@ -829,13 +911,36 @@ export async function start(
           vel: 0,
           speedMul: 1,
           shield: false,
-          effects: { speedUntil: 0, shieldUntil: 0 }
+          effects: { speedUntil: 0, shieldUntil: 0, magnetUntil: 0, freezeUntil: 0 },
+          boatType: 'speed' // Default type; players can select later
         });
         playersInput.set(playerId, { throttle: 0, steer: 0, brake: false, lastSeq: -1 });
       }
     });
 
-    socket.on("player.trace.change", async ({ id, ...traceData }) => {
+    socket.on("player.boat.select", async ({ playerId, boatType }) => {
+      if (SERVER_AUTH_ENABLED && playerId && BOAT_TYPES[boatType]) {
+        const st = playersState.get(playerId);
+        if (st) {
+          st.boatType = boatType;
+          playersState.set(playerId, st);
+          logger.info(`Player ${playerId} selected boat type: ${boatType}`);
+        }
+      }
+    });
+
+    socket.on("player.trace.change", async (payload = {}) => {
+      let id = payload.id;
+      let traceData = payload;
+      if (payload && payload.c === 1) {
+        id = payload.i;
+        traceData = {
+          x: (Number(payload.x) || 0) / 1000,
+          z: (Number(payload.z) || 0) / 1000,
+          rotY: (Number(payload.r) || 0) / 10000,
+        };
+      }
+      if (!id) return;
       const body = { ...traceData, updated: new Date() };
       if (ENABLE_COHERENCE_BACKEND) {
         await writeCache(mapPlayersTraces, id, body);
@@ -845,9 +950,21 @@ export async function start(
     });
 
     // Server-authoritative input stream (optional; gated by env flag)
-    socket.on("player.input", ({ id, seq, throttle = 0, steer = 0, brake = false }) => {
+    socket.on("player.input", (payload = {}) => {
       try {
         if (!SERVER_AUTH_ENABLED) return;
+        let id = payload.id;
+        let seq = payload.seq;
+        let throttle = payload.throttle ?? 0;
+        let steer = payload.steer ?? 0;
+        let brake = payload.brake ?? false;
+        if (payload && payload.c === 1) {
+          id = payload.i;
+          seq = payload.q;
+          throttle = (Number(payload.t) || 0) / 100;
+          steer = (Number(payload.s) || 0) / 100;
+          brake = !!payload.b;
+        }
         // ingress rate limit: cap to ~60Hz per socket
         if (!socket.data) socket.data = {};
         const now = Date.now();
@@ -863,6 +980,43 @@ export async function start(
         playersInput.set(id, { throttle: t, steer: s, brake: !!brake, lastSeq: seq });
       } catch (e) {
         logger.error(`player.input error: ${e && e.message ? e.message : e}`);
+      }
+    });
+
+    // Client network-quality probe (ack-based RTT measurement)
+    socket.on("client.ping", (_payload, ack) => {
+      try {
+        if (typeof ack === "function") {
+          ack({ ok: true, serverTs: Date.now() });
+        }
+      } catch (_) {}
+    });
+
+    socket.on("game.event", async (payload = {}, ack) => {
+      try {
+        const room = getSocketRoom(socket);
+        const result = await recordGameEvent(payload, {
+          roomId: room,
+          sessionId: payload.session_id || payload.sessionId || sessionIdForRoom(room),
+          playerId: playerIdForSocket,
+          playerName: mapPlayersInfo && playerIdForSocket
+            ? (ENABLE_COHERENCE_BACKEND ? undefined : mapPlayersInfo[playerIdForSocket]?.name)
+            : undefined,
+        });
+        let commentary = null;
+        if (result.event && result.event.event_type === "game_over") {
+          commentary = await buildCommentary(result.event.session_id, result.event.player_id);
+          socket.emit("commentary.ready", {
+            session_id: result.event.session_id,
+            player_id: result.event.player_id,
+            ...commentary,
+          });
+        }
+        const response = { ...result, commentary };
+        try { if (typeof ack === "function") ack(response); } catch (_) {}
+      } catch (error) {
+        const response = { ok: false, error: error && error.message ? error.message : String(error) };
+        try { if (typeof ack === "function") ack(response); } catch (_) {}
       }
     });
 
@@ -911,7 +1065,11 @@ export async function start(
           const dx = (st.x || 0) - ipos.x;
           const dz = (st.z || 0) - ipos.z;
           const dist = Math.hypot(dx, dz);
-          if (dist > COLLISION_VALIDATE_RADIUS) {
+          let allowedRadius = COLLISION_VALIDATE_RADIUS;
+          if (st.effects && st.effects.magnetUntil && Date.now() < st.effects.magnetUntil) {
+            allowedRadius = Math.max(allowedRadius, POWERUP_MAGNET_RADIUS);
+          }
+          if (dist > allowedRadius) {
             // Ignore spoofed/late collisions
             return;
           }
@@ -928,6 +1086,15 @@ export async function start(
           if (item) itemPool.returnObject(item);
           await refillOnce(room);
           await postCurrentScore(playerId, playerName, "INCREMENT");
+          await recordGameEvent({
+            type: "trash_collected",
+            playerId,
+            playerName,
+            itemId,
+            score: null,
+            position: item.position,
+            metadata: { item_type: item.type || "trash" },
+          }, { roomId: room, sessionId: sessionIdForRoom(room) });
         } else if (itemType === "turtle") {
           if (ENABLE_COHERENCE_BACKEND) {
             await deleteCache(mapMarineLife, itemId);
@@ -940,6 +1107,15 @@ export async function start(
           // If shielded under authority, do not decrement
           if (!SERVER_AUTH_ENABLED || !(playersState.get(playerId)?.shield)) {
             await postCurrentScore(playerId, playerName, "DECREMENT");
+            await recordGameEvent({
+              type: "marine_hit",
+              playerId,
+              playerName,
+              itemId,
+              score: null,
+              position: item.position,
+              metadata: { item_type: item.type || "turtle" },
+            }, { roomId: room, sessionId: sessionIdForRoom(room) });
           }
         } else {
           // Power-ups
@@ -960,7 +1136,7 @@ export async function start(
               vel: 0,
               speedMul: 1,
               shield: false,
-              effects: { speedUntil: 0, shieldUntil: 0 }
+              effects: { speedUntil: 0, shieldUntil: 0, magnetUntil: 0, freezeUntil: 0 }
             };
             // Distinguish type by stored item.type if present
             const typeName = (item.type && String(item.type)) || "";
@@ -972,9 +1148,24 @@ export async function start(
               st.shield = true;
               st.effects = st.effects || {};
               st.effects.shieldUntil = Date.now() + POWERUP_SHIELD_DURATION_MS;
+            } else if (typeName === "powerup_magnet") {
+              st.effects = st.effects || {};
+              st.effects.magnetUntil = Date.now() + POWERUP_MAGNET_DURATION_MS;
+            } else if (typeName === "powerup_freeze") {
+              st.effects = st.effects || {};
+              st.effects.freezeUntil = Date.now() + POWERUP_FREEZE_DURATION_MS;
             }
             playersState.set(playerId, st);
           }
+          await recordGameEvent({
+            type: "powerup_collected",
+            playerId,
+            playerName,
+            itemId,
+            position: item.position,
+            powerupType: item.type,
+            metadata: { item_type: item.type },
+          }, { roomId: room, sessionId: sessionIdForRoom(room) });
         }
       } catch (e) {
         logger.error(`items.collision error: ${e && e.message ? e.message : e}`);
@@ -1081,13 +1272,7 @@ export async function start(
       gameStartingAt = Date.now() + 10000;
       try { if (typeof ack === "function") ack({ ok: true, scope: "global" }); } catch (_) {}
       io.to(GLOBAL_ROOM).emit("server.info", {
-        id: serverId,
-        version: version,
-        gameDuration: GAME_DURATION_IN_SECONDS,
-        worldSizeX: worldSizeX,
-        worldSizeZ: worldSizeZ,
-        serverAuthEnabled: SERVER_AUTH_ENABLED,
-        physics: PHYSICS_CONFIG,
+        ...serverInfoPayload(),
       });
       io.to(GLOBAL_ROOM).emit("startingGame", { startsAt: gameStartingAt, countdownMs: 10000 });
       setTimeout(() => {
@@ -1109,7 +1294,7 @@ export async function start(
               vel: 0,
               speedMul: 1,
               shield: false,
-              effects: { speedUntil: 0, shieldUntil: 0 }
+              effects: { speedUntil: 0, shieldUntil: 0, magnetUntil: 0, freezeUntil: 0 }
             });
             playersInput.set(playerId, { throttle: 0, steer: 0, brake: false, lastSeq: -1 });
           }
@@ -1144,10 +1329,11 @@ export async function start(
 
           // Power-ups
           const puCount = Math.min(2, numPlayersNow);
+          const powerTypes = ["powerup_speed", "powerup_shield", "powerup_magnet", "powerup_freeze"];
           for (let i = 0; i < puCount; i++) {
             const obj = itemPool.getObject();
             if (obj) {
-              const ptype = i % 2 === 0 ? 'powerup_speed' : 'powerup_shield';
+              const ptype = powerTypes[i % powerTypes.length];
               reinitItem(obj, ptype);
               obj.room = GLOBAL_ROOM;
               io.to(GLOBAL_ROOM).emit('item.new', { id: obj.id, data: obj });
@@ -1305,13 +1491,7 @@ export async function start(
           worldSizeX = desired.x;
           worldSizeZ = desired.z;
           io.emit("server.info", {
-            id: serverId,
-            version: version,
-            gameDuration: GAME_DURATION_IN_SECONDS,
-            worldSizeX: worldSizeX,
-            worldSizeZ: worldSizeZ,
-            serverAuthEnabled: SERVER_AUTH_ENABLED,
-            physics: PHYSICS_CONFIG,
+            ...serverInfoPayload(),
           });
         })();
       } catch (e) {
@@ -1343,48 +1523,68 @@ export async function start(
   if (SERVER_AUTH_ENABLED) {
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-    const step = (dt) => {
-      const now = Date.now();
-      const WORLD_HALF_X = worldSizeX / 2;
-      const WORLD_HALF_Z = worldSizeZ / 2;
-      for (const [id, state] of playersState.entries()) {
-        const input = playersInput.get(id) || { throttle: 0, steer: 0, brake: false };
-
-        // effects expiry
-        if (state.effects) {
-          if (state.effects.speedUntil && now > state.effects.speedUntil) {
-            state.speedMul = 1;
-            state.effects.speedUntil = 0;
-          }
-          if (state.effects.shieldUntil && now > state.effects.shieldUntil) {
-            state.shield = false;
-            state.effects.shieldUntil = 0;
-          }
-        }
-
-        // integrate
-        const acc = PHYSICS_CONFIG.acceleration;
-        const brakeAcc = PHYSICS_CONFIG.brake;
-        const friction = PHYSICS_CONFIG.friction;
-        const turnSpeed = PHYSICS_CONFIG.turnSpeed;
-        const maxSpeed = PHYSICS_CONFIG.maxSpeed * (state.speedMul || 1);
-
-        state.vel = (state.vel || 0) + (input.throttle || 0) * acc * dt;
-        if (input.brake) state.vel -= brakeAcc * dt;
-
-        state.vel *= Math.exp(-friction * dt);
-        state.vel = clamp(state.vel, -maxSpeed, maxSpeed);
-
-        state.rotY = (state.rotY || 0) + (input.steer || 0) * turnSpeed * dt;
-
-        const dx = Math.sin(state.rotY) * state.vel * dt;
-        const dz = Math.cos(state.rotY) * state.vel * dt;
-        state.x = clamp((state.x ?? 0) + dx, -WORLD_HALF_X, WORLD_HALF_X);
-        state.z = clamp((state.z ?? 0) + dz, -WORLD_HALF_Z, WORLD_HALF_Z);
-
-        playersState.set(id, state);
+  const step = (dt) => {
+    const now = Date.now();
+    const WORLD_HALF_X = worldSizeX / 2;
+    const WORLD_HALF_Z = worldSizeZ / 2;
+    const freezeByRoom = new Map();
+    for (const [pid, st] of playersState.entries()) {
+      const until = st && st.effects ? Number(st.effects.freezeUntil || 0) : 0;
+      if (until > now) {
+        const room = playerRooms.get(pid) || GLOBAL_ROOM;
+        const prev = freezeByRoom.get(room) || 0;
+        if (until > prev) freezeByRoom.set(room, until);
       }
-    };
+    }
+    for (const [id, state] of playersState.entries()) {
+      const input = playersInput.get(id) || { throttle: 0, steer: 0, brake: false };
+      const boatType = state.boatType || 'speed';
+      const typeConfig = BOAT_TYPES[boatType] || BOAT_TYPES.speed;
+
+      // effects expiry
+      if (state.effects) {
+        if (state.effects.speedUntil && now > state.effects.speedUntil) {
+          state.speedMul = 1;
+          state.effects.speedUntil = 0;
+        }
+        if (state.effects.shieldUntil && now > state.effects.shieldUntil) {
+          state.shield = false;
+          state.effects.shieldUntil = 0;
+        }
+        if (state.effects.magnetUntil && now > state.effects.magnetUntil) {
+          state.effects.magnetUntil = 0;
+        }
+        if (state.effects.freezeUntil && now > state.effects.freezeUntil) {
+          state.effects.freezeUntil = 0;
+        }
+      }
+
+      // Type-specific physics
+      const room = playerRooms.get(id) || GLOBAL_ROOM;
+      const frozenByOther = freezeByRoom.get(room) > now && !(state.effects && state.effects.freezeUntil && state.effects.freezeUntil > now);
+      const freezeMul = frozenByOther ? POWERUP_FREEZE_OTHER_MULT : 1;
+      const acc = typeConfig.acceleration * (state.speedMul || 1) * freezeMul;
+      const brakeAcc = typeConfig.brake;
+      const friction = typeConfig.drag;
+      const turnSpeed = typeConfig.turnSpeed * typeConfig.handling;
+      const maxSpeed = typeConfig.maxSpeed * (state.speedMul || 1) * freezeMul;
+
+      state.vel = (state.vel || 0) + (input.throttle || 0) * acc * dt;
+      if (input.brake) state.vel -= brakeAcc * dt;
+
+      state.vel *= Math.exp(-friction * dt);
+      state.vel = clamp(state.vel, -maxSpeed, maxSpeed);
+
+      state.rotY = (state.rotY || 0) + (input.steer || 0) * turnSpeed * dt;
+
+      const dx = Math.sin(state.rotY) * state.vel * dt;
+      const dz = Math.cos(state.rotY) * state.vel * dt;
+      state.x = clamp((state.x ?? 0) + dx, -WORLD_HALF_X, WORLD_HALF_X);
+      state.z = clamp((state.z ?? 0) + dz, -WORLD_HALF_Z, WORLD_HALF_Z);
+
+      playersState.set(id, state);
+    }
+  };
 
     const snapshot = () => {
       const states = {};
@@ -1412,7 +1612,7 @@ export async function start(
         byRoom.get(room)[id] = { x: s.x || 0, z: s.z || 0, rotY: s.rotY || 0, speed: s.vel || 0 };
       }
       for (const [room, states] of byRoom.entries()) {
-        io.to(room).volatile.compress(false).emit("player.state", { t, states });
+        io.to(room).volatile.compress(true).emit("player.state", { t, states });
       }
     }, Math.max(1, Math.round(1000 / Math.max(1, STATE_BROADCAST_HZ))));
   }
@@ -1429,7 +1629,7 @@ export async function start(
       byRoom.get(room)[id] = trace;
     }
     for (const [room, traces] of byRoom.entries()) {
-      io.to(room).volatile.compress(false).emit("player.trace.all", traces);
+      io.to(room).volatile.compress(true).emit("player.trace.all", traces);
     }
   }, BROADCAST_REFRESH_UPDATE);
 
@@ -1448,13 +1648,7 @@ export async function start(
       worldSizeX = desired.x;
       worldSizeZ = desired.z;
       io.emit("server.info", {
-        id: serverId,
-        version: version,
-        gameDuration: GAME_DURATION_IN_SECONDS,
-        worldSizeX: worldSizeX,
-        worldSizeZ: worldSizeZ,
-        serverAuthEnabled: SERVER_AUTH_ENABLED,
-        physics: PHYSICS_CONFIG,
+        ...serverInfoPayload(),
       });
     }
 
@@ -1522,10 +1716,11 @@ export async function start(
       const horizonTicksPU = Math.max(1, Math.round(SPAWN_REFILL_HORIZON_SEC * ticksPerSecondPU));
       const spawnPU = Math.min(totalDeficit, Math.max(1, Math.ceil(totalDeficit / horizonTicksPU)), 4);
 
+      const powerTypes = ["powerup_speed", "powerup_shield", "powerup_magnet", "powerup_freeze"];
       for (let i = 0; i < spawnPU; i++) {
         const obj = itemPool.getObject();
         if (obj) {
-          const ptype = i % 2 === 0 ? "powerup_speed" : "powerup_shield";
+          const ptype = powerTypes[i % powerTypes.length];
           reinitItem(obj, ptype);
           obj.room = room;
           io.to(room).emit("item.new", { id: obj.id, data: obj });
@@ -1607,7 +1802,7 @@ export async function start(
       const targets = computeEffectiveTargets(humans);
       const m = buildMetricsObject(info, counts, targets);
       try { updateRuntimeMetrics(m, gameState); } catch (_) {}
-      io.volatile.compress(false).emit("server.metrics", m);
+      io.volatile.compress(true).emit("server.metrics", m);
     } catch (e) {
       logger.error(`server.metrics error: ${e && e.message ? e.message : e}`);
     }

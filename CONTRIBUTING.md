@@ -21,7 +21,7 @@ address you used to sign the OCA:
 Signed-off-by: Your Name <you@example.org>
 ```
 
-This can be automatically added to pull requests by committing with `--sign-off`
+This can be automatically added to pull requests by committing with `--signoff`
 or `-s`, e.g.
 
 ```text

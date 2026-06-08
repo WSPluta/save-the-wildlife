@@ -1,42 +1,42 @@
 # Save The Wildlife - TODO List
 
 ## Core Gameplay & Features
-- [] Implement Waiting Room:
-    - [] Server: Add game states (WAITING, RUNNING, ENDED, STARTING).
-    - [] Server: Hold players in WAITING state upon connection.
-    - [] Server: Broadcast game start signal only when triggered.
-    - [] Client: Display "Waiting for game..." message.
-    - [] Client: Start game rendering only upon receiving start signal.
-- [] Implement Admin Game Start:
-    - [] Server: Create `/admin` endpoint (or similar mechanism). - Implemented `admin.start` websocket event
-    - [] Server: Add logic to `/admin` to transition game state from WAITING to RUNNING and broadcast start signal.
-    - [] allow me to send start and end game, keep time central on the server and clients to get the value from the server. keep time counter on the server and once 3 minutes have passed then send end game to all of the users
-- [] Ensure Consistent Time/Map Size:
-    - [] Server: Verify `server.info` message sends consistent `gameDuration` and `worldSize` to all players upon connection/start.
-- [] Implement Minimum Player Bots:
-    - [] Server: Add mechanism to track/broadcast current player count (humans + bots).
-    - [] Bots (`bots/index.js`): Connect to WebSocket server.
-    - [] Bots: Listen for player count updates.
-    - [] Bots: If total players < 4, spawn necessary bot instances.
-    - [] Bots: Ensure bots correctly handle game start/end signals.
-    - [] Bots: Implement basic movement/interaction logic for bots.
-- [] Implement `startingGame` event on client
+- [x] Implement Waiting Room:
+    - [x] Server: Add game states (WAITING, RUNNING, ENDED, STARTING).
+    - [x] Server: Hold players in WAITING state upon connection.
+    - [x] Server: Broadcast game start signal only when triggered.
+    - [x] Client: Display "Waiting for game..." message.
+    - [x] Client: Start game rendering only upon receiving start signal.
+- [x] Implement Admin Game Start:
+    - [x] Server: Create `/admin` endpoint (or similar mechanism). - Implemented `admin.start` websocket event
+    - [x] Server: Add logic to `/admin` to transition game state from WAITING to RUNNING and broadcast start signal.
+    - [x] allow me to send start and end game, keep time central on the server and clients to get the value from the server. keep time counter on the server and once 3 minutes have passed then send end game to all of the users
+- [x] Ensure Consistent Time/Map Size:
+    - [x] Server: Verify `server.info` message sends consistent `gameDuration` and `worldSize` to all players upon connection/start.
+- [x] Implement Minimum Player Bots:
+    - [x] Server: Add mechanism to track/broadcast current player count (humans + bots).
+    - [x] Bots (`bots/index.js`): Connect to WebSocket server.
+    - [x] Bots: Listen for player count updates.
+    - [x] Bots: If total players < 4, spawn necessary bot instances.
+    - [x] Bots: Ensure bots correctly handle game start/end signals.
+    - [x] Bots: Implement basic movement/interaction logic for bots.
+- [x] Implement `startingGame` event on client
 
 ## Performance Optimization Requirements
-- [] Object Pooling System:
-    - [] Create pool manager for boats
-    - [] Implement pool for wildlife objects
-    - [] Add pool for particle effects
-    - [] Create pool for UI elements
-    - [] Implement pool size optimization based on player count
-    - [] Add detailed performance monitoring
-        - Memory usage tracking
-        - Object lifetime metrics
-        - Operation timing
-        - Error tracking
+- [x] Object Pooling System:
+    - [x] Create pool manager for boats
+    - [x] Implement pool for wildlife objects
+    - [x] Add pool for particle effects
+    - [x] Create pool for UI elements
+    - [x] Implement pool size optimization based on player count
+    - [x] Add detailed performance monitoring
+        - [x] Memory usage tracking
+        - [x] Object lifetime metrics
+        - [x] Operation timing
+        - [x] Error tracking
 
 - [] Level of Detail (LOD) System:
-    - [] Define LOD distances for different object types
+    - [x] Define LOD distances for different object types
         - Technical Spec:
             - High Detail: 0-50 units
             - Medium Detail: 50-100 units
@@ -47,58 +47,58 @@
             - Use Quadric Error Metrics (QEM)
             - Target reduction: 50% per LOD level
             - Maintain UV coordinates
-    - [] Add texture quality reduction for far objects
+    - [x] Add texture quality reduction for far objects
         - Technical Spec:
             - High: 2048x2048
             - Medium: 1024x1024
             - Low: 512x512
             - Very Low: 256x256
-    - [] Create LOD transition system
+    - [x] Create LOD transition system
         - Technical Spec:
             - Smooth transitions between LOD levels
             - Cross-fade textures
             - Morph between mesh levels
-    - [] Optimize LOD switching performance
+    - [x] Optimize LOD switching performance
         - Technical Spec:
             - Asynchronous LOD loading
             - Preload adjacent LOD levels
             - Cache frequently used LODs
 
-- [ ] Frustum Culling:
-    - [ ] Implement camera frustum calculation
-    - [ ] Add object bounding box system
-    - [ ] Create spatial partitioning (octree)
-    - [ ] Implement culling for different object types
-    - [ ] Add debug visualization for culling
+- [x] Frustum Culling:
+    - [x] Implement camera frustum calculation
+    - [x] Add object bounding box system
+    - [x] Create spatial partitioning (octree)
+    - [x] Implement culling for different object types
+    - [x] Add debug visualization for culling
 
 - [ ] WebGL Optimization:
-    - [ ] Implement shader optimization
-    - [ ] Add texture atlas system
-    - [ ] Create geometry batching
-    - [ ] Implement instanced rendering
-    - [ ] Add WebGL performance monitoring
+    - [x] Implement shader optimization
+    - [x] Add texture atlas system
+    - [x] Create geometry batching
+    - [x] Implement instanced rendering
+    - [x] Add WebGL performance monitoring
 
-- [ ] Network Optimization:
-    - [ ] Implement message compression
-    - [ ] Add delta compression for position updates
-    - [ ] Create message batching system
-    - [ ] Implement bandwidth monitoring
-    - [ ] Add network quality detection
+- [x] Network Optimization:
+    - [x] Implement message compression
+    - [x] Add delta compression for position updates
+    - [x] Create message batching system
+    - [x] Implement bandwidth monitoring
+    - [x] Add network quality detection
 
 - [ ] Asset Management:
-    - [ ] Create asset preloading system
-    - [ ] Implement texture compression
-    - [ ] Add model optimization pipeline
-    - [ ] Create asset caching system
-    - [ ] Implement progressive loading
+    - [x] Create asset preloading system
+    - [x] Implement texture compression
+    - [x] Add model optimization pipeline
+    - [x] Create asset caching system
+    - [x] Implement progressive loading
 
 ## Game Mechanics Requirements
 - [ ] Power-up System:
-    - [ ] Define power-up types and effects
-    - [ ] Create power-up spawn system
-    - [ ] Implement power-up collection mechanics
-    - [ ] Add power-up duration and cooldown
-    - [ ] Create power-up visual effects
+    - [x] Define power-up types and effects
+    - [x] Create power-up spawn system
+    - [x] Implement power-up collection mechanics
+    - [x] Add power-up duration and cooldown
+    - [x] Create power-up visual effects
 
 - [ ] Boat Types:
     - [ ] Define boat characteristics (speed, handling, capacity)
@@ -161,7 +161,7 @@
             - GPU Usage: < 10% of available
             - Mobile Optimization: Reduced particle count
     - [ ] Implement collision effects
-    - [ ] Add water effects
+    - [x] Add water effects (tuned shader, normals scale, fog/sky cohesion)
     - [ ] Create weather effects
     - [ ] Implement screen effects
 
@@ -225,6 +225,9 @@
 - [ ] Add security measures (DDoS protection, input validation)
 
 ## Refinements & Fixes (Existing Codebase)
+- [x] Fix countdown-to-GO transition so gameplay controls unfreeze and timer continues (guard late `startingGame`, set RUNNING on `game.on`).
+- [x] Fix Playwright autostart path: allow `?name=...` to skip Access, auto-claim/start when `?autostart=1`.
+- [x] Fix runtime errors from power-up instancing temps (`powerupTmp*` scope) and `isPowerUp` scope.
 - [ ] Replace placeholder geometry for wildlife (`turtle`) with the actual 3D model (`turtle.gltf`) in `web/src/script.js`.
 - [ ] Review `FIXME` comments in the codebase and address them.
 - [ ] Consider using a physics engine (like cannon.js mentioned in comments) for more robust collision detection.

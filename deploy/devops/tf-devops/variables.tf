@@ -1,4 +1,3 @@
-
 variable "config_file_profile" {
   type    = string
   default = "DEFAULT"
@@ -68,10 +67,19 @@ variable "adb_id" {
   type = string
 }
 
-variable "tenancy_namespace" {
-  type = string
+variable "paf_version" {
+  type    = string
+  default = "latest"
 }
 
-variable "ocir_token" {
-  type = string
+variable "paf_image_repository" {
+  type        = string
+  default     = "AUTO"
+  description = "Container image repository for Oracle Private Agent Factory. AUTO resolves to the workshop OCIR path."
+}
+
+variable "genai_model_id" {
+  type        = string
+  default     = "cohere.command-r-08-2024"
+  description = "OCI Generative AI model id used by the Oracle Private Agent Factory deployment."
 }

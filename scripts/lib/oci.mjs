@@ -1,6 +1,47 @@
 #!/usr/bin/env zx
 
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { exitWithError } from "./utils.mjs";
+
+export async function readOciConfig(profile = process.env.OCI_CLI_PROFILE || "DEFAULT") {
+  const configPath = process.env.OCI_CONFIG_FILE || path.join(os.homedir(), ".oci", "config");
+  let content;
+  try {
+    content = await fs.readFile(configPath, "utf8");
+  } catch (_) {
+    return {};
+  }
+
+  const values = {};
+  let inProfile = false;
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#") || line.startsWith(";")) {
+      continue;
+    }
+    const section = line.match(/^\[(.+)]$/);
+    if (section) {
+      inProfile = section[1] === profile;
+      continue;
+    }
+    if (!inProfile) {
+      continue;
+    }
+    const separator = line.indexOf("=");
+    if (separator === -1) {
+      continue;
+    }
+    values[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
+  }
+  return values;
+}
+
+export async function getOciConfigValue(key, profile = process.env.OCI_CLI_PROFILE || "DEFAULT") {
+  const config = await readOciConfig(profile);
+  return config[key] || "";
+}
 
 export async function getRegions() {
   try {
@@ -126,11 +167,15 @@ export async function getAvailableShapes(options = {}) {
 }
 
 export async function getTenancyId() {
-  const tenancyIdEnv = process.env.OCI_TENANCY;
-  const tenancyId = tenancyIdEnv
-    ? tenancyIdEnv
-    : await question("OCI tenancy: ");
-  return tenancyId;
+  const tenancyIdEnv = process.env.OCI_TENANCY || process.env.TENANCY_OCID;
+  if (tenancyIdEnv) {
+    return tenancyIdEnv;
+  }
+  const tenancyIdConfig = await getOciConfigValue("tenancy");
+  if (tenancyIdConfig) {
+    return tenancyIdConfig;
+  }
+  return question("OCI tenancy: ");
 }
 
 export async function searchCompartmentIdByName(compartmentName) {
