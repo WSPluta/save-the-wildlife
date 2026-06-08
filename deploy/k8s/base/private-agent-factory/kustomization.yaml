@@ -6,3 +6,6 @@ configMapGenerator:
   - name: private-agent-factory-env
     envs:
       - application.env
+  - name: private-agent-factory-wallet-zip
+    files:
+      - wallet.zip

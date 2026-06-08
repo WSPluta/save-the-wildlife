@@ -10,6 +10,7 @@ env:
     - WEB_VERSION
     - SCORE_VERSION
     - REPLAY_VERSION
+    - PAF_VERSION
 
 steps:
   - type: Command
@@ -68,6 +69,11 @@ steps:
       export REPLAY_VERSION=$(grep -E "^version\s*=\s*'[^']+'" replay/build.gradle | sed -E "s/.*'([^']+)'.*/\1/")
       echo "REPLAY_VERSION: $REPLAY_VERSION"
 
+      export PAF_VERSION="${PAF_VERSION:-latest}"
+      export PAF_PACKAGE_VERSION=$(jq -r '.version' private-agent-factory/package.json)
+      echo "PAF_VERSION: $PAF_VERSION"
+      echo "PAF_PACKAGE_VERSION: $PAF_PACKAGE_VERSION"
+
   - type: Command
     name: "Build ws-server"
     command: |
@@ -96,6 +102,13 @@ steps:
       trap 'echo "[FATAL] Build replay failed at line $LINENO" >&2' ERR
       npx zx scripts/build.mjs replay
 
+  - type: Command
+    name: "Build private-agent-factory"
+    command: |
+      set -Eeuo pipefail
+      trap 'echo "[FATAL] Build private-agent-factory failed at line $LINENO" >&2' ERR
+      npx zx scripts/build.mjs private-agent-factory
+
 outputArtifacts:
   - name: server
     type: DOCKER_IMAGE
@@ -109,3 +122,6 @@ outputArtifacts:
   - name: replay
     type: DOCKER_IMAGE
     location: replay:${REPLAY_VERSION}
+  - name: private-agent-factory
+    type: DOCKER_IMAGE
+    location: private-agent-factory:${PAF_VERSION}

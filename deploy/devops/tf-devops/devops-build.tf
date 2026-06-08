@@ -81,6 +81,10 @@ resource "oci_devops_build_pipeline_stage" "deliver_artifact_stage" {
       artifact_id   = oci_devops_deploy_artifact.replay_image.id
       artifact_name = "replay"
     }
+    items {
+      artifact_id   = oci_devops_deploy_artifact.private_agent_factory_image.id
+      artifact_name = "private-agent-factory"
+    }
   }
   display_name = "Deliver Artifacts"
 }
@@ -156,4 +160,21 @@ resource "oci_devops_deploy_artifact" "replay_image" {
   project_id           = oci_devops_project.devops_project.id
 
   display_name = "Container Image Replay"
+}
+
+resource "oci_devops_deploy_artifact" "private_agent_factory_image" {
+
+  argument_substitution_mode = "SUBSTITUTE_PLACEHOLDERS"
+
+  deploy_artifact_source {
+    deploy_artifact_source_type = "OCIR"
+
+    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/${local.repo_name}/private-agent-factory:$${PAF_VERSION}"
+    repository_id = oci_devops_repository.github_mirrored_repository.id
+  }
+
+  deploy_artifact_type = "DOCKER_IMAGE"
+  project_id           = oci_devops_project.devops_project.id
+
+  display_name = "Container Image Private Agent Factory"
 }

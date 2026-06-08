@@ -19,6 +19,15 @@ spec:
       labels:
         app: private-agent-factory
     spec:
+      initContainers:
+      - name: unzip-wallet
+        image: docker.io/library/busybox:1.36
+        command: ["unzip", "/walletzip/wallet.zip", "-d", "/wallet"]
+        volumeMounts:
+        - name: wallet-config
+          mountPath: /walletzip
+        - name: wallet-volume
+          mountPath: /wallet
       containers:
       - image: private-agent-factory
         imagePullPolicy: Always
@@ -47,5 +56,15 @@ spec:
         envFrom:
         - configMapRef:
             name: private-agent-factory-env
+        volumeMounts:
+        - name: wallet-volume
+          mountPath: /wallet
+      volumes:
+      - name: wallet-config
+        configMap:
+          name: private-agent-factory-wallet-zip
+      - name: wallet-volume
+        emptyDir:
+          sizeLimit: 50Mi
       imagePullSecrets:
       - name: ocir-secret

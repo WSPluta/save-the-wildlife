@@ -37,6 +37,8 @@ steps:
       oci db autonomous-database generate-wallet --autonomous-database-id ${adb_id} --file "./deploy/k8s/base/score/wallet.zip" --password "$adb_wallet_password"
       # Generate wallet for Replay service as well
       oci db autonomous-database generate-wallet --autonomous-database-id ${adb_id} --file "./deploy/k8s/base/replay/wallet.zip" --password "$adb_wallet_password"
+      # Generate wallet for the Oracle Private Agent Factory service as well
+      oci db autonomous-database generate-wallet --autonomous-database-id ${adb_id} --file "./deploy/k8s/base/private-agent-factory/wallet.zip" --password "$adb_wallet_password"
   - type: Command
     name: "Custom Kustomize with versions"
     shell: bash

@@ -30,11 +30,17 @@ if (action === "replay") {
   process.exit(0);
 }
 
+if (action === "private-agent-factory") {
+  await releaseNpm("private-agent-factory", process.env.PAF_VERSION || "latest");
+  process.exit(0);
+}
+
 if (a || action === "all") {
   await releaseNpm("server");
   await releaseNpm("web");
   await releaseGradle("score");
   await releaseGradle("replay");
+  await releaseNpm("private-agent-factory", process.env.PAF_VERSION || "latest");
   process.exit(0);
 }
 
@@ -45,10 +51,11 @@ console.log("\tnpx zx scripts/build.mjs ws-server");
 console.log("\tnpx zx scripts/build.mjs web");
 console.log("\tnpx zx scripts/build.mjs score");
 console.log("\tnpx zx scripts/build.mjs replay");
+console.log("\tnpx zx scripts/build.mjs private-agent-factory");
 
-async function releaseNpm(service) {
+async function releaseNpm(service, versionOverride) {
   await cd(`${service}`);
-  const currentVersion = await getNpmVersion();
+  const currentVersion = versionOverride || await getNpmVersion();
   console.log(`Releasing ${service}:${currentVersion})`);
   await buildImage(`${service}`, currentVersion);
   await cd("..");

@@ -22,7 +22,7 @@ spec:
     spec:
       initContainers:
       - name: wait-for-redis
-        image: redis
+        image: docker.io/library/busybox:1.36
         imagePullPolicy: IfNotPresent
         args: [ 'sh', '-c', 'sleep 60s' ]
       containers:
