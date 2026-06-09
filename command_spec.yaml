@@ -55,6 +55,10 @@ steps:
       export OCI_GENAI_MODEL_ID=${genai_model_id}
       export PAF_IMAGE_REPOSITORY=${paf_image_repository}
       export PAF_VERSION=${paf_version}
+      export PAF_CANVAS_RUN_ENDPOINT_URL="${paf_canvas_run_endpoint_url}"
+      export PAF_CANVAS_ROOM_ID="${paf_canvas_room_id}"
+      export PAF_CANVAS_TIMEOUT_MS="${paf_canvas_timeout_ms}"
+      export PAF_CANVAS_VERIFY_TLS="${paf_canvas_verify_tls}"
       npx zx scripts/kustom.mjs ${region_key} $redis_password $adb_admin_password ${adb_service} "$adb_wallet_password"
       rm -f .adb_wallet_password
       echo "Wallet and config files generated successfully"

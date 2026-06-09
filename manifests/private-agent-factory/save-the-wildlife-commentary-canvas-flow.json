@@ -1,0 +1,316 @@
+{
+  "nodes": [
+    {
+      "id": "stwl-chat-input",
+      "type": "flowGenericNode",
+      "position": {
+        "x": -360,
+        "y": 300
+      },
+      "data": {
+        "title": "Gameplay telemetry input",
+        "type": "chatInputComponent",
+        "description": "Receives the bounded SQL telemetry prompt from the deployed game adapter.",
+        "icon": "message-square",
+        "fieldOrder": [],
+        "passInlineData": false,
+        "template": {},
+        "outputs": [
+          {
+            "id": "user_provided_input",
+            "label": "Message",
+            "outputTypes": [
+              "message"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "stwl-commentary-prompt",
+      "type": "flowGenericNode",
+      "position": {
+        "x": -40,
+        "y": 220
+      },
+      "data": {
+        "title": "Save the Wildlife commentary prompt",
+        "type": "promptComponent",
+        "description": "Constrain the commentator to recorded Oracle SQL gameplay telemetry.",
+        "icon": "terminal",
+        "fieldOrder": [
+          "prompt"
+        ],
+        "dynamicFields": {
+          "prompt": [
+            "user_input"
+          ]
+        },
+        "passInlineData": false,
+        "template": {
+          "prompt": {
+            "componentType": "textAreaFormat",
+            "componentProps": {
+              "label": "Template",
+              "placeholder": ""
+            },
+            "required": true,
+            "valueType": "str",
+            "value": "You are the Save the Wildlife conference commentator running inside Oracle Private Agent Factory Canvas.\n\nRules:\n- Use only the Oracle SQL gameplay telemetry supplied below.\n- Return exactly one short commentator line under 200 characters.\n- Mention powerups, trail crossings, player freezes, coordinates, or prior-session history only when the telemetry includes them.\n- Do not invent events, animals, players, locations, scores, or history.\n- No profanity, insults, or unsafe live-demo language.\n- Do not expose SQL, JSON, credentials, internal service names, or implementation details.\n\nGameplay telemetry:\n{{user_input}}"
+          },
+          "user_input": {
+            "componentType": "label",
+            "componentProps": {
+              "connectionsAllowed": 1,
+              "label": "user_input"
+            },
+            "display": true,
+            "dynamic": true,
+            "inputTypes": [
+              "message"
+            ],
+            "required": false,
+            "value": [],
+            "valueType": "str"
+          }
+        },
+        "outputs": [
+          {
+            "id": "output",
+            "label": "Prompt message",
+            "outputTypes": [
+              "message"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "stwl-commentary-agent",
+      "type": "flowGenericNode",
+      "position": {
+        "x": 360,
+        "y": 180
+      },
+      "data": {
+        "title": "Save the Wildlife Commentator",
+        "type": "agentStep",
+        "description": "Turns recorded Oracle AI Database gameplay telemetry into a concise live commentary line.",
+        "icon": "bot",
+        "fieldOrder": [
+          "llmToUse",
+          "tools",
+          "subAgents",
+          "custom_instruction",
+          "agent_description",
+          "prompt",
+          "temperature"
+        ],
+        "passInlineData": false,
+        "template": {
+          "llmToUse": {
+            "componentType": "selectSingle",
+            "componentProps": {
+              "label": "Select LLM to use",
+              "itemText": "label",
+              "itemValue": "value",
+              "options": null,
+              "optionsEndPoint": {
+                "url": "/agentFactory/v1/agentBuilderGetRegisteredLLMS"
+              }
+            },
+            "display": true,
+            "inputTypes": null,
+            "required": false,
+            "value": "llm_model_entry",
+            "valueType": "str"
+          },
+          "tools": {
+            "componentType": "label",
+            "componentProps": {
+              "label": "Tools",
+              "connectionsAllowed": 8,
+              "inlineValue": true
+            },
+            "display": true,
+            "inputTypes": [
+              "tool"
+            ],
+            "required": false,
+            "value": [],
+            "valueType": "list"
+          },
+          "subAgents": {
+            "componentType": "label",
+            "componentProps": {
+              "label": "Sub-agents",
+              "connectionsAllowed": 4,
+              "inlineValue": true
+            },
+            "display": true,
+            "inputTypes": [
+              "agent"
+            ],
+            "required": false,
+            "value": [],
+            "valueType": "list"
+          },
+          "custom_instruction": {
+            "componentType": "textArea",
+            "componentProps": {
+              "label": "Custom instructions",
+              "placeholder": ""
+            },
+            "display": true,
+            "inputTypes": [
+              "message"
+            ],
+            "required": true,
+            "value": "You are a bounded final-phrasing agent for a live Save the Wildlife game demo. The upstream application has already queried Oracle AI Database tables and passes only recorded telemetry. Write one short commentary line from that telemetry. Prefer concrete gameplay moments: collected powerups, crossed trail lines, frozen players, coordinates, item collisions, final score, and prior best only when present. Never add unrecorded details.",
+            "valueType": "str"
+          },
+          "agent_description": {
+            "componentType": "inputText",
+            "componentProps": {
+              "label": "Agent description",
+              "placeholder": null,
+              "icon": null,
+              "iconTitle": null
+            },
+            "display": true,
+            "displayCondition": null,
+            "dynamic": false,
+            "inputTypes": [
+              "message"
+            ],
+            "required": false,
+            "value": "Save the Wildlife Commentator",
+            "valueType": "str"
+          },
+          "prompt": {
+            "componentType": "textArea",
+            "componentProps": {
+              "label": "Prompt",
+              "placeholder": ""
+            },
+            "display": true,
+            "inputTypes": [
+              "message"
+            ],
+            "required": true,
+            "value": "",
+            "valueType": "str"
+          },
+          "temperature": {
+            "componentType": "slider",
+            "componentProps": {
+              "label": "Temperature",
+              "min": 0,
+              "max": 2,
+              "step": 0.01
+            },
+            "display": true,
+            "required": true,
+            "value": 0.2,
+            "valueType": "number"
+          }
+        },
+        "outputs": [
+          {
+            "id": "tool_output",
+            "label": "Message",
+            "outputTypes": [
+              "message"
+            ]
+          },
+          {
+            "id": "agent",
+            "label": "Agent",
+            "outputTypes": [
+              "agent"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "stwl-chat-output",
+      "type": "flowGenericNode",
+      "position": {
+        "x": 760,
+        "y": 300
+      },
+      "data": {
+        "title": "Commentary output",
+        "type": "chatOutputComponent",
+        "description": "Returns the final live commentator script to the deployed game adapter.",
+        "icon": "message-square-share",
+        "fieldOrder": [
+          "message"
+        ],
+        "passInlineData": false,
+        "template": {
+          "message": {
+            "componentType": "label",
+            "componentProps": {
+              "label": "Message",
+              "connectionsAllowed": 1,
+              "inlineValue": false
+            },
+            "display": true,
+            "inputTypes": [
+              "message"
+            ],
+            "required": false,
+            "value": [],
+            "valueType": "list"
+          }
+        },
+        "outputs": [
+          {
+            "id": "output_message",
+            "label": "Message",
+            "outputTypes": [
+              "message"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "xy-edge__stwl-chat-inputuser_provided_input-stwl-commentary-promptuser_input",
+      "source": "stwl-chat-input",
+      "target": "stwl-commentary-prompt",
+      "sourceHandle": "user_provided_input-stwl-chat-input",
+      "targetHandle": "user_input-stwl-commentary-prompt",
+      "data": {
+        "sourceHandleId": "user_provided_input",
+        "targetHandleId": "user_input"
+      }
+    },
+    {
+      "id": "xy-edge__stwl-commentary-promptoutput-stwl-commentary-agentprompt",
+      "source": "stwl-commentary-prompt",
+      "target": "stwl-commentary-agent",
+      "sourceHandle": "output-stwl-commentary-prompt",
+      "targetHandle": "prompt-stwl-commentary-agent",
+      "data": {
+        "sourceHandleId": "output",
+        "targetHandleId": "prompt"
+      }
+    },
+    {
+      "id": "xy-edge__stwl-commentary-agenttool_output-stwl-chat-outputmessage",
+      "source": "stwl-commentary-agent",
+      "target": "stwl-chat-output",
+      "sourceHandle": "tool_output-stwl-commentary-agent",
+      "targetHandle": "message-stwl-chat-output",
+      "data": {
+        "sourceHandleId": "tool_output",
+        "targetHandleId": "message"
+      }
+    }
+  ]
+}

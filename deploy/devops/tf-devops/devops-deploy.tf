@@ -44,21 +44,25 @@ resource "oci_devops_deploy_artifact" "command_spec_deploy" {
   deploy_artifact_source {
     deploy_artifact_source_type = "INLINE"
     base64encoded_content = templatefile("${path.module}/../../../command_spec.yaml", {
-      region                = var.region
-      region_key            = var.region_key
-      github_repo_url       = var.github_repo_url
-      cluster               = var.oke_cluster_ocid
-      oci_namespace         = var.namespace
-      ocir_user             = var.ocir_user
-      user_auth_token_id    = var.user_auth_token_id
-      adb_admin_password_id = var.adb_admin_password_id
-      redis_password_id     = var.redis_password_id
-      adb_service           = var.adb_service
-      adb_id                = var.adb_id
-      compartment_id        = var.compartment_ocid
-      paf_image_repository  = var.paf_image_repository
-      paf_version           = var.paf_version
-      genai_model_id        = var.genai_model_id
+      region                      = var.region
+      region_key                  = var.region_key
+      github_repo_url             = var.github_repo_url
+      cluster                     = var.oke_cluster_ocid
+      oci_namespace               = var.namespace
+      ocir_user                   = var.ocir_user
+      user_auth_token_id          = var.user_auth_token_id
+      adb_admin_password_id       = var.adb_admin_password_id
+      redis_password_id           = var.redis_password_id
+      adb_service                 = var.adb_service
+      adb_id                      = var.adb_id
+      compartment_id              = var.compartment_ocid
+      paf_image_repository        = var.paf_image_repository
+      paf_version                 = var.paf_version
+      genai_model_id              = var.genai_model_id
+      paf_canvas_run_endpoint_url = var.paf_canvas_run_endpoint_url
+      paf_canvas_room_id          = var.paf_canvas_room_id
+      paf_canvas_timeout_ms       = var.paf_canvas_timeout_ms
+      paf_canvas_verify_tls       = var.paf_canvas_verify_tls
     })
   }
 

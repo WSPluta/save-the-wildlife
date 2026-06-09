@@ -21,6 +21,10 @@ await createReplayConfigFile(adbAdminPassword, adbService);
 await createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService, adbWalletPassword);
 await createCerts();
 
+function sedReplacement(value) {
+  return String(value ?? "").replace(/[\\&|]/g, "\\$&");
+}
+
 async function createKustomizationYaml(regionKey, namespace) {
   const pwdOutput = (await $`pwd`).stdout.trim();
   await cd(`${pwdOutput}/server`);
@@ -155,6 +159,10 @@ async function createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService,
   const replaceCmdRegion = `s/TEMPLATE_OCI_REGION/${process.env.OCI_REGION || ""}/`;
   const replaceCmdCompartment = `s/TEMPLATE_COMPARTMENT_OCID/${process.env.OCI_COMPARTMENT_OCID || ""}/`;
   const replaceCmdGenaiModel = `s/TEMPLATE_GENAI_MODEL_ID/${process.env.OCI_GENAI_MODEL_ID || "cohere.command-r-08-2024"}/`;
+  const replaceCmdCanvasEndpoint = `s|TEMPLATE_PAF_CANVAS_RUN_ENDPOINT_URL|${sedReplacement(process.env.PAF_CANVAS_RUN_ENDPOINT_URL || "")}|`;
+  const replaceCmdCanvasRoom = `s|TEMPLATE_PAF_CANVAS_ROOM_ID|${sedReplacement(process.env.PAF_CANVAS_ROOM_ID || "")}|`;
+  const replaceCmdCanvasTimeout = `s|TEMPLATE_PAF_CANVAS_TIMEOUT_MS|${sedReplacement(process.env.PAF_CANVAS_TIMEOUT_MS || "8000")}|`;
+  const replaceCmdCanvasVerifyTls = `s|TEMPLATE_PAF_CANVAS_VERIFY_TLS|${sedReplacement(process.env.PAF_CANVAS_VERIFY_TLS || "false")}|`;
   try {
     let { exitCode, stderr } =
       await $`sed '${replaceCmdAdbPassword}' application.env.template \
@@ -162,7 +170,11 @@ async function createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService,
             | sed '${replaceCmdAdbService}' \
             | sed '${replaceCmdRegion}' \
             | sed '${replaceCmdCompartment}' \
-            | sed '${replaceCmdGenaiModel}' > application.env`;
+            | sed '${replaceCmdGenaiModel}' \
+            | sed '${replaceCmdCanvasEndpoint}' \
+            | sed '${replaceCmdCanvasRoom}' \
+            | sed '${replaceCmdCanvasTimeout}' \
+            | sed '${replaceCmdCanvasVerifyTls}' > application.env`;
     if (exitCode !== 0) {
       exitWithError(`Error creating private-agent-factory/application.env: ${stderr}`);
     }

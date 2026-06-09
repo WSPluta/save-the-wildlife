@@ -83,3 +83,27 @@ variable "genai_model_id" {
   default     = "cohere.command-r-08-2024"
   description = "OCI Generative AI model id used by the Oracle Private Agent Factory deployment."
 }
+
+variable "paf_canvas_run_endpoint_url" {
+  type        = string
+  default     = ""
+  description = "Published Oracle Private Agent Factory Canvas run endpoint consumed by the Save the Wildlife commentary adapter."
+}
+
+variable "paf_canvas_room_id" {
+  type        = string
+  default     = ""
+  description = "Optional Private Agent Factory Canvas room id for continuing a published agent conversation."
+}
+
+variable "paf_canvas_timeout_ms" {
+  type        = string
+  default     = "8000"
+  description = "Timeout in milliseconds for calls to the published Private Agent Factory Canvas run endpoint."
+}
+
+variable "paf_canvas_verify_tls" {
+  type        = string
+  default     = "false"
+  description = "Whether the commentary adapter should verify TLS for the Private Agent Factory Canvas endpoint."
+}

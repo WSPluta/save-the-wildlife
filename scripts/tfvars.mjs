@@ -277,6 +277,10 @@ async function devopsTFvars() {
   const pafImageRepository = process.env.PAF_IMAGE_REPOSITORY || "AUTO";
   const pafVersion = process.env.PAF_VERSION || "latest";
   const genaiModelId = process.env.OCI_GENAI_MODEL_ID || "cohere.command-r-08-2024";
+  const pafCanvasRunEndpointUrl = process.env.PAF_CANVAS_RUN_ENDPOINT_URL || "";
+  const pafCanvasRoomId = process.env.PAF_CANVAS_ROOM_ID || "";
+  const pafCanvasTimeoutMs = process.env.PAF_CANVAS_TIMEOUT_MS || "8000";
+  const pafCanvasVerifyTls = process.env.PAF_CANVAS_VERIFY_TLS || "false";
 
   // Create the terraform.tfvars file using a safer approach
   try {
@@ -302,6 +306,10 @@ async function devopsTFvars() {
       .replace(/PAF_IMAGE_REPOSITORY/g, pafImageRepository)
       .replace(/PAF_VERSION/g, pafVersion)
       .replace(/OCI_GENAI_MODEL_ID/g, genaiModelId)
+      .replace(/PAF_CANVAS_RUN_ENDPOINT_URL/g, pafCanvasRunEndpointUrl)
+      .replace(/PAF_CANVAS_ROOM_ID/g, pafCanvasRoomId)
+      .replace(/PAF_CANVAS_TIMEOUT_MS/g, pafCanvasTimeoutMs)
+      .replace(/PAF_CANVAS_VERIFY_TLS/g, pafCanvasVerifyTls)
       .replace(/GITHUB_REPOSITORY_URL/g, githubURL)
       .replace(/GITHUB_USER/g, githubUser);
 
