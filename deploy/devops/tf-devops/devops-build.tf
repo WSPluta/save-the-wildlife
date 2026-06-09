@@ -63,6 +63,7 @@ resource "oci_devops_build_pipeline_stage" "deliver_artifact_stage" {
   }
 
   build_pipeline_stage_type = "DELIVER_ARTIFACT"
+  description               = "Deliver service container images"
 
   deliver_artifact_collection {
     items {
