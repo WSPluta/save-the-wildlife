@@ -7,7 +7,7 @@ import { exitWithError } from "./lib/utils.mjs";
 $.verbose = false;
 
 const { _ } = argv;
-const [key, redisPassword, adbAdminPassword, adbService] = _;
+const [key, redisPassword, adbAdminPassword, adbService, adbWalletPassword = ""] = _;
 
 const regionKey = key;
 const namespace = await getNamespace();
@@ -18,7 +18,7 @@ await createWsServerConfigFile(redisPassword, adbAdminPassword, adbService);
 await createRedisConfigFile(redisPassword);
 await createScoreConfigFile(adbAdminPassword, adbService);
 await createReplayConfigFile(adbAdminPassword, adbService);
-await createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService);
+await createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService, adbWalletPassword);
 await createCerts();
 
 async function createKustomizationYaml(regionKey, namespace) {
@@ -146,10 +146,11 @@ async function createReplayConfigFile(adbAdminPassword, adbService) {
   }
 }
 
-async function createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService) {
+async function createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService, adbWalletPassword) {
   const pwdOutput = (await $`pwd`).stdout.trim();
   await cd("./deploy/k8s/base/private-agent-factory/");
   const replaceCmdAdbPassword = `s/TEMPLATE_ADB_PASSWORD/${adbAdminPassword}/`;
+  const replaceCmdWalletPassword = `s/TEMPLATE_ADB_WALLET_PASSWORD/${adbWalletPassword}/`;
   const replaceCmdAdbService = `s/TEMPLATE_ADB_SERVICE/${adbService}/`;
   const replaceCmdRegion = `s/TEMPLATE_OCI_REGION/${process.env.OCI_REGION || ""}/`;
   const replaceCmdCompartment = `s/TEMPLATE_COMPARTMENT_OCID/${process.env.OCI_COMPARTMENT_OCID || ""}/`;
@@ -157,6 +158,7 @@ async function createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService)
   try {
     let { exitCode, stderr } =
       await $`sed '${replaceCmdAdbPassword}' application.env.template \
+            | sed '${replaceCmdWalletPassword}' \
             | sed '${replaceCmdAdbService}' \
             | sed '${replaceCmdRegion}' \
             | sed '${replaceCmdCompartment}' \

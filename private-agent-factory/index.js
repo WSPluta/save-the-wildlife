@@ -10,6 +10,7 @@ const PORT = Number(process.env.PORT || 8080);
 const AGENT_NAME = process.env.PAF_AGENT_NAME || "save-the-wildlife-commentator";
 const AGENT_MODE = process.env.PAF_AGENT_MODE || "moderated";
 const COMMENTARY_MAX_CHARS = Number(process.env.PAF_COMMENTARY_MAX_CHARS || 200);
+const ORACLE_QUERY_TIMEOUT_MS = Number(process.env.PAF_ORACLE_QUERY_TIMEOUT_MS || 2000);
 const GAME_EVENTS_TABLE = safeIdentifier(process.env.GAME_EVENTS_TABLE || "STWL_GAME_EVENTS");
 const ORACLE_CONFIG_DIR = process.env.ORACLE_CONFIG_DIR || process.env.TNS_ADMIN || (existsSync("/wallet") ? "/wallet" : "");
 const profanityPattern = /\b(fuck|shit|bitch|asshole|bastard|dick|cunt)\b/i;
@@ -91,6 +92,18 @@ function enforceCommentary(value, maxChars = COMMENTARY_MAX_CHARS) {
   return text;
 }
 
+async function withTimeout(promise, timeoutMs, label) {
+  let timeoutHandle;
+  const timeout = new Promise((_, reject) => {
+    timeoutHandle = setTimeout(() => reject(new Error(`${label}_timeout_${timeoutMs}ms`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
 function deterministicScript(summary, maxChars) {
   const powerups = compactPowerupNames(summary.powerups);
   const hist = historyPhrase(summary);
@@ -149,6 +162,9 @@ async function getOracleSummary(sessionId, playerId) {
   if (ORACLE_CONFIG_DIR) {
     connectionOptions.configDir = ORACLE_CONFIG_DIR;
     connectionOptions.walletLocation = process.env.ORACLE_WALLET_LOCATION || ORACLE_CONFIG_DIR;
+  }
+  if (process.env.ORACLE_WALLET_PASSWORD) {
+    connectionOptions.walletPassword = process.env.ORACLE_WALLET_PASSWORD;
   }
 
   const connection = await oracledb.getConnection(connectionOptions);
@@ -236,7 +252,11 @@ async function buildCommentary(body = {}) {
 
   if (bodySummary.session_id && bodySummary.player_id) {
     try {
-      const oracleSummary = await getOracleSummary(bodySummary.session_id, bodySummary.player_id);
+      const oracleSummary = await withTimeout(
+        getOracleSummary(bodySummary.session_id, bodySummary.player_id),
+        ORACLE_QUERY_TIMEOUT_MS,
+        "oracle_summary"
+      );
       if (oracleSummary) {
         summary = oracleSummary;
         source = "oracle-sql";

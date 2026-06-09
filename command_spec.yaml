@@ -33,7 +33,9 @@ steps:
     timeoutInSeconds: 300
     command: |
       cd save-the-wildlife
-      adb_wallet_password="$(openssl rand -base64 12)_$RANDOM"
+      adb_wallet_password="$(openssl rand -hex 12)_$RANDOM"
+      printf '%s' "$adb_wallet_password" > .adb_wallet_password
+      chmod 600 .adb_wallet_password
       oci db autonomous-database generate-wallet --autonomous-database-id ${adb_id} --file "./deploy/k8s/base/score/wallet.zip" --password "$adb_wallet_password"
       # Generate wallet for Replay service as well
       oci db autonomous-database generate-wallet --autonomous-database-id ${adb_id} --file "./deploy/k8s/base/replay/wallet.zip" --password "$adb_wallet_password"
@@ -47,12 +49,14 @@ steps:
       cd save-the-wildlife
       redis_password=$(oci secrets secret-bundle get --secret-id ${redis_password_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
       adb_admin_password=$(oci secrets secret-bundle get --secret-id ${adb_admin_password_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
+      adb_wallet_password=$(cat .adb_wallet_password)
       export OCI_REGION=${region}
       export OCI_COMPARTMENT_OCID=${compartment_id}
       export OCI_GENAI_MODEL_ID=${genai_model_id}
       export PAF_IMAGE_REPOSITORY=${paf_image_repository}
       export PAF_VERSION=${paf_version}
-      npx zx scripts/kustom.mjs ${region_key} $redis_password $adb_admin_password ${adb_service}
+      npx zx scripts/kustom.mjs ${region_key} $redis_password $adb_admin_password ${adb_service} "$adb_wallet_password"
+      rm -f .adb_wallet_password
       echo "Wallet and config files generated successfully"
   - type: Command
     name: "Create OCIR Secret"
