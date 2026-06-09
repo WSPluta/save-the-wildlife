@@ -56,6 +56,9 @@ spec:
         envFrom:
         - configMapRef:
             name: private-agent-factory-env
+        - secretRef:
+            name: private-agent-factory-canvas-auth
+            optional: true
         volumeMounts:
         - name: wallet-volume
           mountPath: /wallet
