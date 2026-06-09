@@ -1303,7 +1303,7 @@ function endRoomMatch(room) {
 
         // Seed initial items and power-ups immediately for visibility
         (async () => {
-          const numPlayersNow = ENABLE_COHERENCE_BACKEND ? await mapPlayersInfo.size() : Object.keys(mapPlayersInfo).length;
+          const numPlayersNow = await mapEntryCount(mapPlayersInfo);
 
           // Trash
           for (let i = 0; i < Math.max(1, numPlayersNow); i++) {
@@ -1763,15 +1763,9 @@ function endRoomMatch(room) {
   }, CLEANUP_STALE_IN_SECONDS * 1000);
 
   setInterval(async () => {
-    const numPlayers = ENABLE_COHERENCE_BACKEND
-      ? await mapPlayersInfo.size()
-      : Object.keys(mapPlayersInfo).length;
-    const numTrash = ENABLE_COHERENCE_BACKEND
-      ? await mapTrash.size()
-      : Object.keys(mapTrash).length;
-    const numMarineLife = ENABLE_COHERENCE_BACKEND
-      ? await mapMarineLife.size()
-      : Object.keys(mapMarineLife).length;
+    const numPlayers = await mapEntryCount(mapPlayersInfo);
+    const numTrash = await mapEntryCount(mapTrash);
+    const numMarineLife = await mapEntryCount(mapMarineLife);
     logger.info(
       `${numPlayers} Players, ${numTrash} Trash items and ${numMarineLife} Marine Life`
     );
@@ -1788,9 +1782,9 @@ function endRoomMatch(room) {
         ? await readCacheEntries(mapPlayersInfo)
         : mapPlayersInfo;
       const counts = {
-        trash: ENABLE_COHERENCE_BACKEND ? await mapTrash.size() : Object.keys(mapTrash).length,
-        marine: ENABLE_COHERENCE_BACKEND ? await mapMarineLife.size() : Object.keys(mapMarineLife).length,
-        powerups: ENABLE_COHERENCE_BACKEND ? await mapPowerUps.size() : Object.keys(mapPowerUps).length,
+        trash: await mapEntryCount(mapTrash),
+        marine: await mapEntryCount(mapMarineLife),
+        powerups: await mapEntryCount(mapPowerUps),
       };
       const ids = Object.keys(info || {});
       let bots = 0;
@@ -1850,5 +1844,19 @@ async function readCacheEntries(cache) {
     return data;
   } catch (error) {
     logger.error(`Error reading all entries. ${error.message}`);
+  }
+}
+
+async function mapEntryCount(mapLike) {
+  if (!mapLike) return 0;
+  if (!ENABLE_COHERENCE_BACKEND) return Object.keys(mapLike).length;
+  try {
+    if (typeof mapLike.size === "function") return await mapLike.size();
+    if (Number.isFinite(mapLike.size)) return mapLike.size;
+    const entries = await readCacheEntries(mapLike);
+    return Object.keys(entries || {}).length;
+  } catch (error) {
+    logger.error(`Error counting entries. ${error.message}`);
+    return 0;
   }
 }
