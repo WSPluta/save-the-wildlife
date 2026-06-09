@@ -3,6 +3,7 @@ resources:
   - ingress-rbac.yaml
   - ingress-controller.yaml
   - ingress.yaml
+  - paf-ingress.yaml
 secretGenerator:
 - name: tls
   files:

@@ -5,7 +5,7 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/server-snippet: |
       add_header X-Content-Type-Options nosniff;
       add_header X-Frame-Options SAMEORIGIN;
@@ -18,8 +18,7 @@ spec:
     - stwl.opcvr.tech
     secretName: tls
   rules:
-  - host: stwl.opcvr.tech
-    http:
+  - http:
       paths:
       - path: /socket.io
         pathType: Prefix
@@ -35,13 +34,6 @@ spec:
             name: replay
             port:
               number: 8082
-      - path: /paf
-        pathType: Prefix
-        backend:
-          service:
-            name: private-agent-factory
-            port:
-              number: 8080
       - path: /api
         pathType: Prefix
         backend:
