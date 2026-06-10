@@ -96,14 +96,55 @@ steps:
     shell: bash
     timeoutInSeconds: 180
     command: |
-      kubectl port-forward svc/ws-server 3000:3000 >/dev/null 2>&1 &
+      kubectl port-forward svc/ws-server 3000:3000 >/tmp/ws-server-port-forward.log 2>&1 &
       PF_PID=$!
-      sleep 2
-      curl -sf http://localhost:3000/healthz
-      RC=$?
+      trap 'kill $PF_PID >/dev/null 2>&1 || true' EXIT
+      RC=1
+      for i in $(seq 1 30); do
+        if curl -sf --max-time 5 http://127.0.0.1:3000/healthz; then
+          RC=0
+          break
+        fi
+        if ! kill -0 $PF_PID >/dev/null 2>&1; then
+          echo "ws-server port-forward exited early"
+          cat /tmp/ws-server-port-forward.log || true
+          break
+        fi
+        sleep 1
+      done
       kill $PF_PID || true
+      trap - EXIT
       if [ $RC -ne 0 ]; then
-        echo "Health check failed"
+        echo "ws-server health check failed"
+        cat /tmp/ws-server-port-forward.log || true
+        exit 1
+      fi
+  - type: Command
+    name: "Health check private-agent-factory"
+    shell: bash
+    timeoutInSeconds: 180
+    command: |
+      kubectl port-forward svc/private-agent-factory 18080:8080 >/tmp/private-agent-factory-port-forward.log 2>&1 &
+      PF_PID=$!
+      trap 'kill $PF_PID >/dev/null 2>&1 || true' EXIT
+      RC=1
+      for i in $(seq 1 30); do
+        if curl -sf --max-time 5 http://127.0.0.1:18080/healthz; then
+          RC=0
+          break
+        fi
+        if ! kill -0 $PF_PID >/dev/null 2>&1; then
+          echo "private-agent-factory port-forward exited early"
+          cat /tmp/private-agent-factory-port-forward.log || true
+          break
+        fi
+        sleep 1
+      done
+      kill $PF_PID || true
+      trap - EXIT
+      if [ $RC -ne 0 ]; then
+        echo "private-agent-factory health check failed"
+        cat /tmp/private-agent-factory-port-forward.log || true
         exit 1
       fi
   - type: Command
