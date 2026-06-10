@@ -5,7 +5,7 @@ export default defineConfig({
     environment: "node",
     include: ["test/**/*.test.js"],
     coverage: {
-      provider: "c8",
+      provider: "v8",
       reportsDirectory: "./coverage",
       reporter: ["text", "html"],
       exclude: [

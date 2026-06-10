@@ -2,21 +2,41 @@
 
 This Canvas flow is the governed phrasing step for the live game commentator.
 The deployed game service records events in Oracle AI Database, the in-cluster
-commentary adapter reads the SQL-backed summary, and the adapter posts that
-bounded telemetry to the published Oracle Private Agent Factory Canvas endpoint.
+commentary adapter reads the SQL-backed summary, asks the Oracle AI Database
+in-database commentary package for a bounded Select AI or agent draft, and then
+posts that bounded telemetry to the published Oracle Private Agent Factory
+Canvas endpoint.
 
 ## Flow
 
 1. Import `save-the-wildlife-commentary-canvas-flow.json` into Oracle Private Agent Factory Canvas.
 2. Configure the Canvas agent LLM entry for the target OCI Generative AI model.
 3. Publish the Canvas agent.
-4. Copy the published run endpoint:
+4. Install the database telemetry objects and in-database commentary package:
+
+   ```bash
+   sql ADMIN/<password>@<adb-service> @deploy/db/stwl_game_events.sql
+   sql ADMIN/<password>@<adb-service> @deploy/db/stwl_commentary_pkg.sql
+   ```
+
+5. Configure Select AI for presenter exploration and optional in-database
+   phrasing:
+
+   ```bash
+   sql ADMIN/<password>@<adb-service> @deploy/db/select_ai_profile_template.sql
+   sql ADMIN/<password>@<adb-service> @deploy/db/select_ai_agent_team_template.sql
+   ```
+
+   The runtime remains deterministic if the Select AI profile or agent team is
+   not available; those failures are caught and reported as warnings.
+
+6. Copy the published run endpoint:
 
    ```text
    https://<paf-host>:8080/agentFactory/v1/agentBuilder/run/<published-agent-id>
    ```
 
-5. Set the deployment variable before regenerating the DevOps command spec or
+7. Set the deployment variable before regenerating the DevOps command spec or
    patch the in-cluster ConfigMap:
 
    ```bash
@@ -24,7 +44,7 @@ bounded telemetry to the published Oracle Private Agent Factory Canvas endpoint.
    export PAF_CANVAS_VERIFY_TLS=false
    ```
 
-6. Keep any Canvas session cookie or password in a Kubernetes Secret or a secure
+8. Keep any Canvas session cookie or password in a Kubernetes Secret or a secure
    deployment-time environment source. Do not commit those values.
 
 ## Runtime Contract
@@ -33,7 +53,7 @@ The adapter sends:
 
 ```json
 {
-  "message": "bounded SQL gameplay telemetry prompt",
+  "message": "bounded SQL gameplay telemetry prompt plus optional Oracle AI Database draft",
   "roomId": null
 }
 ```
@@ -48,7 +68,13 @@ The `/paf/healthz` response reports:
 - `canvas_configured`
 - `canvas_endpoint`
 - `canvas_auth_configured`
+- `indb_agent_enabled`
+- `indb_agent_package`
+- `select_ai_profile`
+- `select_ai_agent_team_configured`
 
 The `/paf/api/commentary` response reports `source: "paf-canvas"` only when the
-published Canvas endpoint actually produced the line. If Canvas is unavailable,
-the adapter returns the deterministic Oracle SQL fallback and includes a warning.
+published Canvas endpoint actually produced the line. The response also includes
+`in_db_agent` when the Oracle AI Database package produced a draft. If Canvas,
+Select AI, or the in-database agent team is unavailable, the adapter returns the
+best deterministic Oracle SQL fallback and includes a warning.

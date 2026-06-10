@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
+  __resetGameEventsForTests,
+  __setOracleConnectionForTests,
   buildCommentary,
   deterministicCommentary,
   normalizeGameEvent,
@@ -8,6 +10,10 @@ import {
 } from "../lib/gameEvents.js";
 
 describe("game event telemetry", () => {
+  beforeEach(() => {
+    __resetGameEventsForTests();
+  });
+
   it("normalizes supported gameplay events with coordinates and metadata", () => {
     const event = normalizeGameEvent({
       type: "powerup_collected",
@@ -32,6 +38,86 @@ describe("game event telemetry", () => {
 
   it("rejects unsupported event types", () => {
     expect(() => normalizeGameEvent({ type: "made_up", playerId: "P1" })).toThrow(/unsupported_event_type/);
+  });
+
+  it("captures trail crossing and freeze events with coordinates and related players", () => {
+    const trailEvent = normalizeGameEvent({
+      type: "trail_crossed",
+      sessionId: "S-TRAIL",
+      roomId: "ROOM-1",
+      playerId: "P1",
+      relatedPlayerId: "P2",
+      score: 18,
+      x: 4.5,
+      y: 0,
+      z: -9.25,
+      metadata: { trail_segment_id: "seg-7" },
+    });
+    const freezeEvent = normalizeGameEvent({
+      type: "player_frozen",
+      sessionId: "S-TRAIL",
+      roomId: "ROOM-1",
+      playerId: "P1",
+      relatedPlayerId: "P2",
+      freezeMs: 2500,
+      position: { x: 4.5, y: 0, z: -9.25 },
+    });
+
+    expect(trailEvent.event_type).toBe("trail_crossed");
+    expect(trailEvent.related_player_id).toBe("P2");
+    expect(trailEvent.x).toBe(4.5);
+    expect(trailEvent.z).toBe(-9.25);
+    expect(trailEvent.metadata.trail_segment_id).toBe("seg-7");
+    expect(freezeEvent.event_type).toBe("player_frozen");
+    expect(freezeEvent.related_player_id).toBe("P2");
+    expect(freezeEvent.metadata.freeze_ms).toBe(2500);
+    expect(freezeEvent.x).toBe(4.5);
+  });
+
+  it("persists Oracle rows with coordinates, related ids, score, and JSON metadata", async () => {
+    const calls = [];
+    __setOracleConnectionForTests({
+      async execute(sql, binds, options) {
+        calls.push({ sql, binds, options });
+        return {};
+      },
+    });
+
+    const result = await recordGameEvent({
+      type: "powerup_collected",
+      sessionId: "S-DB",
+      roomId: "ROOM-DB",
+      playerId: "P-DB",
+      playerName: "Lin",
+      score: 33,
+      position: { x: 7.5, y: 0, z: -3.25 },
+      relatedPlayerId: "P-RIVAL",
+      itemId: "PU-1",
+      powerupType: "powerup_shield",
+      metadata: { collision_id: "hit-9" },
+    });
+
+    expect(result.persisted).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toMatch(/INSERT INTO stwl_game_events/i);
+    expect(calls[0].options).toEqual({ autoCommit: true });
+    expect(calls[0].binds).toMatchObject({
+      session_id: "S-DB",
+      room_id: "ROOM-DB",
+      player_id: "P-DB",
+      player_name: "Lin",
+      event_type: "powerup_collected",
+      score: 33,
+      x: 7.5,
+      y: 0,
+      z: -3.25,
+      related_player_id: "P-RIVAL",
+      related_item_id: "PU-1",
+    });
+    expect(JSON.parse(calls[0].binds.metadata_json)).toEqual({
+      collision_id: "hit-9",
+      powerup_type: "powerup_shield",
+    });
   });
 
   it("summarizes powerups, freezes, and game over events for commentary", async () => {

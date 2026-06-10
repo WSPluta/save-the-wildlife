@@ -335,3 +335,18 @@ export async function buildCommentary(sessionId, playerId) {
 export function getLocalEvents() {
   return [...localEvents];
 }
+
+export function __resetGameEventsForTests() {
+  localEvents.length = 0;
+  lastPositionSampleByPlayer.clear();
+  oracleState = { attempted: false, ready: false, oracledb: null, connection: null };
+}
+
+export function __setOracleConnectionForTests(connection) {
+  oracleState = {
+    attempted: true,
+    ready: Boolean(connection),
+    oracledb: null,
+    connection,
+  };
+}
