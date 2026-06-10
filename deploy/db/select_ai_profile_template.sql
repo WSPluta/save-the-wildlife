@@ -4,6 +4,14 @@
 -- with the DBMS_CLOUD credential name configured for your provider.
 
 BEGIN
+  DBMS_CLOUD_ADMIN.ENABLE_RESOURCE_PRINCIPAL();
+EXCEPTION
+  WHEN OTHERS THEN
+    NULL;
+END;
+/
+
+BEGIN
   DBMS_CLOUD_AI.CREATE_PROFILE(
     profile_name => 'STWL_GAMEPLAY_AI',
     attributes   => '{

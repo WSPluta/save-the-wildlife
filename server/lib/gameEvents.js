@@ -170,6 +170,16 @@ async function ensureOracleSchema(connection) {
   await executeIgnoring("CREATE INDEX stwl_game_events_session_ix ON stwl_game_events (session_id, occurred_at)", ["ORA-00955"]);
   await executeIgnoring("CREATE INDEX stwl_game_events_player_ix ON stwl_game_events (player_id, occurred_at)", ["ORA-00955"]);
   await executeIgnoring("CREATE INDEX stwl_game_events_type_ix ON stwl_game_events (event_type, occurred_at)", ["ORA-00955"]);
+  await executeIgnoring(`DECLARE
+    v_count NUMBER := 0;
+    v_start NUMBER := 1;
+  BEGIN
+    SELECT COUNT(*) INTO v_count FROM user_sequences WHERE sequence_name = 'STWL_GAME_EVENTS_SEQ';
+    IF v_count = 0 THEN
+      SELECT NVL(MAX(id), 0) + 1 INTO v_start FROM stwl_game_events;
+      EXECUTE IMMEDIATE 'CREATE SEQUENCE stwl_game_events_seq START WITH ' || v_start || ' INCREMENT BY 1 NOCACHE';
+    END IF;
+  END;`);
   await executeIgnoring(`CREATE OR REPLACE VIEW stwl_session_summary AS
     SELECT
       session_id,
@@ -195,9 +205,10 @@ async function persistOracle(event) {
   if (!connection) return false;
   await connection.execute(
     `INSERT INTO stwl_game_events (
-      session_id, room_id, player_id, player_name, event_type, occurred_at,
+      id, session_id, room_id, player_id, player_name, event_type, occurred_at,
       score, x, y, z, related_player_id, related_item_id, metadata_json
     ) VALUES (
+      stwl_game_events_seq.NEXTVAL,
       :session_id, :room_id, :player_id, :player_name, :event_type,
       TO_TIMESTAMP_TZ(:occurred_at, 'YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"'),
       :score, :x, :y, :z, :related_player_id, :related_item_id, :metadata_json

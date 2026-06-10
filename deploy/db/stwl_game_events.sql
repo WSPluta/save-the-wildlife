@@ -31,6 +31,8 @@ CREATE INDEX stwl_game_events_session_ix ON stwl_game_events (session_id, occurr
 CREATE INDEX stwl_game_events_player_ix ON stwl_game_events (player_id, occurred_at);
 CREATE INDEX stwl_game_events_type_ix ON stwl_game_events (event_type, occurred_at);
 
+CREATE SEQUENCE stwl_game_events_seq START WITH 1 INCREMENT BY 1 NOCACHE;
+
 COMMENT ON TABLE stwl_game_events IS
   'Save the Wildlife gameplay timeline. Each row is one player event used by Oracle Private Agent Factory and Select AI demos.';
 COMMENT ON COLUMN stwl_game_events.session_id IS

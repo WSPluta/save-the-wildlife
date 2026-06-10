@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   __resetGameEventsForTests,
   __setOracleConnectionForTests,
@@ -100,6 +101,7 @@ describe("game event telemetry", () => {
     expect(result.persisted).toBe(true);
     expect(calls).toHaveLength(1);
     expect(calls[0].sql).toMatch(/INSERT INTO stwl_game_events/i);
+    expect(calls[0].sql).toMatch(/stwl_game_events_seq\.NEXTVAL/i);
     expect(calls[0].options).toEqual({ autoCommit: true });
     expect(calls[0].binds).toMatchObject({
       session_id: "S-DB",
@@ -118,6 +120,17 @@ describe("game event telemetry", () => {
       collision_id: "hit-9",
       powerup_type: "powerup_shield",
     });
+  });
+
+  it("ships a sequence-backed Oracle telemetry schema for live ADB compatibility", () => {
+    const ddl = readFileSync(new URL("../../deploy/db/stwl_game_events.sql", import.meta.url), "utf8");
+
+    expect(ddl).toMatch(/CREATE\s+SEQUENCE\s+stwl_game_events_seq/i);
+    expect(ddl).toMatch(/event_type\s+IN\s*\(/i);
+    expect(ddl).toMatch(/powerup_collected/i);
+    expect(ddl).toMatch(/trail_crossed/i);
+    expect(ddl).toMatch(/player_frozen/i);
+    expect(ddl).toMatch(/metadata_json\s+CLOB\s+CHECK\s*\(\s*metadata_json\s+IS\s+JSON\s*\)/i);
   });
 
   it("summarizes powerups, freezes, and game over events for commentary", async () => {

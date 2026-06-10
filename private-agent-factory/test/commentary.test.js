@@ -402,7 +402,12 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(packageSql, /DBMS_CLOUD_AI_AGENT\.RUN_TEAM/i);
   assert.match(packageSql, /DBMS_CLOUD_AI\.GENERATE/i);
   assert.match(packageSql, /oracle-ai-database-deterministic/i);
+  assert.match(packageSql, /\bhistory\s+AS\s*\(/i);
+  assert.doesNotMatch(packageSql, /\bprior\s+AS\s*\(/i);
+  assert.match(packageSql, /TO_CLOB\('\{\}'\)/i);
+  assert.doesNotMatch(packageSql, /RETURN\s+JSON_OBJECT\([\s\S]*?RETURNING\s+CLOB[\s\S]*?\);/i);
 
+  assert.match(profileSql, /DBMS_CLOUD_ADMIN\.ENABLE_RESOURCE_PRINCIPAL/i);
   assert.match(profileSql, /DBMS_CLOUD_AI\.CREATE_PROFILE/i);
   assert.match(profileSql, /STWL_GAMEPLAY_AI/i);
   assert.match(profileSql, /OCI\$RESOURCE_PRINCIPAL/i);
@@ -425,5 +430,6 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   }).join("\n");
   assert.match(generated, /DBMS_CLOUD_AI\.CREATE_PROFILE/i);
   assert.match(generated, /DBMS_CLOUD_AI_AGENT\.CREATE_TEAM/i);
+  assert.match(generated, /DBMS_CLOUD_ADMIN\.ENABLE_RESOURCE_PRINCIPAL/i);
   assert.match(generated, /OCI\$RESOURCE_PRINCIPAL/i);
 });

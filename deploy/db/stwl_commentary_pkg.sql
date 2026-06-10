@@ -59,7 +59,7 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
              GROUP BY COALESCE(JSON_VALUE(e.metadata_json, '$.powerup_type'), 'powerup')
           )
       ),
-      prior AS (
+      history AS (
         SELECT MAX(e.score) AS prior_best_score
           FROM stwl_game_events e
           JOIN params p ON p.player_id = e.player_id
@@ -76,14 +76,14 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
                'marine_hits' VALUE b.marine_hits,
                'trail_crosses' VALUE b.trail_crosses,
                'freezes' VALUE b.freezes,
-               'powerups' VALUE COALESCE(p.powerups_json, '{}') FORMAT JSON,
+               'powerups' VALUE COALESCE(p.powerups_json, TO_CLOB('{}')) FORMAT JSON,
                'last_position' VALUE JSON_OBJECT('x' VALUE b.last_x, 'y' VALUE b.last_y, 'z' VALUE b.last_z RETURNING CLOB) FORMAT JSON,
-               'prior_best_score' VALUE r.prior_best_score
+               'prior_best_score' VALUE h.prior_best_score
                RETURNING CLOB
              )
         FROM base b
         CROSS JOIN powerups p
-        CROSS JOIN prior r
+        CROSS JOIN history h
     ]';
     EXECUTE IMMEDIATE v_sql INTO v_summary USING p_session_id, p_player_id;
     RETURN v_summary;
@@ -142,12 +142,12 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
   FUNCTION agent_team_script(p_summary IN CLOB, p_team_name IN VARCHAR2, p_max_chars IN NUMBER) RETURN VARCHAR2 IS
     v_result CLOB;
     v_prompt CLOB := build_prompt(p_summary);
-    v_params CLOB;
+    v_params VARCHAR2(4000);
   BEGIN
     IF p_team_name IS NULL THEN
       RETURN NULL;
     END IF;
-    v_params := JSON_OBJECT('conversation_id' VALUE 'stwl-' || RAWTOHEX(SYS_GUID()) RETURNING CLOB);
+    v_params := JSON_OBJECT('conversation_id' VALUE 'stwl-' || RAWTOHEX(SYS_GUID()));
     EXECUTE IMMEDIATE q'[
       BEGIN
         :result := DBMS_CLOUD_AI_AGENT.RUN_TEAM(
@@ -175,7 +175,7 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
   BEGIN
     v_summary := session_summary_json(p_session_id, p_player_id);
     IF v_summary IS NULL THEN
-      RETURN JSON_OBJECT('ok' VALUE 0, 'source' VALUE 'oracle-ai-database', 'error' VALUE 'session_not_found' RETURNING CLOB);
+      RETURN JSON_OBJECT('ok' VALUE 0, 'source' VALUE 'oracle-ai-database', 'error' VALUE 'session_not_found');
     END IF;
 
     v_text := agent_team_script(v_summary, p_agent_team_name, p_max_chars);
@@ -195,7 +195,6 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
       'source' VALUE v_source,
       'commentary' VALUE v_text,
       'summary' VALUE v_summary FORMAT JSON
-      RETURNING CLOB
     );
   EXCEPTION
     WHEN OTHERS THEN
@@ -203,7 +202,6 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
         'ok' VALUE 0,
         'source' VALUE 'oracle-ai-database-error',
         'error' VALUE SUBSTR(SQLERRM, 1, 500)
-        RETURNING CLOB
       );
   END;
 END stwl_commentary_pkg;
