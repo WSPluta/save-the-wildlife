@@ -7,7 +7,7 @@ WORKDIR /usr/src/web
 
 COPY package*.json ./
 
-RUN npm ci
+RUN npm ci --include=dev
 
 COPY static/ ./static
 COPY src/ ./src
