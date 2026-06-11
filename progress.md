@@ -202,3 +202,18 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Updated `scripts/dev_start.sh` to pass `WEB_HOST`/`SERVER_PORT` to the web dev server and print LAN Phone/Admin URLs.
   - Added mobile-controls regression coverage for the LAN testing path.
   - Verified `bash -n scripts/dev_start.sh`, `node --check web/bundler/webpack.dev.js`, and `npm --prefix web run test:unit -- --run src/__tests__/mobileControls.test.js`.
+- Gameplay polish fixes in progress on 2026-06-11:
+  - Found likely trash-disappearing root cause: client removed trash optimistically before authoritative server acceptance, so rejected/stale collisions could drain the client view while the server still counted the trash as alive.
+  - Changed server respawn lifecycle so pooled objects get a fresh public item id on every spawn and event telemetry snapshots item coordinates before the object can be recycled.
+  - Added server collision ack/destroy payload evidence with item id/type, actor, position, score delta, and powerup type.
+  - Changed client collision handling to mark pending and remove/score only after accepted collision ack or server destroy evidence.
+  - Added turtle polish: reset recycled turtle AI state, smooth shortest-angle heading, lightweight water-height bob, and water-normal tilt.
+  - Added focused server/web regression tests; validation still pending.
+  - Validation completed:
+    - `npm --prefix server run test:unit` passed (5 files, 30 tests).
+    - `npm --prefix web run test:unit` passed (7 files, 23 tests).
+    - `npm --prefix web run build` passed with existing bundle/asset-size warnings.
+    - Desktop smoke artifacts at `output/gameplay-polish-smoke-3/` reached RUNNING with stable item counts.
+    - Mobile viewport smoke artifacts at `output/mobile-polish-smoke/` reached RUNNING with visible joystick and healthy item counts (`trashInstances: 11`, `powerupInstances: 5`).
+    - `node --check` passed for `server/server.js`, `web/src/script.js`, and `web/src/commsWorker.js`.
+    - Scoped `git diff --check` passed for touched tracked files; new-file no-index checks reported no whitespace diagnostics.

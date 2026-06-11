@@ -184,8 +184,8 @@ class ObjectPool {
   }
 
   _keyFor(obj) {
-    // Prefer id if present; else fallback to object identity
-    if (obj && typeof obj === "object" && "id" in obj) return `id:${obj.id}`;
+    // Game objects can receive a fresh public id each time they respawn.
+    // Track pool diagnostics by object identity so id mutation does not leak.
     return `ref:${ObjectPool._refId(obj)}`;
   }
 

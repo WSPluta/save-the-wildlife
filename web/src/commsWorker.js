@@ -365,7 +365,20 @@ onmessage = ({ data }) => {
       socket.close();
       break;
     case "items.collision":
-      socket.emit("items.collision", data.body);
+      socket.timeout(1200).emit("items.collision", data.body, (err, res) => {
+        if (err) {
+          postMessage({
+            type: "items.collision.result",
+            body: {
+              ok: false,
+              error: err && err.message ? err.message : String(err),
+              itemId: data.body && data.body.itemId,
+            },
+          });
+          return;
+        }
+        postMessage({ type: "items.collision.result", body: res || { ok: false, itemId: data.body && data.body.itemId } });
+      });
       break;
     case "game.event":
       socket.emit("game.event", data.body, (res) => {

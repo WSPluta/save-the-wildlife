@@ -13,6 +13,7 @@ import {
   shouldUseCoherence,
   socketBusConfigFromEnv,
 } from "./lib/realtimeBackend.js";
+import { reinitializeItemForSpawn, snapshotItemForEvent } from "./lib/itemLifecycle.js";
 
 dotenv.config();
 dotenv.config({ path: "config/.env" });
@@ -402,13 +403,14 @@ const itemPool = new ObjectPool(createObject, 50, 1000);
 
 function reinitItem(obj, type) {
   try {
-    obj.type = type;
-    obj.position = {
-      x: randSpawnCoord(worldSizeX),
-      y: 0,
-      z: randSpawnCoord(worldSizeZ),
-    };
-    obj.size = (Math.random() * (ITEM_MAX_SIZE - ITEM_MIN_SIZE) + ITEM_MIN_SIZE).toFixed(2);
+    reinitializeItemForSpawn(obj, type, {
+      idFactory: () => short.generate(),
+      coordinateFactory: randSpawnCoord,
+      worldSizeX,
+      worldSizeZ,
+      itemMinSize: ITEM_MIN_SIZE,
+      itemMaxSize: ITEM_MAX_SIZE,
+    });
   } catch (_) {
     /* ignore */
   }
@@ -1054,12 +1056,18 @@ function endRoomMatch(room) {
       }
     });
 
-    socket.on("items.collision", async ({ itemId, playerId, playerName }) => {
+    socket.on("items.collision", async ({ itemId, playerId, playerName } = {}, ack) => {
+      const safeAck = (payload) => {
+        try { if (typeof ack === "function") ack(payload); } catch (_) {}
+      };
       try {
         const room = getSocketRoom(socket);
         // Ignore collisions unless match is RUNNING (per-room or global)
         const rs = roomTimers.get(room);
-        if (rs ? rs.state !== 'RUNNING' : gameState !== 'RUNNING') { return; }
+        if (rs ? rs.state !== 'RUNNING' : gameState !== 'RUNNING') {
+          safeAck({ ok: false, error: "not_running", itemId });
+          return;
+        }
         // Locate the item and its type
         let item = null;
         let itemType = null;
@@ -1087,14 +1095,24 @@ function endRoomMatch(room) {
           }
         }
 
-        if (!item) return;
+        if (!item) {
+          safeAck({ ok: false, error: "item_not_found", itemId });
+          return;
+        }
         // Ignore collisions against items not in this socket's room
-        if (item && item.room && item.room !== room) return;
+        if (item && item.room && item.room !== room) {
+          safeAck({ ok: false, error: "wrong_room", itemId, room });
+          return;
+        }
+        const itemSnapshot = snapshotItemForEvent(item);
 
         // If server-authoritative, validate proximity using authoritative state
         if (SERVER_AUTH_ENABLED) {
           const st = playersState.get(playerId);
-          if (!st) return;
+          if (!st) {
+            safeAck({ ok: false, error: "missing_player_state", itemId });
+            return;
+          }
           const ipos = item.position || { x: 0, z: 0 };
           const dx = (st.x || 0) - ipos.x;
           const dz = (st.z || 0) - ipos.z;
@@ -1105,9 +1123,28 @@ function endRoomMatch(room) {
           }
           if (dist > allowedRadius) {
             // Ignore spoofed/late collisions
+            safeAck({
+              ok: false,
+              error: "too_far",
+              itemId,
+              distance: Number(dist.toFixed(3)),
+              allowedRadius,
+            });
             return;
           }
         }
+
+        const acceptedPayload = (scoreDelta = 0) => ({
+          ok: true,
+          id: itemId,
+          itemId,
+          itemType: itemSnapshot?.type || itemType,
+          playerId,
+          playerName,
+          position: itemSnapshot?.position || null,
+          scoreDelta,
+          powerupType: String(itemSnapshot?.type || "").startsWith("powerup_") ? itemSnapshot.type : null,
+        });
 
         // Remove the item, update score/effects accordingly
         if (itemType === "trash") {
@@ -1116,9 +1153,9 @@ function endRoomMatch(room) {
           } else {
             delete mapTrash[itemId];
           }
-          io.to(room).emit("item.destroy", itemId);
+          const accepted = acceptedPayload(1);
+          io.to(room).emit("item.destroy", accepted);
           if (item) itemPool.returnObject(item);
-          await refillOnce(room);
           await postCurrentScore(playerId, playerName, "INCREMENT");
           await recordGameEvent({
             type: "trash_collected",
@@ -1126,20 +1163,23 @@ function endRoomMatch(room) {
             playerName,
             itemId,
             score: null,
-            position: item.position,
-            metadata: { item_type: item.type || "trash" },
+            position: itemSnapshot?.position,
+            metadata: { item_type: itemSnapshot?.type || "trash" },
           }, { roomId: room, sessionId: sessionIdForRoom(room) });
+          safeAck(accepted);
+          await refillOnce(room);
         } else if (itemType === "turtle") {
           if (ENABLE_COHERENCE_BACKEND) {
             await deleteCache(mapMarineLife, itemId);
           } else {
             delete mapMarineLife[itemId];
           }
-          io.to(room).emit("item.destroy", itemId);
+          const shielded = !!(SERVER_AUTH_ENABLED && playersState.get(playerId)?.shield);
+          const accepted = acceptedPayload(shielded ? 0 : -1);
+          io.to(room).emit("item.destroy", accepted);
           if (item) itemPool.returnObject(item);
-          await refillOnce(room);
           // If shielded under authority, do not decrement
-          if (!SERVER_AUTH_ENABLED || !(playersState.get(playerId)?.shield)) {
+          if (!shielded) {
             await postCurrentScore(playerId, playerName, "DECREMENT");
             await recordGameEvent({
               type: "marine_hit",
@@ -1147,10 +1187,12 @@ function endRoomMatch(room) {
               playerName,
               itemId,
               score: null,
-              position: item.position,
-              metadata: { item_type: item.type || "turtle" },
+              position: itemSnapshot?.position,
+              metadata: { item_type: itemSnapshot?.type || "turtle" },
             }, { roomId: room, sessionId: sessionIdForRoom(room) });
           }
+          safeAck(accepted);
+          await refillOnce(room);
         } else {
           // Power-ups
           if (ENABLE_COHERENCE_BACKEND) {
@@ -1158,7 +1200,8 @@ function endRoomMatch(room) {
           } else {
             delete mapPowerUps[itemId];
           }
-          io.to(room).emit("item.destroy", itemId);
+          const accepted = acceptedPayload(0);
+          io.to(room).emit("item.destroy", accepted);
           if (item) itemPool.returnObject(item);
 
           if (SERVER_AUTH_ENABLED) {
@@ -1173,7 +1216,7 @@ function endRoomMatch(room) {
               effects: { speedUntil: 0, shieldUntil: 0, magnetUntil: 0, freezeUntil: 0 }
             };
             // Distinguish type by stored item.type if present
-            const typeName = (item.type && String(item.type)) || "";
+            const typeName = (itemSnapshot?.type && String(itemSnapshot.type)) || "";
             if (typeName === "powerup_speed") {
               st.speedMul = POWERUP_SPEED_MULTIPLIER;
               st.effects = st.effects || {};
@@ -1196,13 +1239,15 @@ function endRoomMatch(room) {
             playerId,
             playerName,
             itemId,
-            position: item.position,
-            powerupType: item.type,
-            metadata: { item_type: item.type },
+            position: itemSnapshot?.position,
+            powerupType: itemSnapshot?.type,
+            metadata: { item_type: itemSnapshot?.type },
           }, { roomId: room, sessionId: sessionIdForRoom(room) });
+          safeAck(accepted);
         }
       } catch (e) {
         logger.error(`items.collision error: ${e && e.message ? e.message : e}`);
+        safeAck({ ok: false, error: e && e.message ? e.message : String(e), itemId });
       }
     });
     

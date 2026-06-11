@@ -13,9 +13,9 @@ describe("replay telemetry evidence", () => {
   });
 
   it("captures replay moments for match-intelligence events", () => {
-    expect(script).toMatch(/triggerReplayMoment\("powerup_collected"/);
+    expect(script).toMatch(/triggerReplayMomentCallback\("powerup_collected"/);
     expect(script).toMatch(/triggerReplayMoment\("player_frozen"/);
-    expect(script).toMatch(/triggerReplayMoment\("marine_hit"/);
-    expect(script).toMatch(/triggerReplayMoment\("trash_collect"/);
+    expect(script).toMatch(/triggerReplayMomentCallback\("marine_hit"/);
+    expect(script).toMatch(/triggerReplayMomentCallback\("trash_collect"/);
   });
 });

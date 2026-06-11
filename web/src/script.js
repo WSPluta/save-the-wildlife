@@ -1,4 +1,4 @@
-import short from "short-uuid";
+import { generate as generateShortUuid } from "short-uuid";
 import * as THREE from "three";
 import { MathUtils } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -9,6 +9,7 @@ import { getAssetCacheStats, preloadAssets, preloadNonCriticalAssets, progressiv
 import { createEmitters } from "./particles";
 import { ObjectPool } from "./objectPool";
 import { SpatialOctree } from "./spatialOctree";
+import { applyTilt, getHeightAndNormal } from "./buoyancy";
 import "./style.css";
 import * as lobby from "./lobby";
 import { normalizeRoomId } from "./util";
@@ -29,7 +30,7 @@ let sendYourPosition;
 let boundaries = { width: 89, height: 23 };
 
 if (!localStorage.getItem("yourId")) {
-  localStorage.setItem("yourId", short.generate());
+  localStorage.setItem("yourId", generateShortUuid());
 }
 const yourId = localStorage.getItem("yourId");
 let playerName;
@@ -96,9 +97,17 @@ let clearTrashInstances = () => {};
 let clearPowerupInstances = () => {};
 let releaseTrashInstance = () => {};
 let releasePowerupInstance = () => {};
+let scoreElementRef = null;
+let applyPowerUpEffect = () => {};
+let triggerReplayMomentCallback = () => {};
+const pendingItemCollisions = new Map();
+const scoredItemCollisions = new Set();
+const COLLISION_PENDING_TIMEOUT_MS = 1500;
 const trashTmpMatrix = new THREE.Matrix4();
 const trashTmpPos = new THREE.Vector3();
 const trashTmpScale = new THREE.Vector3();
+const turtleTmpVec3 = new THREE.Vector3();
+const turtleTmpVec2 = new THREE.Vector2();
 const LOD_DISTANCES = {
   high: 50,
   medium: 100,
@@ -522,6 +531,17 @@ async function requestPresenterEnd() {
   }
 }
 
+function requestAutoStartMatch() {
+  try {
+    if (!worker) return;
+    const room = normalizeRoomId(roomId) || DEFAULT_ADMIN_ROOM_ID;
+    worker.postMessage({
+      type: "admin.presenter.start",
+      body: { room },
+    });
+  } catch (_) {}
+}
+
 async function copyAdminPlayerLink() {
   const room = syncAdminRoomUi(getConfiguredAdminRoom());
   try {
@@ -686,6 +706,8 @@ const MOBILE_STEER_AXIS = -1;
 function resetGameplayTelemetry() {
   currentSessionId = `${roomId || "ROOM"}:${yourId}:${Date.now()}`;
   lastPositionEventAt = 0;
+  pendingItemCollisions.clear();
+  scoredItemCollisions.clear();
   eventStats = {
     trash_collected: 0,
     marine_hit: 0,
@@ -720,6 +742,155 @@ function emitGameplayEvent(type, metadata = {}) {
     };
     worker.postMessage({ type: "game.event", body: payload });
   } catch (_) {}
+}
+
+function normalizeItemDestroyPayload(payload) {
+  if (payload && typeof payload === "object") {
+    const id = payload.id || payload.itemId;
+    return {
+      ...payload,
+      id,
+      itemId: id,
+      itemType: payload.itemType || payload.type || payload.powerupType || null,
+    };
+  }
+  return { id: payload, itemId: payload, itemType: null };
+}
+
+function markItemCollisionPending(itemId, itemType) {
+  if (!itemId) return false;
+  const now = Date.now();
+  const existing = pendingItemCollisions.get(itemId);
+  if (existing && now - existing.at < COLLISION_PENDING_TIMEOUT_MS) return false;
+  pendingItemCollisions.set(itemId, { at: now, itemType });
+  return true;
+}
+
+function clearStalePendingItemCollisions(now = Date.now()) {
+  for (const [itemId, entry] of pendingItemCollisions.entries()) {
+    if (!entry || now - entry.at > COLLISION_PENDING_TIMEOUT_MS) {
+      pendingItemCollisions.delete(itemId);
+    }
+  }
+}
+
+function updateLocalScoreDisplays() {
+  const text = "Score: " + localScore;
+  if (scoreElementRef) scoreElementRef.innerHTML = text;
+  if (hudScoreEl) hudScoreEl.innerHTML = text;
+  if (compactScoreEl) compactScoreEl.innerHTML = text;
+}
+
+function itemPositionFromEvidence(itemId, payload = {}) {
+  const p = payload.position || items[itemId]?.position || itemMeshes[itemId]?.position || null;
+  return p
+    ? { x: Number(p.x || 0), y: Number(p.y || 0), z: Number(p.z || 0) }
+    : currentPlayerPosition();
+}
+
+function removeItemFromScene(itemId) {
+  if (!itemId) return;
+  const item = items[itemId];
+  const mesh = itemMeshes[itemId];
+  const itemType = item?.type || mesh?.itemType || "";
+
+  if (item && isPowerUp(item.type)) {
+    releasePowerupInstance(itemId);
+  } else if (item && !isMarineLife(item.type) && !isPowerUp(item.type)) {
+    releaseTrashInstance(itemId);
+  } else if (mesh && isMarineLife(mesh.itemType)) {
+    returnToPool(mesh);
+  }
+
+  if (mesh && mesh.isObject3D) {
+    try { scene.remove(mesh); } catch (_) {}
+  }
+  if (!item && String(itemType || "").startsWith("powerup_")) {
+    releasePowerupInstance(itemId);
+  } else if (!item && itemType && !isMarineLife(itemType) && !isPowerUp(itemType)) {
+    releaseTrashInstance(itemId);
+  }
+  delete items[itemId];
+  delete itemMeshes[itemId];
+}
+
+function applyConfirmedCollisionOutcome(rawPayload) {
+  const payload = normalizeItemDestroyPayload(rawPayload);
+  const itemId = payload.itemId || payload.id;
+  if (!itemId) return;
+  const pending = pendingItemCollisions.get(itemId);
+  pendingItemCollisions.delete(itemId);
+
+  const actorId = payload.playerId || payload.player_id || null;
+  if (actorId && actorId !== yourId) return;
+  if (!actorId && !pending) return;
+  if (scoredItemCollisions.has(itemId)) return;
+
+  const itemType =
+    payload.itemType ||
+    payload.powerupType ||
+    pending?.itemType ||
+    items[itemId]?.type ||
+    itemMeshes[itemId]?.itemType ||
+    "";
+  const position = itemPositionFromEvidence(itemId, payload);
+
+  if (isPowerUp(itemType)) {
+    applyPowerUpEffect(itemType);
+    eventStats.powerup_collected++;
+    emitGameplayEvent("powerup_collected", {
+      itemId,
+      related_item_id: itemId,
+      powerup_type: itemType,
+      item_type: itemType,
+      item_position: position,
+    });
+    try {
+      triggerReplayMomentCallback("powerup_collected", {
+        itemId,
+        powerupType: itemType,
+        worldPos: position,
+      });
+    } catch (_) {}
+  } else if (isMarineLife(itemType)) {
+    const delta = Number.isFinite(payload.scoreDelta) ? Number(payload.scoreDelta) : -1;
+    if (delta !== 0) {
+      localScore += delta;
+      eventStats.marine_hit++;
+      emitGameplayEvent("marine_hit", {
+        itemId,
+        related_item_id: itemId,
+        item_type: itemType,
+        item_position: position,
+      });
+      try {
+        triggerReplayMomentCallback("marine_hit", {
+          itemId,
+          itemType,
+          worldPos: position,
+        });
+      } catch (_) {}
+    }
+  } else {
+    const delta = Number.isFinite(payload.scoreDelta) ? Number(payload.scoreDelta) : 1;
+    localScore += delta;
+    eventStats.trash_collected++;
+    emitGameplayEvent("trash_collected", {
+      itemId,
+      related_item_id: itemId,
+      item_type: itemType || "trash",
+      item_position: position,
+    });
+    try {
+      triggerReplayMomentCallback("trash_collect", {
+        itemId,
+        worldPos: position,
+      });
+    } catch (_) {}
+  }
+
+  scoredItemCollisions.add(itemId);
+  updateLocalScoreDisplays();
 }
 
 // Helper: request a match start on the current room with retries if server ack is slow
@@ -1300,22 +1471,6 @@ async function init() {
   playerName = localStorage.getItem("yourName") || "Default";
   scene = new THREE.Scene();
 
-  // Simple Fibonacci test (left from original)
-  function fibonacciGenerator(maxTerm) {
-    let sequence = [0, 1];
-    while (sequence.length <= maxTerm) {
-      sequence.push(
-        sequence[sequence.length - 1] + sequence[sequence.length - 2]
-      );
-    }
-    return sequence;
-  }
-  function getFibonacciNumber(term) {
-    const fibonacciSequence = fibonacciGenerator(term);
-    return fibonacciSequence[term - 1];
-  }
-  console.log(getFibonacciNumber(60));
-
   // Preload models/textures (asset preloading + caching)
   const assets = await preloadAssets();
   const boatModel = assets.models.boat;
@@ -1526,6 +1681,7 @@ async function init() {
     group.renderOrder = 2;
     group.userData.turtle = turtle;
     group.userData.boatVisual = turtle;
+    group.userData.floatOffset = Math.random() * Math.PI * 2;
     group.visible = false;
     scene.add(group);
     return group;
@@ -1543,6 +1699,8 @@ async function init() {
       group.position.set(0, 0, 0);
       group.rotation.set(0, 0, 0);
       group.scale.set(1, 1, 1);
+      group.userData.ai = null;
+      group.userData.floatOffset = Math.random() * Math.PI * 2;
       if (group.userData && group.userData.turtle) {
         group.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
       }
@@ -1556,6 +1714,8 @@ async function init() {
     if (group.userData && group.userData.turtle) {
       group.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
     }
+    group.userData.ai = null;
+    group.userData.floatOffset = Math.random() * Math.PI * 2;
     group.visible = true;
     return group;
   }
@@ -1570,6 +1730,8 @@ async function init() {
     mesh.position.set(0, 0, 0);
     mesh.rotation.set(0, 0, 0);
     mesh.scale.set(1, 1, 1);
+    mesh.userData.ai = null;
+    mesh.userData.floatOffset = Math.random() * Math.PI * 2;
     if (mesh.userData && mesh.userData.turtle) {
       mesh.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
     }
@@ -1702,7 +1864,6 @@ async function init() {
       case "disconnect":
         break;
       case "log":
-        console.log(body);
         appendEventConsole("log", body);
         break;
       case "commentary.ready": {
@@ -1801,7 +1962,11 @@ async function init() {
       case "item.new":
         {
           const { id: itemIdToCreate, data: itemData } = body;
-          console.log("item.new received:", itemData); // debug
+          pendingItemCollisions.delete(itemIdToCreate);
+          scoredItemCollisions.delete(itemIdToCreate);
+          if (items[itemIdToCreate] || itemMeshes[itemIdToCreate]) {
+            removeItemFromScene(itemIdToCreate);
+          }
           createItemMesh(
             itemIdToCreate,
             itemData.type,
@@ -1813,32 +1978,19 @@ async function init() {
         break;
       case "item.destroy":
         {
-          const itemIdToDestroy = body;
-          const item = items[itemIdToDestroy];
-          const mesh = itemMeshes[itemIdToDestroy];
-          if (item && isPowerUp(item.type)) {
-            releasePowerupInstance(itemIdToDestroy);
-            delete items[itemIdToDestroy];
-            if (mesh && mesh.isObject3D) {
-              scene.remove(mesh);
-              delete itemMeshes[itemIdToDestroy];
-            }
-            break;
-          }
-          if (item && !isMarineLife(item.type) && !isPowerUp(item.type)) {
-            releaseTrashInstance(itemIdToDestroy);
-            delete items[itemIdToDestroy];
-            if (mesh && mesh.isObject3D) {
-              scene.remove(mesh);
-              delete itemMeshes[itemIdToDestroy];
-            }
-            break;
-          }
-          if (item && mesh) {
-            scene.remove(mesh);
-            if (isMarineLife(item.type)) returnToPool(mesh);
-            delete items[itemIdToDestroy];
-            delete itemMeshes[itemIdToDestroy];
+          const payload = normalizeItemDestroyPayload(body);
+          applyConfirmedCollisionOutcome(payload);
+          removeItemFromScene(payload.itemId || payload.id);
+        }
+        break;
+      case "items.collision.result":
+        {
+          const payload = normalizeItemDestroyPayload(body);
+          if (payload.ok) {
+            applyConfirmedCollisionOutcome(payload);
+            removeItemFromScene(payload.itemId || payload.id);
+          } else if (payload.itemId || payload.id) {
+            pendingItemCollisions.delete(payload.itemId || payload.id);
           }
         }
         break;
@@ -2001,8 +2153,7 @@ async function init() {
           }
           if (autoStartMatch && currentPhase === "LOBBY") {
             setTimeout(() => {
-              try { if (worker) worker.postMessage({ type: "admin.claim" }); } catch (_) {}
-              try { requestMatchStart(); } catch (_) {}
+              requestAutoStartMatch();
             }, 120);
           }
         }
@@ -2014,8 +2165,7 @@ async function init() {
         if (typeof updateControls === "function") updateControls();
         if (autoStartMatch && currentPhase === "LOBBY") {
           setTimeout(() => {
-            try { if (worker) worker.postMessage({ type: "admin.claim" }); } catch (_) {}
-            try { requestMatchStart(); } catch (_) {}
+            requestAutoStartMatch();
           }, 120);
         }
         break;
@@ -2876,10 +3026,18 @@ function cleanupOldTrails() {
 
 function returnToPool(mesh) {
   if (!mesh) return;
+  if (mesh.itemType === "turtle" && wildlifePool) {
+    wildlifePool.release(mesh);
+    return;
+  }
   mesh.visible = false;
   if (mesh.position) mesh.position.set(0, 0, 0);
   // Reset wrapper group rotation
   if (mesh.rotation) mesh.rotation.set(0, 0, 0);
+  if (mesh.userData) {
+    mesh.userData.ai = null;
+    mesh.userData.floatOffset = Math.random() * Math.PI * 2;
+  }
   // Ensure turtle child stays flat for reuse
   if (mesh.itemType === "turtle" && mesh.userData && mesh.userData.turtle) {
     mesh.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
@@ -2889,8 +3047,6 @@ function returnToPool(mesh) {
 
 // FIXME models passed as array?
 function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals) {
-  console.log("StartGame: ", waternormals);
-
   // renderer
   renderer = new THREE.WebGLRenderer({
     canvas: canvas,
@@ -3066,7 +3222,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     elevation: 5,
     azimuth: 162,
   };
-  console.log("sky", sky);
 
   const pmremGenerator = new THREE.PMREMGenerator(renderer);
   sun = new THREE.Vector3(0, 0, 0);
@@ -3211,8 +3366,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     clearPowerupInstances();
     player.position.set(0, 0, 0);
     localScore = 0;
-    scoreElement.innerHTML = "Score: " + localScore;
-  if (compactScoreEl) compactScoreEl.innerHTML = "Score: " + localScore;
+    updateLocalScoreDisplays();
     remainingTime = remainingTime;
     if (timerDivRef) timerDivRef.innerHTML = "Time: " + remainingTime;
   }
@@ -3228,7 +3382,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     document.body.appendChild(el);
     return el;
   })();
-  scoreElement.innerHTML = "Score: " + localScore;
+  scoreElementRef = scoreElement;
+  updateLocalScoreDisplays();
 
   const floatAmplitude = 0.1;
   const time = performance.now() * 0.0001;
@@ -3294,12 +3449,12 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
               0,
               (Math.random() * 2 - 1) * halfH * 0.8
             ),
-            speed: 0.7 + Math.random() * 0.3 // units/sec
+            speed: 0.45 + Math.random() * 0.25 // units/sec
           };
         }
         const ai = mesh.userData.ai;
-        const toTarget = new THREE.Vector3().subVectors(ai.target, mesh.position);
-        const dist = Math.max(0.00001, new THREE.Vector2(toTarget.x, toTarget.z).length());
+        turtleTmpVec3.subVectors(ai.target, mesh.position);
+        const dist = Math.max(0.00001, turtleTmpVec2.set(turtleTmpVec3.x, turtleTmpVec3.z).length());
         // pick new target when close
         if (dist < 1.0) {
           ai.target.set(
@@ -3309,20 +3464,29 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           );
         } else {
           // Move towards target
-          const step = ai.speed * dt;
-          const dirXZ = new THREE.Vector2(toTarget.x, toTarget.z).normalize();
-          mesh.position.x += dirXZ.x * step;
-          mesh.position.z += dirXZ.y * step;
+          const step = Math.min(dist, ai.speed * dt);
+          const moveX = (turtleTmpVec3.x / dist) * step;
+          const moveZ = (turtleTmpVec3.z / dist) * step;
+          mesh.position.x += moveX;
+          mesh.position.z += moveZ;
 
           // Clamp inside playable area
           mesh.position.x = Math.max(-halfW, Math.min(halfW, mesh.position.x));
           mesh.position.z = Math.max(-halfH, Math.min(halfH, mesh.position.z));
 
-          // Face movement direction (yaw)
-          const yaw = Math.atan2(dirXZ.x, dirXZ.y);
-          mesh.rotation.y = THREE.MathUtils.lerp(mesh.rotation.y, yaw, 0.15);
+          // Face movement direction with shortest-angle smoothing.
+          if (Math.abs(moveX) + Math.abs(moveZ) > 0.0001) {
+            const yaw = Math.atan2(moveX, moveZ);
+            const yawDelta = ((yaw - mesh.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
+            mesh.rotation.y += yawDelta * Math.min(1, dt * 4.5);
+          }
         }
 
+        const wave = getHeightAndNormal(mesh.position.x, mesh.position.z, tSec);
+        const phase = mesh.userData.floatOffset || 0;
+        const targetY = (wave.height || 0) + 0.035 + Math.sin(tSec * 1.7 + phase) * 0.035;
+        mesh.position.y = THREE.MathUtils.lerp(mesh.position.y, targetY, 0.12);
+        applyTilt(mesh, wave.normal, 0.65, 0.08);
       } else {
         // Simple idle bobbing for non-turtles above the water line
         const t = tSec;
@@ -3495,6 +3659,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       __startReplayCapture(evt);
     }
   }
+  triggerReplayMomentCallback = triggerReplayMoment;
 
   const navmeshBoundingBox = new THREE.Box3().setFromObject(navmesh);
 
@@ -3533,8 +3698,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       updatePowerUpUI();
     }
   }
+  applyPowerUpEffect = applyPowerUp;
 
   function checkCollisions() {
+    clearStalePendingItemCollisions();
     const playerBox = new THREE.Box3().setFromObject(player);
     const trashBox = new THREE.Box3();
     const trashCenter = new THREE.Vector3();
@@ -3546,6 +3713,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       if (!item) continue;
       if (isMarineLife(item.type) || isPowerUp(item.type)) continue;
       if (!trashInstances || !trashInstances.map.has(key)) continue;
+      if (pendingItemCollisions.has(key)) continue;
 
       const s = Number(item.size) || 1;
       const px = Number(item.position && item.position.x) || 0;
@@ -3561,6 +3729,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         if (Math.hypot(dx, dz) > magnetRadius) continue;
       }
 
+      if (!markItemCollisionPending(key, item.type || "trash")) continue;
+
       const collisionData = {
         itemId: key,
         localScore,
@@ -3574,32 +3744,13 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       });
 
       if (emitters) emitters.collision.trigger(player.position);
-
-      try {
-        triggerReplayMoment("trash_collect", {
-          itemId: key,
-          worldPos: { x: px, y: py, z: pz }
-        });
-      } catch (_) {}
-
-      localScore++;
-      eventStats.trash_collected++;
-      emitGameplayEvent("trash_collected", {
-        itemId: key,
-        related_item_id: key,
-        item_type: item.type || "trash",
-        item_position: { x: px, y: py, z: pz },
-      });
-      releaseTrashInstance(key);
-      delete items[key];
-      scoreElement.innerHTML = "Score: " + localScore;
-      if (compactScoreEl) compactScoreEl.innerHTML = "Score: " + localScore;
     }
 
     for (const [key, item] of Object.entries(items || {})) {
       if (!item) continue;
       if (!isPowerUp(item.type)) continue;
       if (!powerupInstances || !powerupInstances.map.has(key)) continue;
+      if (pendingItemCollisions.has(key)) continue;
 
       const s = Number(item.size) || 1;
       const px = Number(item.position && item.position.x) || 0;
@@ -3615,6 +3766,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         if (Math.hypot(dx, dz) > magnetRadius) continue;
       }
 
+      if (!markItemCollisionPending(key, item.type)) continue;
+
       const collisionData = {
         itemId: key,
         localScore,
@@ -3622,34 +3775,17 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         playerName: playerName,
       };
 
-      applyPowerUp(item.type);
       worker.postMessage({
         type: "items.collision",
         body: collisionData,
       });
       if (emitters) emitters.collision.trigger(player.position);
-      eventStats.powerup_collected++;
-      emitGameplayEvent("powerup_collected", {
-        itemId: key,
-        related_item_id: key,
-        powerup_type: item.type,
-        item_type: item.type,
-        item_position: { x: px, y: py, z: pz },
-      });
-      try {
-        triggerReplayMoment("powerup_collected", {
-          itemId: key,
-          powerupType: item.type,
-          worldPos: { x: px, y: py, z: pz },
-        });
-      } catch (_) {}
-      releasePowerupInstance(key);
-      delete items[key];
     }
 
     for (const [key, mesh] of Object.entries(itemMeshes)) {
       if (!mesh || !mesh.isObject3D) continue;
       if (mesh.outOfBounds) continue;
+      if (pendingItemCollisions.has(key)) continue;
 
       const itemMeshBox = new THREE.Box3().setFromObject(mesh);
       let collision = playerBox.intersectsBox(itemMeshBox);
@@ -3666,6 +3802,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       }
 
       // For trash and power-ups, remove on collision
+      if (!markItemCollisionPending(key, mesh.itemType)) continue;
+
       const collisionData = {
         itemId: key,
         localScore,
@@ -3674,31 +3812,12 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       };
 
       if (String(mesh.itemType || "").startsWith("powerup_")) {
-        // Apply effect locally
-        applyPowerUp(mesh.itemType);
         // Notify server to remove the power-up
         worker.postMessage({
           type: "items.collision",
           body: collisionData,
         });
         if (emitters) emitters.collision.trigger(player.position);
-        eventStats.powerup_collected++;
-        emitGameplayEvent("powerup_collected", {
-          itemId: key,
-          related_item_id: key,
-          powerup_type: mesh.itemType,
-          item_type: mesh.itemType,
-          item_position: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) },
-        });
-        try {
-          triggerReplayMoment("powerup_collected", {
-            itemId: key,
-            powerupType: mesh.itemType,
-            worldPos: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) },
-          });
-        } catch (_) {}
-        scene.remove(mesh);
-        delete itemMeshes[key];
         continue;
       }
 
@@ -3715,47 +3834,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
       if (emitters) emitters.collision.trigger(player.position);
 
-      // Trigger Oracle JSON replay around trash collection (30 frames before and after)
-      try {
-        if (mesh && mesh.isTrash) {
-          triggerReplayMoment("trash_collect", {
-            itemId: key,
-            worldPos: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) }
-          });
-        }
-      } catch (_) {}
-
-      if (isMarineLife(mesh.itemType)) returnToPool(mesh);
-      else scene.remove(mesh);
-
-      isMarineLife(mesh.itemType) ? localScore-- : localScore++;
-      if (isMarineLife(mesh.itemType)) {
-        eventStats.marine_hit++;
-        emitGameplayEvent("marine_hit", {
-          itemId: key,
-          related_item_id: key,
-          item_type: mesh.itemType,
-          item_position: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) },
-        });
-        try {
-          triggerReplayMoment("marine_hit", {
-            itemId: key,
-            itemType: mesh.itemType,
-            worldPos: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) },
-          });
-        } catch (_) {}
-      } else {
-        eventStats.trash_collected++;
-        emitGameplayEvent("trash_collected", {
-          itemId: key,
-          related_item_id: key,
-          item_type: mesh.itemType || "trash",
-          item_position: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) },
-        });
-      }
-      scoreElement.innerHTML = "Score: " + localScore;
-      if (compactScoreEl) compactScoreEl.innerHTML = "Score: " + localScore;
-      delete itemMeshes[key];
     }
   }
 
