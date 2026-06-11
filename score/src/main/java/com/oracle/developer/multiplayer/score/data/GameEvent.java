@@ -14,7 +14,7 @@ import jakarta.persistence.Table;
 @Table(name = "STWL_GAME_EVENTS")
 public class GameEvent {
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "SESSION_ID", nullable = false, length = 128)

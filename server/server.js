@@ -1922,6 +1922,7 @@ async function readCacheEntries(cache) {
     return data;
   } catch (error) {
     logger.error(`Error reading all entries. ${error.message}`);
+    return {};
   }
 }
 

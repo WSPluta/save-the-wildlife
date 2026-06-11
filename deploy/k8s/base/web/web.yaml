@@ -21,6 +21,7 @@ spec:
     spec:
       containers:
       - image: web
+        imagePullPolicy: Always
         name: web
         readinessProbe:
           httpGet:

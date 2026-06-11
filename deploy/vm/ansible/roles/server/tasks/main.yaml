@@ -41,7 +41,7 @@
   args:
     chdir: /home/opc/server/
 - name: Pull coherence
-  command: podman pull ghcr.io/oracle/coherence-ce:15.1.1-0-2
+  command: podman pull ghcr.io/oracle/coherence-ce:25.03.1
 - name: does coherence exist
   command: podman ps --all -f "name=coherence"
   register: coherence_exist
@@ -49,4 +49,4 @@
   command: podman rm --force coherence
   when: coherence_exist.stdout != ""
 - name: Run coherence
-  command: podman run --rm --name coherence -d -p 1408:1408 ghcr.io/oracle/coherence-ce:15.1.1-0-2
+  command: podman run --rm --name coherence -d -p 1408:1408 ghcr.io/oracle/coherence-ce:25.03.1

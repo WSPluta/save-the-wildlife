@@ -15,7 +15,7 @@ try {
     -d \
     --rm \
     -p 1408:1408 \
-    ghcr.io/oracle/coherence-ce:15.1.1-0-2`;
+    ghcr.io/oracle/coherence-ce:25.03.1`;
   if (exitCode == 0) {
     console.log(chalk.green(stdout.trim()));
   } else {
