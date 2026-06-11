@@ -9,12 +9,13 @@ const discoveredPort = portFinderSync.getPort(DEFAULT_WEB_PORT);
 const DEV_SERVER_PORT = Number.isFinite(discoveredPort) ? discoveredPort : DEFAULT_WEB_PORT;
 const WS_PORT = process.env.SERVER_PORT ? parseInt(process.env.SERVER_PORT, 10) : 3000;
 const SCORE_PORT = process.env.SCORE_PORT ? parseInt(process.env.SCORE_PORT, 10) : 8082;
+const WEB_HOST = process.env.WEB_HOST || "0.0.0.0";
 
 module.exports = merge(commonConfiguration, {
   mode: "development",
 
   devServer: {
-    host: "localhost",
+    host: WEB_HOST,
     port: DEV_SERVER_PORT,
     static: [
       {
@@ -36,6 +37,7 @@ module.exports = merge(commonConfiguration, {
     open: true,
     server: "http",
     allowedHosts: "all",
+    historyApiFallback: true,
     setupMiddlewares: (middlewares, devServer) => {
       if (devServer && devServer.app) {
         devServer.app.get("/some/path", function (req, res) {

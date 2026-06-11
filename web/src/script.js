@@ -143,6 +143,7 @@ let currentPhase = "MAIN_MENU";
 const PHASES = {
   ACCESS: "ACCESS",
   MENU: "MENU",
+  ADMIN: "ADMIN",
   LOBBY: "LOBBY",
   STARTING: "STARTING",
   GAMEPLAY: "GAMEPLAY",
@@ -150,10 +151,22 @@ const PHASES = {
   POST_GAME: "POST_GAME",
 };
 
+const DEFAULT_ADMIN_ROOM_ID = "ROOM-0001";
+const IS_ADMIN_VIEW = (() => {
+  try {
+    const url = new URL(window.location.href);
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    return path === "/admin" || url.searchParams.get("admin") === "1";
+  } catch (_) {
+    return false;
+  }
+})();
+
 function setPhase(phase) {
   currentPhase = phase;
   try {
     document.body.classList.toggle("phase-gameplay", phase === PHASES.GAMEPLAY);
+    document.body.classList.toggle("admin-view", IS_ADMIN_VIEW);
   } catch (_) {}
   renderUI();
   try { if (typeof updateControls === "function") updateControls(); } catch (_) {}
@@ -166,10 +179,12 @@ function renderUI() {
       document.body.classList.remove(`phase-${String(name).toLowerCase()}`);
     });
     document.body.classList.add(`phase-${String(currentPhase).toLowerCase()}`);
+    document.body.classList.toggle("admin-view", IS_ADMIN_VIEW);
   }
   const screens = {
     ACCESS: document.getElementById("screen-access"),
     MENU: document.getElementById("screen-menu"),
+    ADMIN: document.getElementById("screen-admin"),
     LOBBY: document.getElementById("screen-lobby"),
     STARTING: document.getElementById("screen-starting"),
     POST_GAME: document.getElementById("screen-results"),
@@ -338,7 +353,7 @@ function clearCountdown() {
 }
 
 function showMainMenu() {
-  setPhase("MENU");
+  setPhase(IS_ADMIN_VIEW ? "ADMIN" : "ACCESS");
 }
 
 function showLobby() {
@@ -416,6 +431,108 @@ function updateRoomHud() {
         setTimeout(() => { copyBtn.textContent = prev || "Copy Link"; }, 900);
       } catch (_) {}
     };
+  }
+}
+
+function getConfiguredAdminRoom() {
+  const input = document.getElementById("admin-room-input");
+  const fromInput = input && input.value ? input.value : "";
+  const normalized =
+    normalizeRoomId(fromInput) ||
+    normalizeRoomId(roomId) ||
+    normalizeRoomId(DEFAULT_ADMIN_ROOM_ID);
+  return normalized || DEFAULT_ADMIN_ROOM_ID;
+}
+
+function getConfiguredAdminToken() {
+  const input = document.getElementById("admin-token-input");
+  return input && input.value ? String(input.value).trim() : "";
+}
+
+function setAdminStatus(text, stateText) {
+  const status = document.getElementById("admin-status");
+  if (status && text) status.textContent = text;
+  const state = document.getElementById("admin-state");
+  if (state && stateText) state.textContent = stateText;
+}
+
+function syncAdminRoomUi(nextRoom) {
+  const normalized = normalizeRoomId(nextRoom) || DEFAULT_ADMIN_ROOM_ID;
+  roomId = normalized;
+  const input = document.getElementById("admin-room-input");
+  if (input && input.value !== normalized) input.value = normalized;
+  const label = document.getElementById("admin-room-label");
+  if (label) label.textContent = "Room: " + normalized;
+  updateRoomHud();
+  return normalized;
+}
+
+async function enterWaitingLobby() {
+  if (IS_ADMIN_VIEW) {
+    setPhase("ADMIN");
+    return;
+  }
+  if (!gameInitialized) await init();
+  try {
+    const wanted = normalizeRoomId(roomId) || normalizeRoomId(roomsDirectory && roomsDirectory.default) || null;
+    if (worker) worker.postMessage({ type: "room.join", body: wanted ? { id: wanted } : {} });
+  } catch (_) {}
+  setPhase("LOBBY");
+}
+
+async function enterAdminConsole() {
+  if (!IS_ADMIN_VIEW) return;
+  const room = syncAdminRoomUi(getConfiguredAdminRoom());
+  playerName = localStorage.getItem("yourName") || "Presenter";
+  setPhase("ADMIN");
+  if (!gameInitialized) await init();
+  try {
+    if (worker) worker.postMessage({ type: "room.join", body: { id: room } });
+  } catch (_) {}
+  setAdminStatus("Connected to " + room + ".", "Waiting");
+}
+
+async function requestPresenterStart() {
+  const room = syncAdminRoomUi(getConfiguredAdminRoom());
+  if (!gameInitialized) await init();
+  try {
+    if (worker) worker.postMessage({ type: "room.join", body: { id: room } });
+    setAdminStatus("Starting " + room + "...", "Starting");
+    worker.postMessage({
+      type: "admin.presenter.start",
+      body: { room, token: getConfiguredAdminToken() },
+    });
+  } catch (_) {
+    setAdminStatus("Start failed.", "Error");
+  }
+}
+
+async function requestPresenterEnd() {
+  const room = syncAdminRoomUi(getConfiguredAdminRoom());
+  if (!gameInitialized) await init();
+  try {
+    if (worker) worker.postMessage({ type: "room.join", body: { id: room } });
+    setAdminStatus("Ending " + room + "...", "Ending");
+    worker.postMessage({
+      type: "admin.presenter.end",
+      body: { room, token: getConfiguredAdminToken() },
+    });
+  } catch (_) {
+    setAdminStatus("End failed.", "Error");
+  }
+}
+
+async function copyAdminPlayerLink() {
+  const room = syncAdminRoomUi(getConfiguredAdminRoom());
+  try {
+    const url = new URL(window.location.href);
+    url.pathname = "/";
+    url.search = "";
+    url.searchParams.set("room", room);
+    await navigator.clipboard.writeText(url.toString());
+    setAdminStatus("Player link copied for " + room + ".", "Waiting");
+  } catch (_) {
+    setAdminStatus("Could not copy player link.", "Waiting");
   }
 }
 
@@ -520,8 +637,6 @@ function updateControls() {
   if (createBtn) createBtn.disabled = inPlay || currentPhase === "STARTING";          // cannot create while playing or during countdown
   if (joinBtn) joinBtn.disabled = inPlay || currentPhase === "STARTING";              // cannot join while playing or during countdown
   if (startBtn) startBtn.disabled = !canStartEffective;
-  const lobbyStartBtnCtrl = document.getElementById("btn-lobby-start");
-  if (lobbyStartBtnCtrl) lobbyStartBtnCtrl.disabled = !canStartEffective;
   if (endBtn) endBtn.disabled = !(inPlay && isAdmin);
   if (restartBtn) restartBtn.disabled = !((inPlay || inPost) && isAdmin);
   if (grantBtn) grantBtn.disabled = !isAdmin;
@@ -565,6 +680,8 @@ let eventStats = {
   player_frozen: 0,
 };
 let mobileInput = { throttle: 0, steer: 0, active: false };
+const MOBILE_THROTTLE_AXIS = -1;
+const MOBILE_STEER_AXIS = -1;
 
 function resetGameplayTelemetry() {
   currentSessionId = `${roomId || "ROOM"}:${yourId}:${Date.now()}`;
@@ -674,8 +791,8 @@ function setupTouchJoystick() {
     const x = dx * scale;
     const y = dy * scale;
     mobileInput = {
-      throttle: Math.max(-1, Math.min(1, -y / radius)),
-      steer: Math.max(-1, Math.min(1, x / radius)),
+      throttle: Math.max(-1, Math.min(1, MOBILE_THROTTLE_AXIS * -y / radius)),
+      steer: Math.max(-1, Math.min(1, MOBILE_STEER_AXIS * x / radius)),
       active: true,
     };
     wrap.classList.add("active");
@@ -718,8 +835,7 @@ function bindGlobalUI() {
         "Default";
       playerName = name;
       localStorage.setItem("yourName", name);
-      currentPhase = "MAIN_MENU";
-      init();
+      enterWaitingLobby();
     });
   }
 
@@ -815,12 +931,12 @@ function bindGlobalUI() {
   // Screens buttons wiring
   const accessContinueBtn = document.getElementById("btn-access-continue");
   if (accessContinueBtn) {
-    accessContinueBtn.addEventListener("click", () => {
+    accessContinueBtn.addEventListener("click", async () => {
       const inputEl = document.getElementById("name-input");
       const name = (inputEl && inputEl.value && inputEl.value.trim()) || localStorage.getItem("yourName") || "Default";
       playerName = name;
       localStorage.setItem("yourName", name);
-      setPhase("MENU");
+      await enterWaitingLobby();
     });
   }
   const quickMatchBtn = document.getElementById("btn-quick-match");
@@ -861,17 +977,6 @@ function bindGlobalUI() {
   if (exitToAccessBtn) {
     exitToAccessBtn.addEventListener("click", () => setPhase("ACCESS"));
   }
-  const lobbyStartBtn = document.getElementById("btn-lobby-start");
-  if (lobbyStartBtn) {
-    lobbyStartBtn.addEventListener("click", async () => {
-      if (!gameInitialized) await init();
-      try {
-        if (worker) { try { worker.postMessage({ type: "admin.claim" }); } catch (_) {} }
-        requestMatchStart();
-        // Countdown and state changes will arrive via server events (startingGame/game.state)
-      } catch (_) {}
-    });
-  }
   const lobbyLeaveBtn = document.getElementById("btn-lobby-leave");
   if (lobbyLeaveBtn) {
     lobbyLeaveBtn.addEventListener("click", () => {
@@ -889,7 +994,7 @@ function bindGlobalUI() {
       gameState = "WAITING";
       clearCountdown();
       setRoomAndBroadcast(null, false);
-      setPhase("MENU");
+      setPhase("ACCESS");
     });
   }
   const chatSendBtn = document.getElementById("chat-send");
@@ -920,24 +1025,35 @@ function bindGlobalUI() {
   // Results screen actions
   const rematchBtn = document.getElementById("btn-results-rematch");
   if (rematchBtn) {
-    rematchBtn.addEventListener("click", () => {
-      try { if (worker) worker.postMessage({ type: "admin.end" }); } catch (_) {}
-      setTimeout(() => {
-        try {
-          if (worker) {
-            worker.postMessage({ type: "game.start", body: { playerId: yourId, playerName } });
-            worker.postMessage({ type: "admin.start" });
-          }
-          setPhase("STARTING");
-        } catch (_) {}
-      }, 400);
+    rematchBtn.addEventListener("click", async () => {
+      await enterWaitingLobby();
     });
   }
   const resultsMenuBtn = document.getElementById("btn-results-menu");
   if (resultsMenuBtn) {
     resultsMenuBtn.addEventListener("click", () => {
-      setPhase("MENU");
+      setPhase("ACCESS");
     });
+  }
+
+  const adminRoomInput = document.getElementById("admin-room-input");
+  if (adminRoomInput) {
+    adminRoomInput.addEventListener("change", () => {
+      const room = syncAdminRoomUi(adminRoomInput.value);
+      try { if (worker) worker.postMessage({ type: "room.join", body: { id: room } }); } catch (_) {}
+    });
+  }
+  const adminStartBtn = document.getElementById("btn-admin-start");
+  if (adminStartBtn) {
+    adminStartBtn.addEventListener("click", requestPresenterStart);
+  }
+  const adminEndBtn = document.getElementById("btn-admin-end");
+  if (adminEndBtn) {
+    adminEndBtn.addEventListener("click", requestPresenterEnd);
+  }
+  const adminCopyBtn = document.getElementById("btn-admin-copy-link");
+  if (adminCopyBtn) {
+    adminCopyBtn.addEventListener("click", copyAdminPlayerLink);
   }
 
   // Options button: open a simple modal (non-invasive, prod-safe)
@@ -1052,15 +1168,26 @@ if (document.readyState === "loading") {
 // Optional dev autostart behind URL flag (?autostart=1)
 try {
   const url = new URL(window.location.href);
-  if (url.searchParams.get("autostart") === "1") {
+  if (!IS_ADMIN_VIEW && url.searchParams.get("autostart") === "1") {
     autoStartMatch = true;
     setTimeout(() => { if (!gameInitialized) init(); }, 100);
   }
 } catch (_) {}
 // Set initial phase based on stored name (no flicker)
 (function initialPhase() {
+  if (IS_ADMIN_VIEW) {
+    setPhase("ADMIN");
+    setTimeout(() => { enterAdminConsole(); }, 100);
+    return;
+  }
   const saved = localStorage.getItem("yourName");
-  setPhase(saved ? "MENU" : "ACCESS");
+  if (saved) {
+    playerName = saved;
+    setPhase("LOBBY");
+    setTimeout(() => { enterWaitingLobby(); }, 100);
+  } else {
+    setPhase("ACCESS");
+  }
 })();
 
 // URL deep-link: ?room=CODE&name=YourName
@@ -1069,19 +1196,31 @@ try {
     const url = new URL(window.location.href);
     const roomParam = url.searchParams.get("room");
     const nameParam = url.searchParams.get("name");
+    if (IS_ADMIN_VIEW) {
+      if (roomParam && roomParam.trim()) {
+        syncAdminRoomUi(roomParam);
+      } else {
+        syncAdminRoomUi(DEFAULT_ADMIN_ROOM_ID);
+      }
+      return;
+    }
     if (nameParam && nameParam.trim()) {
       localStorage.setItem("yourName", nameParam.trim());
       playerName = nameParam.trim();
       if (currentPhase === "ACCESS") {
-        setPhase("MENU");
+        setPhase("LOBBY");
       }
     }
     if (roomParam && roomParam.trim()) {
       const desired = normalizeRoomId(roomParam);
       if (desired) {
         setRoomAndBroadcast(desired, false);
-        setPhase("LOBBY");
-        if (!gameInitialized) { init(); }
+        if (playerName || localStorage.getItem("yourName")) {
+          setPhase("LOBBY");
+          if (!gameInitialized) { init(); }
+        } else {
+          setPhase("ACCESS");
+        }
       }
     }
   } catch (_) {}
@@ -1455,7 +1594,7 @@ async function init() {
   window.__gameWorker = worker;
   worker.postMessage({
     type: "init",
-    body: { wsURL, yourId, yourName: playerName, room: roomId },
+    body: { wsURL, yourId, yourName: playerName, room: roomId, isPresenter: IS_ADMIN_VIEW },
   });
   // If a join was requested before comms started, perform it now
   if (pendingRoomJoinId) {
@@ -1548,12 +1687,14 @@ async function init() {
     }
     switch (type) {
       case "connect":
-        try {
-          worker.postMessage({
-            type: "player.info.joining",
-            body: { id: yourId, name: playerName || localStorage.getItem("yourName") || "Default", room: roomId }
-          });
-        } catch (_) {}
+        if (!IS_ADMIN_VIEW) {
+          try {
+            worker.postMessage({
+              type: "player.info.joining",
+              body: { id: yourId, name: playerName || localStorage.getItem("yourName") || "Default", room: roomId }
+            });
+          } catch (_) {}
+        }
         if (roomId) {
           try { worker.postMessage({ type: "room.join", body: { id: roomId } }); } catch (_) {}
         }
@@ -1600,7 +1741,7 @@ async function init() {
       case "game.on":
         {
           // Respect manual navigation: ignore server start when user is in Menu/Access
-          if (currentPhase === "MENU" || currentPhase === "ACCESS") {
+          if (currentPhase === "MENU" || currentPhase === "ACCESS" || currentPhase === "ADMIN") {
             break;
           }
           const sp = body && body.startPosition ? body.startPosition : null;
@@ -1638,6 +1779,10 @@ async function init() {
         }
         break;
       case "game.end":
+        if (currentPhase === "ADMIN") {
+          setAdminStatus("Match ended.", "Ended");
+          break;
+        }
         endGame();
         break;
       case "items.all":
@@ -1754,7 +1899,11 @@ async function init() {
       case "game.state": {
         gameState = body;
         // Respect manual navigation: do not override when user is in Menu or Access
-        if (currentPhase === "MENU" || currentPhase === "ACCESS") {
+        if (currentPhase === "MENU" || currentPhase === "ACCESS" || currentPhase === "ADMIN") {
+          if (currentPhase === "ADMIN") {
+            const stateText = String(body || "WAITING");
+            setAdminStatus("Room " + (roomId || getConfiguredAdminRoom()) + " is " + stateText + ".", stateText);
+          }
           break;
         }
         if (body === "WAITING") {
@@ -1827,6 +1976,10 @@ async function init() {
         if (joined) {
           roomId = joined;
           roomJoinedAck = true;
+          if (IS_ADMIN_VIEW) {
+            syncAdminRoomUi(joined);
+            setAdminStatus("Connected to " + joined + ".", gameState || "Waiting");
+          }
           updateRoomHud();
           // Do not pull the UI back to Lobby if the user navigated to Menu/Access
           if (
@@ -1834,7 +1987,8 @@ async function init() {
             currentPhase !== "STARTING" &&
             currentPhase !== "POST_GAME" &&
             currentPhase !== "MENU" &&
-            currentPhase !== "ACCESS"
+            currentPhase !== "ACCESS" &&
+            currentPhase !== "ADMIN"
           ) {
             setPhase("LOBBY");
           }
@@ -1903,24 +2057,47 @@ async function init() {
         break;
       }
       case "lobby.players": {
-        const list = document.getElementById("waiting-list");
-        if (list) {
+        const renderRoster = (list) => {
+          if (!list) return;
           list.innerHTML = "";
           let arr = [];
-          if (Array.isArray(body)) arr = body;
-          else if (body && typeof body === "object") arr = Object.values(body);
+          if (Array.isArray(body)) {
+            arr = body.map((value, index) => ({
+              id: value && value.id ? String(value.id) : String(index + 1),
+              name: typeof value === "string" ? value : (value && value.name ? String(value.name) : "Player"),
+            }));
+          } else if (body && typeof body === "object") {
+            arr = Object.entries(body).map(([id, value]) => ({
+              id: String(id),
+              name: value && value.name ? String(value.name) : String(id),
+            }));
+          }
           for (const p of arr) {
-            const name = typeof p === "string" ? p : (p && (p.name || p.id || JSON.stringify(p)));
             const li = document.createElement("li");
-            li.textContent = name;
+            const name = document.createElement("span");
+            name.textContent = p.name || "Player";
+            const id = document.createElement("span");
+            id.className = "hud-item";
+            id.textContent = p.id || "";
+            li.appendChild(name);
+            li.appendChild(id);
             list.appendChild(li);
           }
-        }
+          return arr.length;
+        };
+        const lobbyCount = renderRoster(document.getElementById("waiting-list")) || 0;
+        const adminCount = renderRoster(document.getElementById("admin-player-list"));
+        const countEl = document.getElementById("admin-player-count");
+        if (countEl) countEl.textContent = String(Number.isFinite(adminCount) ? adminCount : lobbyCount);
         break;
       }
       case "startingGame": {
         // Do not force STARTING if user navigated back to Menu/Access
         if (currentPhase === "MENU" || currentPhase === "ACCESS") break;
+        if (currentPhase === "ADMIN") {
+          setAdminStatus("Countdown running for " + (roomId || getConfiguredAdminRoom()) + ".", "Starting");
+          break;
+        }
         // Ignore late countdown events once gameplay is already running
         if (gameState === "RUNNING" || currentPhase === "GAMEPLAY") break;
         gameState = "STARTING";
@@ -1947,9 +2124,43 @@ async function init() {
         }
         break;
       }
+      case "admin.presenter.start.requested": {
+        setAdminStatus("Starting " + getConfiguredAdminRoom() + "...", "Starting");
+        break;
+      }
+      case "admin.presenter.start.confirmed": {
+        if (body && body.ok === false) {
+          const state = body.state ? " (" + body.state + ")" : "";
+          setAdminStatus("Start failed: " + (body.error || "unknown") + state + ".", "Error");
+        } else {
+          setAdminStatus("Countdown started for " + ((body && body.room) || getConfiguredAdminRoom()) + ".", "Starting");
+        }
+        break;
+      }
+      case "admin.presenter.start.error": {
+        setAdminStatus("Start failed: " + (body || "unknown") + ".", "Error");
+        break;
+      }
       case "admin.start.error": {
         const st = document.getElementById("lobby-status");
         if (st) st.textContent = "Start failed: " + (body || "unknown");
+        break;
+      }
+      case "admin.presenter.end.requested": {
+        setAdminStatus("Ending " + getConfiguredAdminRoom() + "...", "Ending");
+        break;
+      }
+      case "admin.presenter.end.confirmed": {
+        if (body && body.ok === false) {
+          const state = body.state ? " (" + body.state + ")" : "";
+          setAdminStatus("End failed: " + (body.error || "unknown") + state + ".", "Error");
+        } else {
+          setAdminStatus("Match ended for " + ((body && body.room) || getConfiguredAdminRoom()) + ".", "Ended");
+        }
+        break;
+      }
+      case "admin.presenter.end.error": {
+        setAdminStatus("End failed: " + (body || "unknown") + ".", "Error");
         break;
       }
       case "admin.end.confirmed": {

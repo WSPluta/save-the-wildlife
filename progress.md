@@ -182,3 +182,23 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Added a lobby phase body class and hid the compact HUD/monitor clutter while the lobby is active.
   - Changed lifecycle controls so Start Match remains enabled in Lobby even before `roomJoinedAck`; the existing `requestMatchStart()` queue now handles late room acknowledgements.
   - Verified `npm --prefix web run test:unit`, `npm --prefix web run build`, Playwright flow artifacts at `output/mobile-lobby-smoke/`, and mobile viewport screenshots at `output/mobile-lobby-page/` showing Start visible/enabled and click reaching `STARTING` without console errors.
+- Presenter-start lobby flow on 2026-06-10:
+  - Added `/admin` and `?admin=1` presenter control phase with room input, optional token input, roster, Start Game, End Game, and player-link copy.
+  - Changed player flow to Name -> waiting Lobby, with the lobby showing the player roster and no player-facing Start Match button.
+  - Added `admin.presenter.start` and `admin.presenter.end` socket events that start/end a normalized room without making the presenter a lobby player; if `DEMO_ADMIN_TOKEN` or `ADMIN_DEMO_TOKEN` is set, presenter commands must provide the token.
+  - Added nginx SPA fallback and webpack dev-server history fallback so `/admin` resolves to the app.
+  - Fixed stale trace cleanup so WAITING/STARTING lobby players stay in the roster; stale traces are pruned outside RUNNING without deleting `mapPlayersInfo`.
+  - Added `web/src/__tests__/lobbyAdminFlow.test.js`; focused test passed alongside `node --check server/server.js` and `node --check web/src/commsWorker.js`.
+  - Verified full `npm --prefix server run test:unit`, `npm --prefix web run test:unit`, and `npm --prefix web run build`.
+  - Browser smoke artifacts:
+    - `output/lobby-admin-flow-smoke/` confirms player lobby has no start button, `/admin` starts `ROOM-0001`, and player reaches `phase-starting`.
+    - `output/lobby-admin-mobile-smoke/` confirms mobile-width lobby shows Waiting state and player roster without the old start button.
+- Mobile joystick axis fix on 2026-06-11:
+  - Inverted mobile-only throttle and steering axes using `MOBILE_THROTTLE_AXIS` and `MOBILE_STEER_AXIS`, leaving desktop keyboard steering unchanged.
+  - Added regression checks in `web/src/__tests__/mobileControls.test.js`.
+  - Verified `node --check web/src/script.js`, `npm --prefix web run test:unit`, and `npm --prefix web run build` (build still reports only existing asset-size warnings).
+- Physical-phone local testing fix on 2026-06-11:
+  - Changed webpack dev server to bind to `WEB_HOST` with default `0.0.0.0`, so phones on the same Wi-Fi can reach the local web app.
+  - Updated `scripts/dev_start.sh` to pass `WEB_HOST`/`SERVER_PORT` to the web dev server and print LAN Phone/Admin URLs.
+  - Added mobile-controls regression coverage for the LAN testing path.
+  - Verified `bash -n scripts/dev_start.sh`, `node --check web/bundler/webpack.dev.js`, and `npm --prefix web run test:unit -- --run src/__tests__/mobileControls.test.js`.

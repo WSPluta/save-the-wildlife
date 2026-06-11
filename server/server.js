@@ -40,6 +40,7 @@ const SPAWN_MAX_PER_TICK_TRASH = parseInt(process.env.SPAWN_MAX_PER_TICK_TRASH ?
 const SPAWN_MAX_PER_TICK_MARINE = parseInt(process.env.SPAWN_MAX_PER_TICK_MARINE ?? "50");
 const POWERUP_REFRESH_MS = parseInt(process.env.POWERUP_REFRESH_MS ?? "1500");
 const METRICS_BROADCAST_MS = parseInt(process.env.METRICS_BROADCAST_MS ?? (isProduction ? "1000" : "300"));
+const DEMO_ADMIN_TOKEN = process.env.DEMO_ADMIN_TOKEN || process.env.ADMIN_DEMO_TOKEN || "";
 
 const ITEM_MAX_SIZE = process.env.ITEM_MAX_SIZE
   ? parseFloat(process.env.ITEM_MAX_SIZE)
@@ -353,6 +354,17 @@ function adminTrackDuplicate(id) {
   return false;
 }
 
+function isPresenterCommandAuthorized(payload = {}) {
+  if (!DEMO_ADMIN_TOKEN) return true;
+  const supplied =
+    payload.token ||
+    payload.adminToken ||
+    payload.presenterToken ||
+    payload.demoAdminToken ||
+    "";
+  return String(supplied) === String(DEMO_ADMIN_TOKEN);
+}
+
 const playersState = new Map();
 const playersInput = new Map();
 const playerRooms = new Map();
@@ -571,9 +583,11 @@ function broadcastRoomState(room, state, extra = {}) {
 }
 
 function startRoomMatch(room) {
-  if (!room) return;
+  if (!room) return { ok: false, error: "missing_room" };
   const existing = roomTimers.get(room) || { state: 'WAITING', startTime: null, startingAt: null, timerId: null };
-  if (existing.state !== 'WAITING') return;
+  if (existing.state !== 'WAITING') {
+    return { ok: false, error: "invalid_state", room, state: existing.state };
+  }
 
   const startingAt = Date.now() + 10000;
   existing.state = "STARTING";
@@ -612,12 +626,15 @@ function startRoomMatch(room) {
     }, 1000);
     roomTimers.set(room, rs);
   }, 10000);
+  return { ok: true, scope: "room", room, state: "STARTING", startsAt: startingAt, countdownMs: 10000 };
 }
 
 function endRoomMatch(room) {
-  if (!room) return;
+  if (!room) return { ok: false, error: "missing_room" };
   const rs = roomTimers.get(room);
-  if (!rs) return;
+  if (!rs || (rs.state !== "RUNNING" && rs.state !== "STARTING")) {
+    return { ok: false, error: "invalid_state", room, state: rs ? rs.state : "WAITING" };
+  }
   if (rs.timerId) clearInterval(rs.timerId);
   rs.timerId = null;
   rs.startingAt = null;
@@ -626,6 +643,7 @@ function endRoomMatch(room) {
   setTimeout(() => {
     broadcastRoomState(room, 'WAITING');
   }, 10000);
+  return { ok: true, scope: "room", room, state: "ENDED" };
 }
 
   async function emitPlayerCount() {
@@ -1246,6 +1264,40 @@ function endRoomMatch(room) {
       playerIdForSocket = undefined;
     });
 
+    socket.on("admin.presenter.start", (payload = {}, ack) => {
+      const cmdId = payload && payload.cmdId;
+      if (adminTrackDuplicate(cmdId)) { try { if (typeof ack === "function") ack({ ok: true, duplicate: true }); } catch (_) {} return; }
+      try {
+        if (!isPresenterCommandAuthorized(payload)) {
+          try { if (typeof ack === "function") ack({ ok: false, error: "unauthorized" }); } catch (_) {}
+          return;
+        }
+        const room = normalizeRoom(payload.room || payload.id || payload.roomId) || DEFAULT_ROOM_ID;
+        const result = startRoomMatch(room);
+        try { if (typeof ack === "function") ack(result); } catch (_) {}
+      } catch (e) {
+        logger.error(`admin.presenter.start error: ${e && e.message ? e.message : e}`);
+        try { if (typeof ack === "function") ack({ ok: false, error: "server_error" }); } catch (_) {}
+      }
+    });
+
+    socket.on("admin.presenter.end", (payload = {}, ack) => {
+      const cmdId = payload && payload.cmdId;
+      if (adminTrackDuplicate(cmdId)) { try { if (typeof ack === "function") ack({ ok: true, duplicate: true }); } catch (_) {} return; }
+      try {
+        if (!isPresenterCommandAuthorized(payload)) {
+          try { if (typeof ack === "function") ack({ ok: false, error: "unauthorized" }); } catch (_) {}
+          return;
+        }
+        const room = normalizeRoom(payload.room || payload.id || payload.roomId) || DEFAULT_ROOM_ID;
+        const result = endRoomMatch(room);
+        try { if (typeof ack === "function") ack(result); } catch (_) {}
+      } catch (e) {
+        logger.error(`admin.presenter.end error: ${e && e.message ? e.message : e}`);
+        try { if (typeof ack === "function") ack({ ok: false, error: "server_error" }); } catch (_) {}
+      }
+    });
+
     socket.on("admin.start", (payload = {}, ack) => {
       const cmdId = payload && payload.cmdId;
       if (adminTrackDuplicate(cmdId)) { try { if (typeof ack === "function") ack({ ok: true, duplicate: true }); } catch (_) {} return; }
@@ -1259,8 +1311,8 @@ function endRoomMatch(room) {
         }
         // Authorization: only current room admin may start
         if (roomAdmin.get(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
-        startRoomMatch(room);
-        try { if (typeof ack === "function") ack({ ok: true, scope: "room", room }); } catch (_) {}
+        const result = startRoomMatch(room);
+        try { if (typeof ack === "function") ack(result); } catch (_) {}
         return;
       }
       if (gameState !== 'WAITING') { try { if (typeof ack === "function") ack({ ok: false, error: "invalid_state" }); } catch (_) {} return; }
@@ -1383,8 +1435,8 @@ function endRoomMatch(room) {
       if (room) {
         // Authorization: only current room admin may end
         if (roomAdmin.get(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
-        endRoomMatch(room);
-        try { if (typeof ack === "function") ack({ ok: true, scope: "room", room }); } catch (_) {}
+        const result = endRoomMatch(room);
+        try { if (typeof ack === "function") ack(result); } catch (_) {}
         return;
       }
       if (gameState !== 'RUNNING' && gameState !== 'STARTING') { try { if (typeof ack === "function") ack({ ok: false, error: "invalid_state" }); } catch (_) {} return; }
@@ -1747,8 +1799,18 @@ function endRoomMatch(room) {
       elapsed: now - player[1].updated,
     }));
     const staleIds = elapsedTimesById.filter((e) => e.elapsed > 250);
-    staleIds.forEach(async (p) => {
+    for (const p of staleIds) {
       logger.info(`Stale player ${p.id} by ${p.elapsed}ms`);
+      const room = playerRooms.get(p.id) || GLOBAL_ROOM;
+      const roomState = roomTimers.get(room)?.state || gameState || "WAITING";
+      if (roomState !== "RUNNING") {
+        if (ENABLE_COHERENCE_BACKEND) {
+          await deleteCache(mapPlayersTraces, p.id);
+        } else {
+          delete mapPlayersTraces[p.id];
+        }
+        continue;
+      }
       if (ENABLE_COHERENCE_BACKEND) {
         await deleteCache(mapPlayersTraces, p.id);
         await deleteCache(mapPlayersInfo, p.id);
@@ -1758,7 +1820,7 @@ function endRoomMatch(room) {
       }
 
       io.emit('player.info.left', p.id);
-    });
+    }
     emitPlayerCount();
   }, CLEANUP_STALE_IN_SECONDS * 1000);
 

@@ -6,7 +6,8 @@
 # Usage:
 #   bash scripts/dev_start.sh [--clean|--no-clean] [--all|--web|--server|--score|--bots ...]
 # Env overrides:
-#   WEB_PORT=8080 SERVER_PORT=3000 SCORE_PORT=8082
+#   WEB_HOST=0.0.0.0 WEB_PORT=8080 SERVER_PORT=3000 SCORE_PORT=8082
+#   STWL_LAN_IP=192.168.1.23   # optional override for printed phone URL
 #   ENABLE_REDIS_BACKEND=false ENABLE_COHERENCE_BACKEND=false
 #   START_SCORE=0 START_BOTS=0   # can be set to 1 to force enable
 #
@@ -22,6 +23,7 @@ LOG_DIR="$ROOT_DIR/logs"
 mkdir -p "$LOG_DIR"
 
 WEB_PORT="${WEB_PORT:-8080}"
+WEB_HOST="${WEB_HOST:-0.0.0.0}"
 SERVER_PORT="${SERVER_PORT:-3000}"
 SCORE_PORT="${SCORE_PORT:-8082}"
 
@@ -128,6 +130,34 @@ wait_for_http() {
   return 0
 }
 
+detect_lan_ip() {
+  if [[ -n "${STWL_LAN_IP:-}" ]]; then
+    echo "$STWL_LAN_IP"
+    return 0
+  fi
+
+  if command -v ipconfig >/dev/null 2>&1; then
+    local ip
+    ip="$(ipconfig getifaddr en0 2>/dev/null || true)"
+    if [[ -z "$ip" ]]; then ip="$(ipconfig getifaddr en1 2>/dev/null || true)"; fi
+    if [[ -n "$ip" ]]; then
+      echo "$ip"
+      return 0
+    fi
+  fi
+
+  if command -v hostname >/dev/null 2>&1; then
+    local ip
+    ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+    if [[ -n "$ip" ]]; then
+      echo "$ip"
+      return 0
+    fi
+  fi
+
+  echo ""
+}
+
 # Ensure ports are free before start
 [[ "$START_WEB" -eq 1 ]] && port_free_or_exit "$WEB_PORT"
 [[ "$START_SERVER" -eq 1 ]] && port_free_or_exit "$SERVER_PORT"
@@ -147,9 +177,8 @@ start_server() {
 }
 
 start_web() {
-  echo "=== Starting Web (webpack-dev-server) on :$WEB_PORT"
-  # Ensure the webpack.dev.js is configured to use $WEB_PORT if needed (currently defaults to 8080)
-  WEB_PORT="$WEB_PORT" nohup bash -c "cd '$ROOT_DIR/web' && npm run dev" \
+  echo "=== Starting Web (webpack-dev-server) on $WEB_HOST:$WEB_PORT"
+  WEB_HOST="$WEB_HOST" WEB_PORT="$WEB_PORT" SERVER_PORT="$SERVER_PORT" nohup bash -c "cd '$ROOT_DIR/web' && npm run dev" \
     > "$LOG_DIR/web.out.log" 2> "$LOG_DIR/web.err.log" &
 
   echo $! > "$LOG_DIR/web.pid"
@@ -216,7 +245,12 @@ fi
 
 echo
 echo "=== Summary"
+LAN_IP="$(detect_lan_ip)"
 [[ -f "$LOG_DIR/web.pid" ]] && echo "Web:   PID $(cat "$LOG_DIR/web.pid")   http://localhost:${WEB_PORT}/"
+if [[ -f "$LOG_DIR/web.pid" && -n "$LAN_IP" ]]; then
+  echo "Phone: open http://${LAN_IP}:${WEB_PORT}/?room=ROOM-0001"
+  echo "Admin: open http://${LAN_IP}:${WEB_PORT}/admin?room=ROOM-0001"
+fi
 [[ -f "$LOG_DIR/server.pid" ]] && echo "Server: PID $(cat "$LOG_DIR/server.pid") http://localhost:${SERVER_PORT}/healthz"
 [[ -f "$LOG_DIR/score.pid" ]] && echo "Score: PID $(cat "$LOG_DIR/score.pid")   http://localhost:${SCORE_PORT}/actuator/health"
 [[ -f "$LOG_DIR/bots.pid" ]] && echo "Bots:  PID $(cat "$LOG_DIR/bots.pid")"

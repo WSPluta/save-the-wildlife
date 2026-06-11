@@ -397,12 +397,26 @@ onmessage = ({ data }) => {
         .then((res) => postMessage({ type: "admin.start.confirmed", body: res }))
         .catch((err) => postMessage({ type: "admin.start.error", body: (err && err.message) ? err.message : String(err) }));
       break;
+    case "admin.presenter.start":
+      logger("admin.presenter.start");
+      postMessage({ type: "admin.presenter.start.requested", body: data.body || {} });
+      emitWithAck("admin.presenter.start", data.body || {}, { tries: 3, timeout: 1000, jitter: 0.2 })
+        .then((res) => postMessage({ type: "admin.presenter.start.confirmed", body: res }))
+        .catch((err) => postMessage({ type: "admin.presenter.start.error", body: (err && err.message) ? err.message : String(err) }));
+      break;
     case "admin.end":
       logger("admin.end");
       postMessage({ type: "admin.end.requested" });
       emitWithAck("admin.end", {}, { tries: 3, timeout: 1000, jitter: 0.2 })
         .then((res) => postMessage({ type: "admin.end.confirmed", body: res }))
         .catch((err) => postMessage({ type: "admin.end.error", body: (err && err.message) ? err.message : String(err) }));
+      break;
+    case "admin.presenter.end":
+      logger("admin.presenter.end");
+      postMessage({ type: "admin.presenter.end.requested", body: data.body || {} });
+      emitWithAck("admin.presenter.end", data.body || {}, { tries: 3, timeout: 1000, jitter: 0.2 })
+        .then((res) => postMessage({ type: "admin.presenter.end.confirmed", body: res }))
+        .catch((err) => postMessage({ type: "admin.presenter.end.error", body: (err && err.message) ? err.message : String(err) }));
       break;
     case "admin.spawnMode.set":
       // data.body: { mode, params }

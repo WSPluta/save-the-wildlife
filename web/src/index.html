@@ -25,10 +25,10 @@
         <button id="btn-main-menu" class="btn">Menu</button>
         <button id="btn-create-room" class="btn btn-primary">Create Room</button>
         <button id="btn-join-room" class="btn">Join Room</button>
-        <button id="btn-start-match" class="btn btn-primary">Start Match</button>
-        <button id="btn-end-match" class="btn btn-danger">End Match</button>
-        <button id="btn-restart-match" class="btn">Restart</button>
-        <button id="btn-grant-admin" class="btn" title="Grant admin to player by ID">Grant Admin</button>
+        <button id="btn-start-match" class="btn btn-primary lifecycle-admin-control">Start Match</button>
+        <button id="btn-end-match" class="btn btn-danger lifecycle-admin-control">End Match</button>
+        <button id="btn-restart-match" class="btn lifecycle-admin-control">Restart</button>
+        <button id="btn-grant-admin" class="btn lifecycle-admin-control" title="Grant admin to player by ID">Grant Admin</button>
         <button id="btn-toggle-debug" class="btn" title="Toggle Debug HUD (F2)">Debug</button>
         <button id="hud-sound-toggle" class="btn">Sound: On</button>
       </div>
@@ -181,11 +181,11 @@
               <h2>Lobby</h2>
               <div id="lobby-room-code" class="hud-item">Room: -</div>
             </div>
-            <button id="btn-lobby-start" class="btn btn-primary lobby-start-button">Start Match</button>
+            <div class="lobby-wait-pill">Waiting</div>
           </div>
           <div id="lobby-status" class="lobby-status">Waiting for game...</div>
           <div class="lobby-actions">
-            <button id="btn-lobby-leave" class="btn">Back to Menu</button>
+            <button id="btn-lobby-leave" class="btn">Change Name</button>
           </div>
         </div>
 
@@ -196,7 +196,7 @@
         </div>
 
         <div class="lobby-sections">
-          <details class="lobby-detail">
+          <details class="lobby-detail" open>
             <summary>Players</summary>
             <ul id="waiting-list"></ul>
           </details>
@@ -233,6 +233,41 @@
         </div>
       </section>
 
+      <!-- ADMIN: presenter-controlled room start for live demos -->
+      <section id="screen-admin" class="screen admin-panel" style="display: none;">
+        <div class="admin-header">
+          <div>
+            <h2>Presenter Control</h2>
+            <div id="admin-room-label" class="hud-item">Room: ROOM-0001</div>
+          </div>
+          <div id="admin-state" class="admin-state">Waiting</div>
+        </div>
+
+        <div class="admin-grid">
+          <label>
+            Room
+            <input id="admin-room-input" value="ROOM-0001" />
+          </label>
+          <label>
+            Token
+            <input id="admin-token-input" type="password" autocomplete="off" placeholder="Optional" />
+          </label>
+        </div>
+
+        <div class="admin-actions">
+          <button id="btn-admin-start" class="btn btn-primary">Start Game</button>
+          <button id="btn-admin-end" class="btn btn-danger">End Game</button>
+          <button id="btn-admin-copy-link" class="btn">Copy Player Link</button>
+        </div>
+
+        <div id="admin-status" class="lobby-status">Connecting...</div>
+
+        <div class="admin-roster">
+          <div class="admin-section-title">Players <span id="admin-player-count">0</span></div>
+          <ul id="admin-player-list"></ul>
+        </div>
+      </section>
+
       <!-- STARTING: Countdown -->
       <section id="screen-starting" class="screen" style="display: none; flex-direction: column; align-items: center;">
         <div id="starting-countdown" style="color: white; font-size: 24px; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 6px;">
@@ -261,8 +296,8 @@
           <div id="results-score" style="margin: 4px 0;">Score: -</div>
         </div>
         <div class="results-actions" style="display:flex; gap:10px; margin-top: 12px;">
-          <button id="btn-results-rematch" class="btn btn-primary">Rematch</button>
-          <button id="btn-results-menu" class="btn">Back to Menu</button>
+          <button id="btn-results-rematch" class="btn btn-primary">Back to Lobby</button>
+          <button id="btn-results-menu" class="btn">Change Name</button>
         </div>
       </section>
     </div>

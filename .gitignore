@@ -60,6 +60,7 @@ logs
 *.key
 *.crt
 *.conf
+!web/nginx.conf
 
 appendonlydir/
 
