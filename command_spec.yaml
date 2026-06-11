@@ -80,6 +80,8 @@ steps:
     command: |
       cd save-the-wildlife
       kubectl apply -k ./deploy/k8s/overlays/devops
+      kubectl delete statefulset redis --ignore-not-found
+      kubectl delete service redis --ignore-not-found
       echo "Kustomization applied successfully"
   - type: Command
     name: "Wait for deployments readiness"
