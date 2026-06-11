@@ -4,6 +4,9 @@
   "description": "Bots for Multiplayer",
   "main": "index.js",
   "type": "module",
+  "engines": {
+    "node": ">=24 <27"
+  },
   "scripts": {
     "start": "nodemon index.js | pino-pretty"
   },
@@ -23,15 +26,15 @@
   },
   "homepage": "https://github.com/vmleon/oci-multiplayer#readme",
   "dependencies": {
-    "dotenv": "^16.0.3",
-    "pino": "^8.11.0",
-    "shortid": "^2.2.16",
-    "socket.io-client": "^4.8.1",
-    "three": "^0.151.3",
+    "dotenv": "^17.4.2",
+    "pino": "^10.3.1",
+    "short-uuid": "^6.0.3",
+    "socket.io-client": "^4.8.3",
+    "three": "^0.184.0",
     "throttle-debounce": "^5.0.0"
   },
   "devDependencies": {
     "nodemon": "^2.0.22",
-    "pino-pretty": "^10.0.0"
+    "pino-pretty": "^13.1.1"
   }
 }

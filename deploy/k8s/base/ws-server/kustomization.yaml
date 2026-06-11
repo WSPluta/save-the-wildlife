@@ -1,6 +1,4 @@
 resources:
-  - redis-svc.yaml
-  - redis.yaml
   - coherence-svc.yaml
   - coherence.yaml
   - ws-server.yaml
@@ -9,6 +7,3 @@ configMapGenerator:
   - name: ws-server-env
     files:
       - .env=.env_server
-  - name: redis-config
-    files:
-    - redis.conf

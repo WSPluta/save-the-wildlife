@@ -5,7 +5,7 @@ resource "oci_kms_vault" "vault_devops" {
 }
 
 resource "time_sleep" "wait_for_vault" {
-  depends_on = [oci_kms_vault.vault_devops]
+  depends_on      = [oci_kms_vault.vault_devops]
   create_duration = "5m"
 }
 
@@ -51,23 +51,6 @@ resource "oci_vault_secret" "adb_admin_password" {
   description = "ADB admin password for ${random_string.deploy_id.result}"
 
   depends_on = [random_string.deploy_id, random_password.adb_admin_password]
-}
-
-resource "oci_vault_secret" "redis_password" {
-  compartment_id = var.compartment_ocid
-  secret_content {
-    name         = "redis_password_${random_string.deploy_id.result}"
-    content      = base64encode(random_password.redis_password.result)
-    content_type = "BASE64"
-    stage        = "CURRENT"
-  }
-  vault_id = oci_kms_vault.vault_devops.id
-  key_id   = oci_kms_key.key_devops.id
-
-  secret_name = "redis_password_${random_string.deploy_id.result}"
-  description = "REdis password for ${random_string.deploy_id.result}"
-
-  depends_on = [random_string.deploy_id, random_password.redis_password]
 }
 
 resource "oci_vault_secret" "user_auth_token" {

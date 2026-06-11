@@ -81,7 +81,7 @@ cat << 'HINTS'
 
 - WS Server health (/healthz) failing:
   Ensure you started the Node server with required env. For local dev you can disable backends:
-    ENABLE_REDIS_BACKEND=false ENABLE_COHERENCE_BACKEND=false npm start
+    REALTIME_CLUSTER_BACKEND=memory ENABLE_COHERENCE_BACKEND=false npm start
 
 - Score build failing due to JDK/toolchain mismatch:
   Spring Boot 2.7 works with Java 11/17. Ensure your Gradle uses a compatible JDK.

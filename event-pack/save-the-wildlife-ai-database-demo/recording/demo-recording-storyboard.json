@@ -1,0 +1,196 @@
+{
+  "title": "Save the Wildlife: Live Match Intelligence",
+  "subtitle": "A proof-led rehearsal recording for Oracle AI Database, Select AI, in-database agents, and Oracle Private Agent Factory",
+  "outputBaseName": "save-the-wildlife-match-intelligence-rehearsal",
+  "slides": [
+    {
+      "id": "open",
+      "duration": 35,
+      "eyebrow": "0:00 - Demo first",
+      "title": "Play First. Architecture Second.",
+      "claim": "The audience creates the data the agent will use.",
+      "bullets": [
+        "Mobile players join, steer, collect trash, and collide with mechanics.",
+        "Powerups, trails, freezes, coordinates, and replay moments become evidence.",
+        "The game is the wrapper. The event stream is the product."
+      ],
+      "technicalArgument": "Do not start with a model claim. Start with live signal generation and make the source of truth visible.",
+      "talkTrack": "Before architecture, start with the working demo. People join on mobile, steer a boat, collect powerups, and create the telemetry the agent will use. This is not score-only commentary. The mechanics create facts."
+    },
+    {
+      "id": "gameplay-truth",
+      "duration": 40,
+      "eyebrow": "0:35 - Gameplay truth",
+      "title": "Freeze Events Are Recorded Facts",
+      "claim": "The commentator is grounded in real mechanics, not generic sport language.",
+      "bullets": [
+        "Crossing another player's trail emits `trail_crossed`.",
+        "The freeze emits `player_frozen` with related player and coordinates.",
+        "Replay is triggered around the same gameplay moment."
+      ],
+      "technicalArgument": "The runtime can only talk about powerups, freezes, and trail crossings because the game records those facts explicitly.",
+      "snippet": {
+        "file": "web/src/script.js",
+        "start": 2816,
+        "end": 2836,
+        "caption": "Trail crossing creates grounded freeze evidence."
+      },
+      "talkTrack": "Let's cut through it: an AI commentator only works if it knows what actually happened. In this repo, trail crossing and freeze are explicit game events. If the event is not in the database, the commentator should not invent it."
+    },
+    {
+      "id": "mobile",
+      "duration": 40,
+      "eyebrow": "1:15 - Mobile proof",
+      "title": "Mobile Is Not A Nice-To-Have",
+      "claim": "The audience can create live telemetry from phones.",
+      "bullets": [
+        "Touch joystick feeds the same movement loop as keyboard input.",
+        "Desktop controls remain intact.",
+        "Mobile play turns the room into the data generator."
+      ],
+      "technicalArgument": "The demo needs real audience participation, so mobile controls are part of the architecture, not a UI afterthought.",
+      "snippet": {
+        "file": "web/src/script.js",
+        "start": 777,
+        "end": 804,
+        "caption": "Pointer-driven joystick feeds throttle and steering."
+      },
+      "talkTrack": "For this talk, mobile is not decoration. The audience has phones. The touch joystick feeds the same movement path as keyboard input, so the room can create data live."
+    },
+    {
+      "id": "database",
+      "duration": 50,
+      "eyebrow": "1:55 - Source of truth",
+      "title": "Oracle AI Database Holds Match Intelligence",
+      "claim": "SQL summarizes the authoritative gameplay timeline.",
+      "bullets": [
+        "Score, collected items, marine hits, trail crosses, freezes, and last coordinates.",
+        "Powerups are aggregated from JSON metadata.",
+        "Prior sessions support history only when history exists."
+      ],
+      "technicalArgument": "The model is not the source of truth. The database is. SQL decides what happened; the model decides how to say it.",
+      "snippet": {
+        "file": "private-agent-factory/index.js",
+        "start": 674,
+        "end": 704,
+        "caption": "Runtime summary query over `STWL_GAME_EVENTS`."
+      },
+      "talkTrack": "Once the events land, Oracle AI Database becomes the match intelligence layer. SQL gives the authoritative facts. JSON keeps flexible metadata. Graph and vector add relationship and memory context."
+    },
+    {
+      "id": "paf-runtime",
+      "duration": 50,
+      "eyebrow": "2:45 - Evidence first",
+      "title": "PAF Runtime: Context Before Commentary",
+      "claim": "`/api/context` builds evidence; `/api/commentary` phrases it.",
+      "bullets": [
+        "Live commentary is under 200 characters.",
+        "Replay captions only mention replay when replay evidence exists.",
+        "Fallbacks keep the demo useful when Canvas or Select AI is slow."
+      ],
+      "technicalArgument": "Do not make one giant prompt carry the system. Build a small harness around governed context.",
+      "snippet": {
+        "file": "private-agent-factory/index.js",
+        "start": 1637,
+        "end": 1667,
+        "caption": "PAF adapter endpoints for context and commentary."
+      },
+      "talkTrack": "The adapter exposes two proof points. Context builds the evidence package. Commentary turns that evidence into a line, caption, title, or recap. Evidence first, model last."
+    },
+    {
+      "id": "select-ai",
+      "duration": 50,
+      "eyebrow": "3:35 - In-database agents",
+      "title": "Select AI Is Useful, Not Magical",
+      "claim": "Runtime summaries stay explicit; Select AI and in-db agents phrase bounded evidence.",
+      "bullets": [
+        "`DBMS_CLOUD_AI.GENERATE` supports controlled summarization.",
+        "`DBMS_CLOUD_AI_AGENT.RUN_TEAM` supports in-database agent teams.",
+        "Presenter-facing Select AI shows natural language over gameplay telemetry."
+      ],
+      "technicalArgument": "Use natural language where it helps the demo explain data access. Keep runtime facts deterministic.",
+      "snippet": {
+        "file": "deploy/db/stwl_commentary_pkg.sql",
+        "start": 130,
+        "end": 156,
+        "caption": "Bounded in-database generation path."
+      },
+      "talkTrack": "Select AI is not a blank cheque for vague runtime SQL generation. The runtime path prefers explicit SQL, then uses Select AI or an in-database agent team to phrase the bounded summary."
+    },
+    {
+      "id": "graph-replay-memory",
+      "duration": 55,
+      "eyebrow": "4:25 - Production-shaped context",
+      "title": "Graph Explains Why The Moment Mattered",
+      "claim": "Telemetry explains what happened. Replay shows it. Oracle AI Database connects both.",
+      "bullets": [
+        "Graph edges model player-player and player-item relationships.",
+        "Replay manifests point to clip evidence without feeding raw footage to the model.",
+        "Vector memory can retrieve similar prior moments and player style."
+      ],
+      "technicalArgument": "The production path is event-aligned clip manifests plus governed telemetry, not unbounded video summarization.",
+      "snippet": {
+        "file": "deploy/db/stwl_match_intelligence.sql",
+        "start": 181,
+        "end": 214,
+        "caption": "Graph edges for powerups, trail crossings, and freezes."
+      },
+      "talkTrack": "At demo scale, replay is a JSON clip and a manifest row. At production scale, it becomes object storage with timecode, thumbnail, moderation status, and semantic tags. The model gets evidence and clip pointers."
+    },
+    {
+      "id": "deployment",
+      "duration": 45,
+      "eyebrow": "5:20 - Deployment proof",
+      "title": "PAF Ships With The App",
+      "claim": "The AI layer is deployed as part of the OKE system.",
+      "bullets": [
+        "Readiness and liveness probes protect the service path.",
+        "Wallet config and Canvas auth are wired through Kubernetes config and secrets.",
+        "PAF follows the same deploy rhythm as web, ws-server, score, replay, Coherence, Oracle AI Database, and the agent service."
+      ],
+      "technicalArgument": "If the clever agent layer cannot be deployed, tested, and explained when it fails, the demo is not finished.",
+      "snippet": {
+        "file": "deploy/k8s/base/private-agent-factory/private-agent-factory.yaml",
+        "start": 1,
+        "end": 56,
+        "caption": "OKE deployment for the Private Agent Factory adapter."
+      },
+      "talkTrack": "This is not a manual side story. PAF is deployed as an OKE service with health checks, wallet mounting, config map wiring, and Canvas auth as a secret."
+    },
+    {
+      "id": "harness",
+      "duration": 50,
+      "eyebrow": "6:05 - Agent engineering",
+      "title": "The Harness Is Where Quality Becomes Engineering",
+      "claim": "The model emits tokens; the harness owns the system.",
+      "bullets": [
+        "Tool calls, memory, retrieval, identity, budgets, traces, fallbacks, and output policy.",
+        "Tests enforce powerup, freeze, replay, context, and mobile claims.",
+        "This is the reusable pattern for AI developers."
+      ],
+      "technicalArgument": "Agent quality is mostly outside the model. A readable harness is easier to debug, govern, and productionize.",
+      "snippet": {
+        "file": "private-agent-factory/test/commentary.test.js",
+        "start": 34,
+        "end": 48,
+        "caption": "Tests prove the Canvas prompt is grounded in recorded telemetry."
+      },
+      "talkTrack": "The model emits tokens. The harness owns context, tools, memory, fallbacks, and policy. This repo now tests the claims we make on stage."
+    },
+    {
+      "id": "close",
+      "duration": 35,
+      "eyebrow": "6:55 - Close",
+      "title": "Build Agents Around Truth",
+      "claim": "The game is the memorable wrapper. The production pattern is the point.",
+      "bullets": [
+        "Start with real events.",
+        "Pair telemetry with replay evidence.",
+        "Store both where governance already lives.",
+        "Let the model phrase, not fabricate."
+      ],
+      "technicalArgument": "This is a practical path from a conference game to live commentary, instant replay context, post-match recap, and player memory.",
+      "talkTrack": "Start with real events. Pair them with replay evidence. Store both where governance already lives. Retrieve deliberately. Let the model phrase, not fabricate. Play the demo, inspect the SQL, run the notebooks, adapt the harness."
+    }
+  ]
+}

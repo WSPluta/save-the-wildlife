@@ -18,11 +18,14 @@ const ORACLE_QUERY_TIMEOUT_MS = Number(process.env.PAF_ORACLE_QUERY_TIMEOUT_MS |
 const INDB_AGENT_TIMEOUT_MS = Number(process.env.INDB_AGENT_TIMEOUT_MS || 2500);
 const INDB_AGENT_PACKAGE = safeIdentifier(process.env.INDB_AGENT_PACKAGE || "STWL_COMMENTARY_PKG");
 const GAME_EVENTS_TABLE = safeIdentifier(process.env.GAME_EVENTS_TABLE || "STWL_GAME_EVENTS");
+const REPLAY_CLIPS_TABLE = safeIdentifier(process.env.REPLAY_CLIPS_TABLE || "STWL_REPLAY_CLIPS");
+const AGENT_MEMORIES_TABLE = safeIdentifier(process.env.AGENT_MEMORIES_TABLE || "STWL_AGENT_MEMORIES");
 const ORACLE_CONFIG_DIR = process.env.ORACLE_CONFIG_DIR || process.env.TNS_ADMIN || (existsSync("/wallet") ? "/wallet" : "");
 const profanityPattern = /\b(fuck|shit|bitch|asshole|bastard|dick|cunt)\b/i;
 const DEFAULT_CANVAS_TIMEOUT_MS = 8000;
 let inDbPackageInitAttempted = false;
 let selectAiInitAttempted = false;
+let matchIntelligenceInitAttempted = false;
 
 function safeIdentifier(value) {
   const id = String(value || "").trim().toUpperCase();
@@ -40,6 +43,12 @@ function numberValue(value, fallback = 0) {
 function textValue(value, fallback = "") {
   if (value == null) return fallback;
   return String(value).trim();
+}
+
+function boolEnv(name, defaultValue = false) {
+  const value = process.env[name];
+  if (value == null || value === "") return defaultValue;
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
 }
 
 function optionalIdentifier(value) {
@@ -80,6 +89,23 @@ function inDbAgentConfig() {
     selectAiRegion: textValue(process.env.SELECT_AI_REGION || process.env.OCI_REGION || "uk-london-1"),
     selectAiApiFormat: textValue(process.env.SELECT_AI_OCI_APIFORMAT || "COHERE"),
     timeoutMs: INDB_AGENT_TIMEOUT_MS,
+  };
+}
+
+function matchIntelligenceConfig() {
+  return {
+    enabled: boolEnv("PAF_MATCH_INTELLIGENCE_ENABLED", true),
+    autoInit: boolEnv("PAF_MATCH_INTELLIGENCE_AUTO_INIT", true),
+    graphEnabled: boolEnv("PAF_GRAPH_RETRIEVAL_ENABLED", true),
+    replayEnabled: boolEnv("PAF_REPLAY_RETRIEVAL_ENABLED", true),
+    vectorEnabled: boolEnv("PAF_VECTOR_RETRIEVAL_ENABLED", true),
+    persistMemory: boolEnv("PAF_AGENT_MEMORY_PERSIST", true),
+    maxEvents: Math.max(3, Math.min(50, Number(process.env.PAF_CONTEXT_MAX_EVENTS || 12))),
+    maxReplayClips: Math.max(0, Math.min(10, Number(process.env.PAF_REPLAY_MAX_CLIPS || 3))),
+    vectorTopK: Math.max(0, Math.min(10, Number(process.env.PAF_VECTOR_TOP_K || 3))),
+    timeoutMs: Math.max(250, Math.min(8000, Number(process.env.PAF_CONTEXT_TIMEOUT_MS || 2500))),
+    replayClipsTable: REPLAY_CLIPS_TABLE,
+    agentMemoriesTable: AGENT_MEMORIES_TABLE,
   };
 }
 
@@ -174,19 +200,202 @@ function coordinatePhrase(position) {
   return `coords=(${Number(position.x).toFixed(1)},${Number(position.y).toFixed(1)},${Number(position.z).toFixed(1)})`;
 }
 
+function parseMetadata(value) {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function compactEvent(row = {}) {
+  const metadata = parseMetadata(row.METADATA_JSON || row.metadata_json || row.metadata);
+  const position = row.X == null && row.Z == null && row.x == null && row.z == null
+    ? null
+    : {
+        x: numberValue(row.X ?? row.x, 0),
+        y: numberValue(row.Y ?? row.y, 0),
+        z: numberValue(row.Z ?? row.z, 0),
+      };
+  return {
+    id: row.ID ?? row.id ?? null,
+    type: textValue(row.EVENT_TYPE || row.event_type),
+    at: textValue(row.OCCURRED_AT || row.occurred_at),
+    score: numberValue(row.SCORE ?? row.score, 0),
+    position,
+    related_player_id: textValue(row.RELATED_PLAYER_ID || row.related_player_id) || null,
+    related_item_id: textValue(row.RELATED_ITEM_ID || row.related_item_id) || null,
+    metadata,
+  };
+}
+
+function compactGraphFacts(events = [], summary = {}) {
+  const facts = [];
+  const player = summary.player_name || summary.player_id || "Player";
+  for (const event of events) {
+    if (event.type === "powerup_collected") {
+      const powerup = textValue(event.metadata.powerup_type || event.metadata.powerupType, "powerup");
+      facts.push({
+        type: "player_collected_powerup",
+        subject: player,
+        object: powerup,
+        item_id: event.related_item_id,
+        at: event.at,
+      });
+    } else if (event.type === "trail_crossed") {
+      facts.push({
+        type: "player_crossed_trail",
+        subject: player,
+        object: event.related_player_id || "another_player",
+        at: event.at,
+        position: event.position,
+      });
+    } else if (event.type === "player_frozen") {
+      facts.push({
+        type: "player_frozen_by_trail",
+        subject: player,
+        object: event.related_player_id || "another_player",
+        duration_ms: numberValue(event.metadata.freeze_ms || event.metadata.freezeMs, null),
+        at: event.at,
+      });
+    } else if (event.type === "marine_hit") {
+      facts.push({
+        type: "player_hit_marine_life",
+        subject: player,
+        object: event.related_item_id || textValue(event.metadata.item_type || event.metadata.itemType, "marine_life"),
+        at: event.at,
+      });
+    } else if (event.type === "trash_collected") {
+      facts.push({
+        type: "player_collected_trash",
+        subject: player,
+        object: event.related_item_id || "trash",
+        at: event.at,
+      });
+    }
+  }
+  return facts.slice(0, 12);
+}
+
+function normalizeReplayClip(row = {}) {
+  const tags = parseMetadata(row.TAGS_JSON || row.tags_json || row.tags);
+  const metadata = parseMetadata(row.METADATA_JSON || row.metadata_json || row.metadata);
+  const replay = parseMetadata(row.REPLAY_JSON || row.replay_json || row.replay);
+  return {
+    clip_id: textValue(row.CLIP_ID || row.clip_id),
+    session_id: textValue(row.SESSION_ID || row.session_id),
+    room_id: textValue(row.ROOM_ID || row.room_id),
+    player_id: textValue(row.PLAYER_ID || row.player_id),
+    event_type: textValue(row.EVENT_TYPE || row.event_type),
+    event_at: textValue(row.EVENT_AT || row.event_at),
+    clip_uri: textValue(row.CLIP_URI || row.clip_uri) || null,
+    thumbnail_uri: textValue(row.THUMBNAIL_URI || row.thumbnail_uri) || null,
+    timecode_start_ms: numberValue(row.TIMECODE_START_MS ?? row.timecode_start_ms, null),
+    timecode_end_ms: numberValue(row.TIMECODE_END_MS ?? row.timecode_end_ms, null),
+    frame_count: numberValue(row.FRAME_COUNT ?? row.frame_count, replay?.clip?.frames?.length || null),
+    moderation_status: textValue(row.MODERATION_STATUS || row.moderation_status, "approved"),
+    tags,
+    metadata,
+  };
+}
+
+function normalizeMemory(row = {}) {
+  return {
+    memory_id: textValue(row.MEMORY_ID || row.memory_id),
+    session_id: textValue(row.SESSION_ID || row.session_id),
+    player_id: textValue(row.PLAYER_ID || row.player_id),
+    memory_type: textValue(row.MEMORY_TYPE || row.memory_type, "session"),
+    content: enforceCommentary(row.CONTENT || row.content || row.EMBEDDING_TEXT || row.embedding_text || "", 200),
+    score: numberValue(row.SCORE ?? row.score, null),
+    metadata: parseMetadata(row.METADATA_JSON || row.metadata_json || row.metadata),
+  };
+}
+
+function clipTimePhrase(clip) {
+  if (!clip || clip.timecode_start_ms == null || clip.timecode_end_ms == null) return "";
+  const start = (clip.timecode_start_ms / 1000).toFixed(1);
+  const end = (clip.timecode_end_ms / 1000).toFixed(1);
+  return ` ${start}s-${end}s`;
+}
+
+function formatList(items, mapper, empty = "none") {
+  const values = (items || []).map(mapper).filter(Boolean);
+  return values.length ? values.slice(0, 4).join(" | ") : empty;
+}
+
+function buildEvidenceFormats(summary, context = {}, maxChars = COMMENTARY_MAX_CHARS) {
+  const powerups = compactPowerupNames(summary.powerups);
+  const topReplay = (context.replay_clips || [])[0] || null;
+  const topMemory = (context.vector_memories || [])[0] || null;
+  const replayCaption = topReplay
+    ? enforceCommentary(
+        `${topReplay.event_type || "Replay"} clip${clipTimePhrase(topReplay)}: ${summary.player_name || "Player"} at ${summary.score} points, ${coordinatePhrase(summary.last_position)}.`,
+        maxChars
+      )
+    : null;
+  const clipTitle = topReplay
+    ? enforceCommentary(
+        `${String(topReplay.event_type || "highlight").replace(/_/g, " ")} - ${summary.player_name || "Player"} ${summary.score} pts`,
+        80
+      )
+    : null;
+  const liveLine = deterministicScript(summary, maxChars);
+  const recapParts = [
+    `${summary.player_name || "Player"} finished with ${summary.score} points`,
+    powerups.length ? `used ${powerups.join(", ")}` : "",
+    summary.trail_crosses ? `${summary.trail_crosses} trail crossing(s)` : "",
+    summary.freezes ? `${summary.freezes} freeze event(s)` : "",
+    topReplay ? "replay evidence captured" : "",
+    topMemory ? "similar prior memory found" : "",
+  ].filter(Boolean);
+  return {
+    live_line: liveLine,
+    replay_caption: replayCaption,
+    post_match_recap: enforceCommentary(`${recapParts.join(", ")}.`, Math.min(500, Math.max(200, maxChars))),
+    clip_title: clipTitle,
+  };
+}
+
+function outputFormat(value) {
+  const format = textValue(value || "live_line").toLowerCase();
+  return ["live_line", "replay_caption", "post_match_recap", "clip_title"].includes(format)
+    ? format
+    : "live_line";
+}
+
+function compactContextForPrompt(context = {}) {
+  return {
+    graph: formatList(context.graph_facts, (fact) => `${fact.type}:${fact.subject}->${fact.object}`),
+    replay: formatList(context.replay_clips, (clip) => `${clip.event_type}${clipTimePhrase(clip)}:${clip.clip_uri || "json_clip"}`),
+    memory: formatList(context.vector_memories, (memory) => memory.content),
+  };
+}
+
 function buildCanvasMessage(summary, options = {}) {
   const powerups = Object.entries(summary.powerups || {})
     .map(([name, count]) => `${name}:${count}`)
     .join(",") || "none";
   const prior = summary.prior_best_score == null ? "none" : String(summary.prior_best_score);
   const inDbDraft = textValue(options.inDbCommentary);
+  const requestedOutput = outputFormat(options.outputFormat);
+  const context = compactContextForPrompt(options.context || {});
   return [
     "You are the Save the Wildlife conference commentator in Oracle Private Agent Factory Canvas.",
     "Use only this SQL gameplay telemetry and the optional Oracle AI Database draft. Do not invent events, animals, players, or history.",
-    "Return one profanity-free commentator line under 200 characters.",
+    requestedOutput === "post_match_recap"
+      ? "Return one profanity-free post-match recap grounded in evidence."
+      : "Return one profanity-free commentator line under 200 characters.",
     "Mention powerups, trail crossing/freezing, coordinates, or prior best only when present.",
+    "Mention replay clips only when replay_evidence is not none.",
+    `requested_output=${requestedOutput}`,
     inDbDraft ? `oracle_ai_database_draft=${inDbDraft}` : "oracle_ai_database_draft=none",
     `telemetry: session=${summary.session_id || "unknown"}; player=${summary.player_name || summary.player_id || "Player"}; score=${summary.score}; trash=${summary.trash_collected}; marine_hits=${summary.marine_hits}; powerups=${powerups}; trail_crosses=${summary.trail_crosses}; freezes=${summary.freezes}; ${coordinatePhrase(summary.last_position)}; prior_best=${prior}.`,
+    `graph_facts=${context.graph}`,
+    `replay_evidence=${context.replay}`,
+    `vector_memories=${context.memory}`,
   ].join("\n");
 }
 
@@ -362,7 +571,11 @@ async function callPafCanvas(summary, maxChars, options = {}) {
     verifyTls: config.verifyTls,
     headers,
     body: JSON.stringify({
-      message: buildCanvasMessage(summary, { inDbCommentary: options.inDbCommentary }),
+      message: buildCanvasMessage(summary, {
+        inDbCommentary: options.inDbCommentary,
+        context: options.context,
+        outputFormat: options.outputFormat,
+      }),
       roomId: config.roomId || null,
     }),
   });
@@ -640,6 +853,8 @@ function buildSelectAiProfileStatement(config) {
     object_list: [
       { owner: config.selectAiObjectOwner, name: GAME_EVENTS_TABLE },
       { owner: config.selectAiObjectOwner, name: optionalIdentifier(process.env.GAME_SESSION_SUMMARY_VIEW || "STWL_SESSION_SUMMARY") },
+      { owner: config.selectAiObjectOwner, name: REPLAY_CLIPS_TABLE },
+      { owner: config.selectAiObjectOwner, name: AGENT_MEMORIES_TABLE },
     ],
     comments: true,
     max_tokens: 512,
@@ -745,6 +960,64 @@ function selectAiInitStatements(config) {
   ].filter(Boolean);
 }
 
+function matchIntelligenceStatements(config = matchIntelligenceConfig()) {
+  return [
+    `BEGIN
+      EXECUTE IMMEDIATE 'CREATE TABLE ${config.replayClipsTable} (
+        clip_id VARCHAR2(128) PRIMARY KEY,
+        session_id VARCHAR2(128) NOT NULL,
+        room_id VARCHAR2(64),
+        player_id VARCHAR2(128),
+        event_type VARCHAR2(64) NOT NULL,
+        event_at TIMESTAMP WITH TIME ZONE,
+        clip_uri VARCHAR2(1024),
+        thumbnail_uri VARCHAR2(1024),
+        timecode_start_ms NUMBER,
+        timecode_end_ms NUMBER,
+        frame_count NUMBER,
+        moderation_status VARCHAR2(32) DEFAULT ''approved'' NOT NULL,
+        tags_json CLOB CHECK (tags_json IS JSON),
+        metadata_json CLOB CHECK (metadata_json IS JSON),
+        replay_json CLOB CHECK (replay_json IS JSON),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
+      )';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN RAISE; END IF;
+    END;`,
+    `BEGIN
+      EXECUTE IMMEDIATE 'CREATE INDEX ${config.replayClipsTable}_SESSION_IX ON ${config.replayClipsTable} (session_id, event_at)';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN RAISE; END IF;
+    END;`,
+    `BEGIN
+      EXECUTE IMMEDIATE 'CREATE TABLE ${config.agentMemoriesTable} (
+        memory_id VARCHAR2(160) PRIMARY KEY,
+        session_id VARCHAR2(128) NOT NULL,
+        room_id VARCHAR2(64),
+        player_id VARCHAR2(128),
+        memory_type VARCHAR2(40) DEFAULT ''session'' NOT NULL,
+        score NUMBER,
+        content CLOB NOT NULL,
+        embedding_text CLOB,
+        embedding_json CLOB CHECK (embedding_json IS JSON),
+        metadata_json CLOB CHECK (metadata_json IS JSON),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
+      )';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN RAISE; END IF;
+    END;`,
+    `BEGIN
+      EXECUTE IMMEDIATE 'CREATE INDEX ${config.agentMemoriesTable}_PLAYER_IX ON ${config.agentMemoriesTable} (player_id, created_at)';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN RAISE; END IF;
+    END;`,
+  ];
+}
+
 async function ensureInDbPackage(connection) {
   const config = inDbAgentConfig();
   if (!config.enabled || !config.autoInit) return;
@@ -764,6 +1037,19 @@ async function ensureInDbPackage(connection) {
       } catch (_) {
         // Select AI setup is optional at runtime; the deterministic SQL path remains available.
       }
+    }
+  }
+}
+
+async function ensureMatchIntelligenceSchema(connection) {
+  const config = matchIntelligenceConfig();
+  if (!config.enabled || !config.autoInit || matchIntelligenceInitAttempted) return;
+  matchIntelligenceInitAttempted = true;
+  for (const statement of matchIntelligenceStatements(config)) {
+    try {
+      await connection.execute(statement);
+    } catch (_) {
+      // Match intelligence is additive; commentary must still work from STWL_GAME_EVENTS.
     }
   }
 }
@@ -896,6 +1182,262 @@ async function getOracleSummary(sessionId, playerId, options = {}) {
   }
 }
 
+async function queryOptionalRows(connection, sql, binds = {}) {
+  try {
+    const result = await connection.execute(sql, binds);
+    return result.rows || [];
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error);
+    if (/ORA-00942|ORA-04043|ORA-00904/i.test(message)) return null;
+    throw error;
+  }
+}
+
+async function getOracleEventEvidence(connection, sessionId, playerId, maxEvents) {
+  const rows = await queryOptionalRows(
+    connection,
+    `SELECT *
+     FROM (
+       SELECT id, event_type, occurred_at, score, x, y, z,
+              related_player_id, related_item_id, metadata_json
+       FROM ${GAME_EVENTS_TABLE}
+       WHERE session_id = :sessionId
+         AND player_id = :playerId
+       ORDER BY occurred_at
+     )
+     WHERE ROWNUM <= :maxEvents`,
+    { sessionId, playerId, maxEvents }
+  );
+  return (rows || []).map(compactEvent);
+}
+
+async function getReplayEvidence(connection, sessionId, playerId, config) {
+  if (!config.replayEnabled || config.maxReplayClips <= 0) return { clips: [], available: false };
+  const rows = await queryOptionalRows(
+    connection,
+    `SELECT *
+     FROM (
+       SELECT clip_id, session_id, room_id, player_id, event_type, event_at,
+              clip_uri, thumbnail_uri, timecode_start_ms, timecode_end_ms,
+              frame_count, moderation_status, tags_json, metadata_json, replay_json
+       FROM ${config.replayClipsTable}
+       WHERE session_id = :sessionId
+         AND (player_id = :playerId OR player_id IS NULL)
+         AND LOWER(NVL(moderation_status, 'approved')) <> 'blocked'
+       ORDER BY event_at DESC NULLS LAST, created_at DESC
+     )
+     WHERE ROWNUM <= :maxClips`,
+    { sessionId, playerId, maxClips: config.maxReplayClips }
+  );
+  if (rows === null) return { clips: [], available: false };
+  return { clips: rows.map(normalizeReplayClip), available: true };
+}
+
+async function getVectorMemories(connection, summary, config) {
+  if (!config.vectorEnabled || config.vectorTopK <= 0) return { memories: [], available: false };
+  const rows = await queryOptionalRows(
+    connection,
+    `SELECT *
+     FROM (
+       SELECT memory_id, session_id, player_id, memory_type, score, content,
+              embedding_text, metadata_json, created_at
+       FROM ${config.agentMemoriesTable}
+       WHERE player_id = :playerId
+         AND session_id <> :sessionId
+       ORDER BY created_at DESC
+     )
+     WHERE ROWNUM <= :topK`,
+    {
+      sessionId: summary.session_id,
+      playerId: summary.player_id,
+      topK: config.vectorTopK,
+    }
+  );
+  if (rows === null) return { memories: [], available: false };
+  return { memories: rows.map(normalizeMemory), available: true };
+}
+
+async function persistSessionMemory(connection, summary, context, config) {
+  if (!config.persistMemory || !summary.session_id || !summary.player_id) return false;
+  const powerups = compactPowerupNames(summary.powerups);
+  const content = [
+    `${summary.player_name || summary.player_id || "Player"} scored ${summary.score}`,
+    powerups.length ? `powerups=${powerups.join(",")}` : "",
+    summary.trail_crosses ? `trail_crosses=${summary.trail_crosses}` : "",
+    summary.freezes ? `freezes=${summary.freezes}` : "",
+    (context.replay_clips || []).length ? `replay_clips=${context.replay_clips.length}` : "",
+  ].filter(Boolean).join("; ");
+  const metadata = {
+    source: "save-the-wildlife-match-intelligence",
+    graph_fact_count: (context.graph_facts || []).length,
+    replay_clip_count: (context.replay_clips || []).length,
+    powerups: summary.powerups || {},
+  };
+  try {
+    await connection.execute(
+      `MERGE INTO ${config.agentMemoriesTable} m
+       USING (
+         SELECT :memory_id AS memory_id,
+                :session_id AS session_id,
+                :room_id AS room_id,
+                :player_id AS player_id,
+                :score AS score,
+                :content AS content,
+                :embedding_text AS embedding_text,
+                :metadata_json AS metadata_json
+         FROM dual
+       ) s
+       ON (m.memory_id = s.memory_id)
+       WHEN MATCHED THEN UPDATE SET
+         m.score = s.score,
+         m.content = s.content,
+         m.embedding_text = s.embedding_text,
+         m.metadata_json = s.metadata_json
+       WHEN NOT MATCHED THEN INSERT (
+         memory_id, session_id, room_id, player_id, memory_type, score,
+         content, embedding_text, metadata_json
+       ) VALUES (
+         s.memory_id, s.session_id, s.room_id, s.player_id, 'session', s.score,
+         s.content, s.embedding_text, s.metadata_json
+       )`,
+      {
+        memory_id: `session:${summary.session_id}:${summary.player_id}`,
+        session_id: summary.session_id,
+        room_id: summary.room_id || null,
+        player_id: summary.player_id,
+        score: summary.score,
+        content,
+        embedding_text: content,
+        metadata_json: JSON.stringify(metadata),
+      },
+      { autoCommit: true }
+    );
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function buildMatchContext(body = {}, options = {}) {
+  const config = matchIntelligenceConfig();
+  const bodySummary = normalizeSummary(body.summary || body);
+  const format = outputFormat(body.output_format || body.outputFormat || body.format);
+  let summary = bodySummary;
+  let source = "request-summary";
+  let warning = null;
+  const capabilities = {
+    sql_summary: false,
+    json_events: false,
+    graph_facts: false,
+    replay_clips: false,
+    vector_memories: false,
+    memory_persisted: false,
+  };
+
+  if (!config.enabled) {
+    return {
+      ok: true,
+      source,
+      output_format: format,
+      summary,
+      json_events: [],
+      graph_facts: [],
+      replay_clips: [],
+      vector_memories: [],
+      capabilities,
+      warning: "match_intelligence_disabled",
+    };
+  }
+
+  const oracle = await getOracleConnection(options);
+  if (!oracle) {
+    const json_events = [];
+    const graph_facts = compactGraphFacts(json_events, summary);
+    return {
+      ok: true,
+      source,
+      output_format: format,
+      summary,
+      json_events,
+      graph_facts,
+      replay_clips: [],
+      vector_memories: [],
+      formats: buildEvidenceFormats(summary, { graph_facts }, COMMENTARY_MAX_CHARS),
+      capabilities,
+      warning: "oracle_not_configured",
+    };
+  }
+
+  const { connection, close } = oracle;
+  try {
+    await ensureMatchIntelligenceSchema(connection);
+    if (summary.session_id && summary.player_id && !options.skipOracleSummary) {
+      const oracleSummary = await getOracleSummary(summary.session_id, summary.player_id, { ...options, oracleConnection: connection });
+      if (oracleSummary) {
+        summary = oracleSummary;
+        source = "oracle-match-intelligence";
+        capabilities.sql_summary = true;
+      }
+    }
+
+    const json_events = summary.session_id && summary.player_id
+      ? await getOracleEventEvidence(connection, summary.session_id, summary.player_id, config.maxEvents)
+      : [];
+    capabilities.json_events = json_events.length > 0;
+
+    const graph_facts = config.graphEnabled ? compactGraphFacts(json_events, summary) : [];
+    capabilities.graph_facts = graph_facts.length > 0;
+
+    const replay = summary.session_id && summary.player_id
+      ? await getReplayEvidence(connection, summary.session_id, summary.player_id, config)
+      : { clips: [], available: false };
+    capabilities.replay_clips = replay.available && replay.clips.length > 0;
+
+    const contextBeforeMemory = {
+      graph_facts,
+      replay_clips: replay.clips,
+    };
+    capabilities.memory_persisted = await persistSessionMemory(connection, summary, contextBeforeMemory, config);
+
+    const memory = await getVectorMemories(connection, summary, config);
+    capabilities.vector_memories = memory.available && memory.memories.length > 0;
+
+    const context = {
+      ok: true,
+      source,
+      output_format: format,
+      summary,
+      json_events,
+      graph_facts,
+      replay_clips: replay.clips,
+      vector_memories: memory.memories,
+      capabilities,
+      warning,
+    };
+    return {
+      ...context,
+      formats: buildEvidenceFormats(summary, context, Number(body.max_chars || body.maxChars || COMMENTARY_MAX_CHARS)),
+    };
+  } catch (error) {
+    warning = error.message;
+    return {
+      ok: true,
+      source,
+      output_format: format,
+      summary,
+      json_events: [],
+      graph_facts: [],
+      replay_clips: [],
+      vector_memories: [],
+      formats: buildEvidenceFormats(summary, {}, Number(body.max_chars || body.maxChars || COMMENTARY_MAX_CHARS)),
+      capabilities,
+      warning,
+    };
+  } finally {
+    if (close) await connection.close();
+  }
+}
+
 async function callInDbAgent(summary, maxChars, options = {}) {
   const config = inDbAgentConfig();
   if (!config.enabled || !summary.session_id || !summary.player_id) return null;
@@ -944,9 +1486,11 @@ async function callInDbAgent(summary, maxChars, options = {}) {
 async function buildCommentary(body = {}, options = {}) {
   const maxChars = Number(body.max_chars || body.maxChars || COMMENTARY_MAX_CHARS);
   const bodySummary = normalizeSummary(body.summary || body);
+  const requestedOutput = outputFormat(body.output_format || body.outputFormat || body.format);
   let summary = bodySummary;
   let source = "request-summary";
   let warning = null;
+  let matchContext = null;
 
   if (!options.skipOracleSummary && bodySummary.session_id && bodySummary.player_id) {
     try {
@@ -961,6 +1505,29 @@ async function buildCommentary(body = {}, options = {}) {
       }
     } catch (error) {
       warning = error.message;
+    }
+  }
+
+  if (matchIntelligenceConfig().enabled && summary.session_id && summary.player_id) {
+    try {
+      matchContext = await withTimeout(
+        buildMatchContext(
+          {
+            ...body,
+            summary,
+            output_format: requestedOutput,
+            max_chars: maxChars,
+          },
+          { ...options, skipOracleSummary: true }
+        ),
+        matchIntelligenceConfig().timeoutMs,
+        "match_context"
+      );
+      if (matchContext?.summary) {
+        summary = normalizeSummary(matchContext.summary);
+      }
+    } catch (error) {
+      warning = [warning, error.message].filter(Boolean).join("; ");
     }
   }
 
@@ -981,15 +1548,27 @@ async function buildCommentary(body = {}, options = {}) {
   let canvas = null;
   if (canvasConfig().runEndpointUrl) {
     try {
-      canvas = await callPafCanvas(summary, maxChars, { ...options, inDbCommentary: inDbAgent?.commentary });
+      canvas = await callPafCanvas(summary, maxChars, {
+        ...options,
+        inDbCommentary: inDbAgent?.commentary,
+        context: matchContext,
+        outputFormat: requestedOutput,
+      });
     } catch (error) {
       warning = [warning, `paf_canvas:${error.message}`].filter(Boolean).join("; ");
     }
   }
 
+  const formats = buildEvidenceFormats(summary, matchContext || {}, maxChars);
+  const baseCommentary = canvas?.commentary || inDbAgent?.commentary || formats.live_line || deterministicScript(summary, maxChars);
+  const selectedCommentary = requestedOutput === "live_line"
+    ? baseCommentary
+    : formats[requestedOutput] || baseCommentary;
+
   return {
     ok: true,
-    commentary: canvas?.commentary || inDbAgent?.commentary || deterministicScript(summary, maxChars),
+    commentary: enforceCommentary(selectedCommentary, requestedOutput === "clip_title" ? 80 : maxChars),
+    output_format: requestedOutput,
     source: canvas ? "paf-canvas" : inDbAgent?.source || source,
     fallback_source: canvas ? inDbAgent?.source || source : null,
     warning,
@@ -1010,12 +1589,24 @@ async function buildCommentary(body = {}, options = {}) {
       mode: AGENT_MODE,
       genai_model_id: process.env.OCI_GENAI_MODEL_ID || null,
     },
+    formats,
+    evidence: matchContext ? {
+      json_event_count: matchContext.json_events?.length || 0,
+      graph_fact_count: matchContext.graph_facts?.length || 0,
+      replay_clip_count: matchContext.replay_clips?.length || 0,
+      vector_memory_count: matchContext.vector_memories?.length || 0,
+      replay_clips: (matchContext.replay_clips || []).slice(0, 2),
+      graph_facts: (matchContext.graph_facts || []).slice(0, 4),
+      vector_memories: (matchContext.vector_memories || []).slice(0, 2),
+    } : null,
+    capabilities: matchContext?.capabilities || null,
   };
 }
 
 app.get("/healthz", (_req, res) => {
   const config = canvasConfig();
   const inDbConfig = inDbAgentConfig();
+  const matchConfig = matchIntelligenceConfig();
   res.json({
     ok: true,
     service: "private-agent-factory",
@@ -1032,7 +1623,31 @@ app.get("/healthz", (_req, res) => {
     select_ai_region: inDbConfig.selectAiRegion,
     select_ai_model: inDbConfig.selectAiModel,
     select_ai_agent_team_configured: Boolean(inDbConfig.agentTeamName),
+    match_intelligence_enabled: matchConfig.enabled,
+    match_intelligence_auto_init: matchConfig.autoInit,
+    graph_retrieval_enabled: matchConfig.graphEnabled,
+    replay_retrieval_enabled: matchConfig.replayEnabled,
+    vector_retrieval_enabled: matchConfig.vectorEnabled,
+    vector_top_k: matchConfig.vectorTopK,
+    replay_clips_table: matchConfig.replayClipsTable,
+    agent_memories_table: matchConfig.agentMemoriesTable,
   });
+});
+
+app.get("/api/context", async (req, res) => {
+  try {
+    res.json(await buildMatchContext(req.query));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "context_failed", detail: error.message });
+  }
+});
+
+app.post("/api/context", async (req, res) => {
+  try {
+    res.json(await buildMatchContext(req.body));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: "context_failed", detail: error.message });
+  }
 });
 
 app.get("/api/commentary", async (req, res) => {
@@ -1069,12 +1684,15 @@ export {
   app,
   buildCanvasMessage,
   buildCommentary,
+  buildMatchContext,
   callPafCanvas,
   callInDbAgent,
   canvasConfig,
   deterministicScript,
   inDbAgentConfig,
   inDbPackageStatements,
+  matchIntelligenceConfig,
+  matchIntelligenceStatements,
   selectAiInitStatements,
   enforceCommentary,
   extractCanvasText,

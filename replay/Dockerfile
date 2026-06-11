@@ -1,12 +1,11 @@
-# Builder stage: use Gradle image so we don't need a wrapper in repo
-FROM --platform=linux/amd64 gradle:8.7.0-jdk17 AS build
+# Builder stage: replay is built from this directory, so use a Gradle/JDK 25 image.
+FROM --platform=linux/amd64 gradle:9.5.1-jdk25 AS build
 WORKDIR /workspace
 COPY . /workspace
-# Build without tests for speed/stability in CI; adjust if needed
-RUN gradle clean build -x test
+RUN gradle clean build
 
-# Runtime stage: JDK base image
-FROM --platform=linux/amd64 container-registry.oracle.com/java/jdk-no-fee-term:17.0.7-oraclelinux8
+# Runtime stage: JRE base image
+FROM --platform=linux/amd64 eclipse-temurin:25-jre
 
 VOLUME /tmp
 # Copy built jar (exclude plain classifier if present)

@@ -10,7 +10,6 @@ const {
   containerRegistryURL,
   containerRegistryUser,
   containerRegistryToken,
-  redisPassword,
   namespace,
   regionKey,
   adbCompartmentId,
@@ -80,7 +79,7 @@ async function createRegistrySecret() {
 
 async function createConfigFiles() {
   console.log("Create config files...");
-  await createRedisConfig(redisPassword);
+  await createWsServerConfig(adbPassword, adbName);
   await createKustomizationYaml(regionKey, namespace);
   await createDBConfigFiles(
     adbCompartmentId,
@@ -141,22 +140,16 @@ async function downloadWallet(
   await downloadAdbWallet(adb.id, walletFilePath, walletPassword);
 }
 
-async function createRedisConfig(password) {
+async function createWsServerConfig(adbPassword, adbService) {
   const pwdOutput = (await $`pwd`).stdout.trim();
   await cd("./deploy/k8s/base/ws-server");
-  const replaceCmd = `s/MASTERPASSWORD/${password}/g`;
+  const replaceCmdAdbPassword = `s/TEMPLATE_ADB_PASSWORD/${adbPassword}/g`;
+  const replaceCmdAdbService = `s/TEMPLATE_ADB_SERVICE/${adbService}/g`;
   try {
-    let { exitCode: exitCodeConfig, stderr: stderrConfig } =
-      await $`sed ${replaceCmd} redis.conf.template > redis.conf`;
-    if (exitCodeConfig !== 0) {
-      exitWithError(`Error creating redis.conf with password: ${stderrConfig}`);
-    } else {
-      console.log(`${chalk.green("redis.conf")} created.`);
-    }
     let { exitCode: exitCodeEnv, stderr: stderrEnv } =
-      await $`sed ${replaceCmd} env_server_template > .env_server`;
+      await $`sed ${replaceCmdAdbPassword} env_server_template | sed ${replaceCmdAdbService} > .env_server`;
     if (exitCodeEnv !== 0) {
-      exitWithError(`Error creating .env_server with password: ${stderrEnv}`);
+      exitWithError(`Error creating .env_server: ${stderrEnv}`);
     } else {
       console.log(`${chalk.green(".env_server")} created.`);
     }

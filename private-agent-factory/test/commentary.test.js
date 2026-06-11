@@ -7,9 +7,11 @@ process.env.PAF_DISABLE_SERVER = "1";
 const {
   buildCanvasMessage,
   buildCommentary,
+  buildMatchContext,
   callInDbAgent,
   callPafCanvas,
   extractCanvasText,
+  matchIntelligenceStatements,
   normalizeSummary,
   selectAiInitStatements,
 } = await import("../index.js");
@@ -270,6 +272,228 @@ test("uses a configured PAF Canvas endpoint before deterministic fallback", asyn
   assert.equal(seen[0].body.roomId, null);
 });
 
+test("builds match intelligence context with SQL, graph, replay, and memory evidence", async () => {
+  const executeCalls = [];
+  const oracleConnection = {
+    async execute(sql) {
+      executeCalls.push(sql);
+      if (/FROM STWL_GAME_EVENTS/i.test(sql)) {
+        return {
+          rows: [
+            {
+              ID: 1,
+              EVENT_TYPE: "powerup_collected",
+              OCCURRED_AT: "2026-06-11T10:00:00.000Z",
+              SCORE: 5,
+              X: 1,
+              Y: 0,
+              Z: 2,
+              RELATED_ITEM_ID: "I-SHIELD",
+              METADATA_JSON: JSON.stringify({ powerup_type: "powerup_shield" }),
+            },
+            {
+              ID: 2,
+              EVENT_TYPE: "player_frozen",
+              OCCURRED_AT: "2026-06-11T10:00:02.000Z",
+              SCORE: 8,
+              X: 3,
+              Y: 0,
+              Z: 4,
+              RELATED_PLAYER_ID: "P-RIVAL",
+              METADATA_JSON: JSON.stringify({ freeze_ms: 5000 }),
+            },
+          ],
+        };
+      }
+      if (/FROM STWL_REPLAY_CLIPS/i.test(sql)) {
+        return {
+          rows: [
+            {
+              CLIP_ID: "C1",
+              SESSION_ID: "S-CTX",
+              ROOM_ID: "ROOM-7",
+              PLAYER_ID: "P-CTX",
+              EVENT_TYPE: "player_frozen",
+              EVENT_AT: "2026-06-11T10:00:02.000Z",
+              TIMECODE_START_MS: -500,
+              TIMECODE_END_MS: 1500,
+              FRAME_COUNT: 60,
+              MODERATION_STATUS: "approved",
+              TAGS_JSON: JSON.stringify({ source: "replay-json" }),
+              METADATA_JSON: JSON.stringify({ player_name: "Ada" }),
+            },
+          ],
+        };
+      }
+      if (/FROM STWL_AGENT_MEMORIES/i.test(sql)) {
+        return {
+          rows: [
+            {
+              MEMORY_ID: "M1",
+              SESSION_ID: "S-OLD",
+              PLAYER_ID: "P-CTX",
+              MEMORY_TYPE: "session",
+              SCORE: 77,
+              CONTENT: "Ada previously used shield before a freeze.",
+              METADATA_JSON: JSON.stringify({ tags: ["shield", "freeze"] }),
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+
+  await withEnv({
+    PAF_MATCH_INTELLIGENCE_ENABLED: "true",
+    PAF_MATCH_INTELLIGENCE_AUTO_INIT: "false",
+    PAF_AGENT_MEMORY_PERSIST: "false",
+    PAF_REPLAY_RETRIEVAL_ENABLED: "true",
+    PAF_VECTOR_RETRIEVAL_ENABLED: "true",
+  }, async () => {
+    const context = await buildMatchContext(
+      {
+        summary: {
+          session_id: "S-CTX",
+          player_id: "P-CTX",
+          player_name: "Ada",
+          score: 88,
+          trail_crosses: 1,
+          freezes: 1,
+          last_position: { x: 3, y: 0, z: 4 },
+        },
+      },
+      { oracleConnection, skipOracleSummary: true }
+    );
+
+    assert.equal(context.ok, true);
+    assert.equal(context.json_events.length, 2);
+    assert.ok(context.graph_facts.some((fact) => fact.type === "player_frozen_by_trail"));
+    assert.equal(context.replay_clips[0].clip_id, "C1");
+    assert.equal(context.vector_memories[0].memory_id, "M1");
+    assert.equal(context.capabilities.replay_clips, true);
+    assert.equal(context.capabilities.vector_memories, true);
+    assert.match(context.formats.replay_caption, /player_frozen clip/);
+  });
+
+  assert.ok(executeCalls.some((sql) => /STWL_GAME_EVENTS/i.test(sql)));
+  assert.ok(executeCalls.some((sql) => /STWL_REPLAY_CLIPS/i.test(sql)));
+  assert.ok(executeCalls.some((sql) => /STWL_AGENT_MEMORIES/i.test(sql)));
+});
+
+test("does not create replay captions when no replay document exists", async () => {
+  const oracleConnection = {
+    async execute(sql) {
+      if (/FROM STWL_GAME_EVENTS/i.test(sql)) {
+        return { rows: [] };
+      }
+      if (/FROM STWL_REPLAY_CLIPS/i.test(sql)) {
+        return { rows: [] };
+      }
+      if (/FROM STWL_AGENT_MEMORIES/i.test(sql)) {
+        return { rows: [] };
+      }
+      return { rows: [] };
+    },
+  };
+
+  await withEnv({
+    PAF_MATCH_INTELLIGENCE_ENABLED: "true",
+    PAF_MATCH_INTELLIGENCE_AUTO_INIT: "false",
+    PAF_AGENT_MEMORY_PERSIST: "false",
+  }, async () => {
+    const context = await buildMatchContext(
+      {
+        summary: {
+          session_id: "S-NO-REPLAY",
+          player_id: "P-NO-REPLAY",
+          player_name: "Ada",
+          score: 19,
+        },
+      },
+      { oracleConnection, skipOracleSummary: true }
+    );
+
+    assert.equal(context.replay_clips.length, 0);
+    assert.equal(context.formats.replay_caption, null);
+    assert.equal(context.capabilities.replay_clips, false);
+  });
+});
+
+test("selects replay caption output only from recorded replay evidence", async () => {
+  const oracleConnection = {
+    async execute(sql) {
+      if (/FROM STWL_GAME_EVENTS/i.test(sql)) {
+        return {
+          rows: [
+            {
+              ID: 3,
+              EVENT_TYPE: "player_frozen",
+              OCCURRED_AT: "2026-06-11T10:00:02.000Z",
+              SCORE: 31,
+              X: 7,
+              Y: 0,
+              Z: -2,
+              RELATED_PLAYER_ID: "P-RIVAL",
+              METADATA_JSON: JSON.stringify({ freeze_ms: 5000 }),
+            },
+          ],
+        };
+      }
+      if (/FROM STWL_REPLAY_CLIPS/i.test(sql)) {
+        return {
+          rows: [
+            {
+              CLIP_ID: "C-FREEZE",
+              SESSION_ID: "S-FORMAT",
+              PLAYER_ID: "P-FORMAT",
+              EVENT_TYPE: "player_frozen",
+              TIMECODE_START_MS: -300,
+              TIMECODE_END_MS: 1200,
+              FRAME_COUNT: 60,
+              MODERATION_STATUS: "approved",
+            },
+          ],
+        };
+      }
+      if (/FROM STWL_AGENT_MEMORIES/i.test(sql)) {
+        return { rows: [] };
+      }
+      return { rows: [] };
+    },
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "true",
+    PAF_MATCH_INTELLIGENCE_AUTO_INIT: "false",
+    PAF_AGENT_MEMORY_PERSIST: "false",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        output_format: "replay_caption",
+        summary: {
+          session_id: "S-FORMAT",
+          player_id: "P-FORMAT",
+          player_name: "Grace",
+          score: 31,
+          freezes: 1,
+          trail_crosses: 1,
+          last_position: { x: 7, y: 0, z: -2 },
+        },
+      },
+      { oracleConnection, skipOracleSummary: true }
+    );
+
+    assert.equal(response.output_format, "replay_caption");
+    assert.match(response.commentary, /player_frozen clip/);
+    assert.equal(response.evidence.replay_clip_count, 1);
+    assert.ok(response.commentary.length <= 200);
+  });
+});
+
 test("falls back to deterministic SQL commentary when in-db agent and Canvas fail", async () => {
   const endpoint = "https://paf.example.test:8080/agentFactory/v1/agentBuilder/run/STWL";
   const oracleConnection = {
@@ -396,6 +620,7 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   const packageSql = readFileSync(new URL("../../deploy/db/stwl_commentary_pkg.sql", import.meta.url), "utf8");
   const profileSql = readFileSync(new URL("../../deploy/db/select_ai_profile_template.sql", import.meta.url), "utf8");
   const teamSql = readFileSync(new URL("../../deploy/db/select_ai_agent_team_template.sql", import.meta.url), "utf8");
+  const matchSql = readFileSync(new URL("../../deploy/db/stwl_match_intelligence.sql", import.meta.url), "utf8");
 
   assert.match(packageSql, /CREATE OR REPLACE PACKAGE\s+stwl_commentary_pkg/i);
   assert.match(packageSql, /stwl_game_events/i);
@@ -413,12 +638,25 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(profileSql, /OCI\$RESOURCE_PRINCIPAL/i);
   assert.match(profileSql, /STWL_GAME_EVENTS/i);
   assert.match(profileSql, /STWL_SESSION_SUMMARY/i);
+  assert.match(profileSql, /STWL_EVENT_DOCUMENTS/i);
+  assert.match(profileSql, /STWL_GRAPH_VERTICES/i);
+  assert.match(profileSql, /STWL_GRAPH_EDGES/i);
+  assert.match(profileSql, /STWL_REPLAY_CLIPS/i);
+  assert.match(profileSql, /STWL_AGENT_MEMORIES/i);
 
   assert.match(teamSql, /DBMS_CLOUD_AI_AGENT\.CREATE_TOOL/i);
   assert.match(teamSql, /DBMS_CLOUD_AI_AGENT\.CREATE_AGENT/i);
   assert.match(teamSql, /DBMS_CLOUD_AI_AGENT\.CREATE_TEAM/i);
   assert.match(teamSql, /STWL_GAMEPLAY_COMMENTARY_TEAM/i);
   assert.match(teamSql, /STWL_GAMEPLAY_AI/i);
+
+  assert.match(matchSql, /CREATE TABLE stwl_replay_clips/i);
+  assert.match(matchSql, /CREATE TABLE stwl_agent_memories/i);
+  assert.match(matchSql, /embedding VECTOR/i);
+  assert.match(matchSql, /CREATE OR REPLACE VIEW stwl_event_documents/i);
+  assert.match(matchSql, /CREATE OR REPLACE VIEW stwl_graph_vertices/i);
+  assert.match(matchSql, /CREATE OR REPLACE VIEW stwl_graph_edges/i);
+  assert.match(matchSql, /CREATE PROPERTY GRAPH stwl_gameplay_graph/i);
 
   const generated = selectAiInitStatements({
     selectAiProfile: "STWL_GAMEPLAY_AI",
@@ -432,4 +670,10 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(generated, /DBMS_CLOUD_AI_AGENT\.CREATE_TEAM/i);
   assert.match(generated, /DBMS_CLOUD_ADMIN\.ENABLE_RESOURCE_PRINCIPAL/i);
   assert.match(generated, /OCI\$RESOURCE_PRINCIPAL/i);
+  assert.match(generated, /STWL_REPLAY_CLIPS/i);
+  assert.match(generated, /STWL_AGENT_MEMORIES/i);
+
+  const matchInit = matchIntelligenceStatements().join("\n");
+  assert.match(matchInit, /CREATE TABLE STWL_REPLAY_CLIPS/i);
+  assert.match(matchInit, /CREATE TABLE STWL_AGENT_MEMORIES/i);
 });

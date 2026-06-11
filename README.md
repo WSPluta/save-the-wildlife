@@ -4,7 +4,7 @@
 
 ## Multiplayer powered by Cloud Native on Oracle Cloud Infrastructure
 
-In this workshop, you will learn how to deploy a simple multiplayer [Three.js](https://threejs.org/) application to Oracle Cloud Infrastructure, then iterate through the modernization process to enhance the application and ultimately deploy it to [Kubernetes](https://kubernetes.io/) with CI/CD, Terraform, Kustomize, Coherence and Redis as a base line backend to run applications that require in-memory concurrency management.
+In this workshop, you will learn how to deploy a simple multiplayer [Three.js](https://threejs.org/) application to Oracle Cloud Infrastructure, then iterate through the modernization process to enhance the application and ultimately deploy it to [Kubernetes](https://kubernetes.io/) with CI/CD, Terraform, Kustomize, Coherence, Oracle AI Database, and Oracle Private Agent Factory as the baseline for applications that require in-memory concurrency management and grounded AI commentary.
 
 ![Save The Wildlife Banner](images/screenshot.png)
 
@@ -33,7 +33,7 @@ Or you can dive (pun intended) into the ocean of DevOPS CI/CD and release our [T
 - [Three.js](https://threejs.org/)
 - [Oracle Devops](https://www.oracle.com/uk/devops/devops-service/)
 - [Oracle Container Engine Kubernetes](https://www.oracle.com/uk/cloud/cloud-native/container-engine-kubernetes/)
-- [Redis](https://redis.com/)
+- [Oracle Coherence](https://coherence.community/)
 - [Kubernetes](https://kubernetes.io/)
 - [Oracle Coherence](https://www.oracle.com/uk/java/coherence/)
 

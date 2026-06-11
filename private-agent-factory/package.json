@@ -4,6 +4,9 @@
   "description": "Oracle Private Agent Factory commentary adapter for Save the Wildlife",
   "main": "index.js",
   "type": "module",
+  "engines": {
+    "node": ">=24 <27"
+  },
   "scripts": {
     "start": "node index.js",
     "check": "node --check index.js",
@@ -11,7 +14,7 @@
   },
   "license": "ISC",
   "dependencies": {
-    "express": "^5.1.0",
-    "oracledb": "^6.8.0"
+    "express": "^5.2.1",
+    "oracledb": "^7.0.0"
   }
 }

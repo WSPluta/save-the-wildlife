@@ -6,8 +6,8 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -103,7 +103,7 @@ public class GameEventController {
         if (metadata == null) return "{}";
         try {
             return objectMapper.writeValueAsString(metadata);
-        } catch (JsonProcessingException ignored) {
+        } catch (JacksonException ignored) {
             return "{}";
         }
     }

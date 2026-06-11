@@ -1,13 +1,17 @@
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '2.7.9'
-	id 'io.spring.dependency-management' version '1.1.0'
+	id 'org.springframework.boot' version '4.1.0'
+	id 'io.spring.dependency-management' version '1.1.7'
 }
 
 group = 'com.oracle.developer.multiplayer'
 version = '0.0.6'
-sourceCompatibility = '11'
 
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
 
 repositories {
 	mavenCentral()
@@ -17,15 +21,16 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-data-rest'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-json'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'io.micrometer:micrometer-registry-prometheus'
-	implementation 'com.oracle.database.jdbc:ojdbc11-production:21.8.0.0'
-	implementation 'com.oracle.database.jdbc:ucp:21.8.0.0'
-	implementation 'com.oracle.database.security:oraclepki:21.8.0.0'
-	implementation 'com.oracle.database.security:osdt_cert:21.8.0.0'
-	implementation 'com.oracle.database.security:osdt_core:21.8.0.0'
+	implementation 'com.oracle.database.jdbc:ojdbc11-production:23.26.2.0.0'
+	implementation 'com.oracle.database.jdbc:ucp:23.26.2.0.0'
+	implementation 'com.oracle.database.security:oraclepki:23.26.2.0.0'
+	implementation 'com.oracle.database.security:osdt_cert:21.21.0.0'
+	implementation 'com.oracle.database.security:osdt_core:21.21.0.0'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
-	testImplementation 'com.h2database:h2:2.2.220'
+	testImplementation 'com.h2database:h2:2.4.240'
 }
 
 tasks.named('test') {

@@ -52,7 +52,6 @@ resource "oci_devops_deploy_artifact" "command_spec_deploy" {
       ocir_user                   = var.ocir_user
       user_auth_token_id          = var.user_auth_token_id
       adb_admin_password_id       = var.adb_admin_password_id
-      redis_password_id           = var.redis_password_id
       adb_service                 = var.adb_service
       adb_id                      = var.adb_id
       compartment_id              = var.compartment_ocid

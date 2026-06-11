@@ -252,8 +252,8 @@ async function main() {
     serverProc = startBackground("node", ["index.js"], {
       cwd: path.join(REPO_ROOT, "server"),
       env: {
-        ENABLE_REDIS_BACKEND: "false",
         ENABLE_COHERENCE_BACKEND: "false",
+        REALTIME_CLUSTER_BACKEND: "memory",
         GAME_DURATION_IN_SECONDS: "8",
       },
     });

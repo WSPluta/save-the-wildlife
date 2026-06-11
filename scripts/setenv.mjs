@@ -41,8 +41,6 @@ await createCerts();
 
 await loginContainerRegistry();
 
-await redisDetails();
-
 // Local DB mode selection
 const useLocalDb = await setVariableFromEnvOrPrompt("USE_LOCAL_DB", "Use local Oracle DB? (true/false)", () => "false", "boolean");
 if (useLocalDb) {
@@ -117,11 +115,6 @@ async function loginContainerRegistry() {
     containerRegistryURL
   );
   console.log();
-}
-
-async function redisDetails() {
-  const redisPassword = await generateRandomString();
-  properties = { ...properties, redisPassword };
 }
 
 async function adbDetails() {

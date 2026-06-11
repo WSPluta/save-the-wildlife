@@ -22,7 +22,12 @@ BEGIN
       "oci_apiformat": "COHERE",
       "object_list": [
         { "owner": "' || USER || '", "name": "STWL_GAME_EVENTS" },
-        { "owner": "' || USER || '", "name": "STWL_SESSION_SUMMARY" }
+        { "owner": "' || USER || '", "name": "STWL_SESSION_SUMMARY" },
+        { "owner": "' || USER || '", "name": "STWL_EVENT_DOCUMENTS" },
+        { "owner": "' || USER || '", "name": "STWL_GRAPH_VERTICES" },
+        { "owner": "' || USER || '", "name": "STWL_GRAPH_EDGES" },
+        { "owner": "' || USER || '", "name": "STWL_REPLAY_CLIPS" },
+        { "owner": "' || USER || '", "name": "STWL_AGENT_MEMORIES" }
       ],
       "comments": true,
       "max_tokens": 512,
@@ -36,3 +41,5 @@ END;
 -- EXEC DBMS_CLOUD_AI.SET_PROFILE('STWL_GAMEPLAY_AI');
 -- SELECT AI NARRATE summarize the latest Save the Wildlife session and mention powerups and freezes;
 -- SELECT AI SHOWSQL which players were frozen most often by crossing another player's trail;
+-- SELECT AI NARRATE explain why the latest replay clip mattered using only recorded telemetry;
+-- SELECT AI SHOWSQL find similar prior match memories for the latest player;

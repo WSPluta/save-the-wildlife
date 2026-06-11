@@ -45,7 +45,7 @@ console.log("\tnpx zx scripts/tfvars.mjs ci");
 process.exit(0);
 
 async function setVariableFromEnvDefaultOrPrompt(envKey, questionText, defaultValue = "", options = {}) {
-  const { printChoices, sensitive = false, source = "detected default" } = options;
+  const { printChoices, source = "detected default" } = options;
   if (process.env[envKey]) {
     console.log(`${chalk.green("[ok]")} ${envKey} from environment`);
     return process.env[envKey];
@@ -57,7 +57,7 @@ async function setVariableFromEnvDefaultOrPrompt(envKey, questionText, defaultVa
   if (printChoices) {
     await printChoices();
   }
-  return question(`${questionText}${sensitive ? "" : ""}: `);
+  return question(`${questionText}: `);
 }
 
 async function defaultRegionName(regions) {
@@ -254,7 +254,6 @@ async function devopsTFvars() {
     adb_admin_password_id: adbAdminPasswordId,
     adb_service: adbService,
     adb_id: adbId,
-    redis_password_id: redisPasswordId,
   } = values;
 
   await cd("../../..");
@@ -302,7 +301,6 @@ async function devopsTFvars() {
       .replace(/ADB_ADMIN_PASSWORD_OCID/g, adbAdminPasswordId)
       .replace(/ADB_SERVICE/g, adbService)
       .replace(/ADB_OCID/g, adbId)
-      .replace(/REDIS_PASSWORD_OCID/g, redisPasswordId)
       .replace(/PAF_IMAGE_REPOSITORY/g, pafImageRepository)
       .replace(/PAF_VERSION/g, pafVersion)
       .replace(/OCI_GENAI_MODEL_ID/g, genaiModelId)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Save The Wildlife - Minimal dev start (WS server + Web only)
 # - Stops any existing listeners first
-# - Starts Node WS server on :3000 with Redis/Coherence disabled
+# - Starts Node WS server on :3000 with clustered realtime disabled
 # - Starts Webpack Dev Server on :8081
 # - Score service is optional (enable with START_SCORE=1)
 
@@ -15,7 +15,7 @@ bash "$ROOT_DIR/scripts/dev_stop.sh" || true
 echo "=== Starting WS Server (Node) on :3000 (backends disabled)"
 (
   cd "$ROOT_DIR"
-  ENABLE_REDIS_BACKEND=false ENABLE_COHERENCE_BACKEND=false PORT=3000 npm --prefix server start
+  REALTIME_CLUSTER_BACKEND=memory ENABLE_COHERENCE_BACKEND=false PORT=3000 npm --prefix server start
 ) &
 
 if [[ "${START_SCORE:-0}" == "1" ]]; then

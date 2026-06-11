@@ -55,10 +55,6 @@ variable "adb_admin_password_id" {
   type = string
 }
 
-variable "redis_password_id" {
-  type = string
-}
-
 variable "adb_service" {
   type = string
 }

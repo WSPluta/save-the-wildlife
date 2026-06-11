@@ -8,7 +8,7 @@
 # Env overrides:
 #   WEB_HOST=0.0.0.0 WEB_PORT=8080 SERVER_PORT=3000 SCORE_PORT=8082
 #   STWL_LAN_IP=192.168.1.23   # optional override for printed phone URL
-#   ENABLE_REDIS_BACKEND=false ENABLE_COHERENCE_BACKEND=false
+#   REALTIME_CLUSTER_BACKEND=memory ENABLE_COHERENCE_BACKEND=false
 #   START_SCORE=0 START_BOTS=0   # can be set to 1 to force enable
 #
 # Examples:
@@ -166,7 +166,7 @@ detect_lan_ip() {
 # Start functions
 start_server() {
   echo "=== Starting WS Server (Node) on :$SERVER_PORT (backends disabled by default)"
-  ENABLE_REDIS_BACKEND="${ENABLE_REDIS_BACKEND:-false}" \
+  REALTIME_CLUSTER_BACKEND="${REALTIME_CLUSTER_BACKEND:-memory}" \
   ENABLE_COHERENCE_BACKEND="${ENABLE_COHERENCE_BACKEND:-false}" \
   PORT="$SERVER_PORT" \
   nohup npm --prefix "$ROOT_DIR/server" start \

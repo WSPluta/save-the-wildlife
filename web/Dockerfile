@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 node:20-slim AS builder
+FROM --platform=linux/amd64 node:24-slim AS builder
 
 ENV NODE_ENV=production
 ENV NODE_MAX_MEM=2048
@@ -7,7 +7,7 @@ WORKDIR /usr/src/web
 
 COPY package*.json ./
 
-RUN npm ci --only=production
+RUN npm ci
 
 COPY static/ ./static
 COPY src/ ./src

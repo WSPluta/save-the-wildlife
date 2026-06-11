@@ -41,11 +41,6 @@ output "adb_admin_password_id" {
   value     = oci_vault_secret.adb_admin_password.id
 }
 
-output "redis_password_id" {
-  sensitive = true
-  value     = oci_vault_secret.redis_password.id
-}
-
 output "adb_service" {
   sensitive = false
   value     = oci_database_autonomous_database.adb.db_name

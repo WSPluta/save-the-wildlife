@@ -1,5 +1,4 @@
 import { Server } from "socket.io";
-import { createAdapter } from "@socket.io/redis-adapter";
 import * as dotenv from "dotenv";
 import short from "short-uuid";
 import pino from "pino";
@@ -8,6 +7,12 @@ import pkg from "./package.json" with { type: "json" };
 import ObjectPool from './object-pool.js';
 import { updateRuntimeMetrics } from "./metrics.js";
 import { buildCommentary, recordGameEvent } from "./lib/gameEvents.js";
+import { createCoherenceAdapter } from "./lib/coherenceSocketAdapter.js";
+import {
+  resolveRealtimeBackend,
+  shouldUseCoherence,
+  socketBusConfigFromEnv,
+} from "./lib/realtimeBackend.js";
 
 dotenv.config();
 dotenv.config({ path: "config/.env" });
@@ -21,8 +26,8 @@ logger.info(`Server version ${version}`);
 const serverId = short.generate();
 logger.info(`Server ${serverId}`);
 
-const ENABLE_COHERENCE_BACKEND =
-  process.env.ENABLE_COHERENCE_BACKEND === "true";
+const DEFAULT_REALTIME_CLUSTER_BACKEND = resolveRealtimeBackend(process.env);
+const ENABLE_COHERENCE_BACKEND = shouldUseCoherence(process.env);
 
 const BROADCAST_REFRESH_UPDATE = process.env.BROADCAST_REFRESH_UPDATE
   ? parseInt(process.env.BROADCAST_REFRESH_UPDATE)
@@ -413,9 +418,10 @@ export async function start(
   httpServer,
   port,
   cacheSession,
-  pubClient,
-  subClient
+  options = {}
 ) {
+  const realtimeBackend = options.realtimeBackend || DEFAULT_REALTIME_CLUSTER_BACKEND;
+  const socketBusConfig = options.socketBusConfig || socketBusConfigFromEnv(process.env);
   const io = new Server(httpServer, {
     pingInterval: 25000,
     pingTimeout: 20000,
@@ -426,8 +432,18 @@ export async function start(
     }
   });
 
-  if (pubClient && subClient) {
-    io.adapter(createAdapter(pubClient, subClient));
+  if (realtimeBackend === "coherence") {
+    if (!cacheSession) {
+      throw new Error("coherence_realtime_backend_requires_cache_session");
+    }
+    const socketBusMap = await cacheSession.getMap(socketBusConfig.mapName);
+    io.adapter(createCoherenceAdapter({
+      busMap: socketBusMap,
+      serverId,
+      ttlMs: socketBusConfig.ttlMs,
+      maxPayloadBytes: socketBusConfig.maxPayloadBytes,
+    }));
+    logger.info(`Socket.IO Coherence bus enabled on map ${socketBusConfig.mapName}`);
   }
 
   const serverInfoPayload = () => ({

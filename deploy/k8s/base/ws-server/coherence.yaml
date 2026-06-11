@@ -21,7 +21,7 @@ spec:
         app: coherence
     spec:
       containers:
-        - image: ghcr.io/oracle/coherence-ce:23.03
+        - image: ghcr.io/oracle/coherence-ce:15.1.1-0-2
           name: coherence
           readinessProbe:
             tcpSocket:

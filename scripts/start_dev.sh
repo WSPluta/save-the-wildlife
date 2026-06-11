@@ -9,10 +9,6 @@ echo "Starting local dev environment..."
 # Navigate to project root (assuming script is in scripts/)
 cd "$(dirname "$0")/.."
 
-# Start Redis (assuming start_redis.mjs exists)
-echo "Starting Redis..."
-npx zx scripts/start_redis.mjs
-
 # Start Coherence (assuming start_coherence.mjs exists)
 echo "Starting Coherence..."
 npx zx scripts/start_coherence.mjs
@@ -26,7 +22,7 @@ cd ..
 # Start Server
 echo "Starting Server..."
 cd server
-npm start &
+REALTIME_CLUSTER_BACKEND="${REALTIME_CLUSTER_BACKEND:-coherence}" ENABLE_COHERENCE_BACKEND="${ENABLE_COHERENCE_BACKEND:-true}" npm start &
 cd ..
 
 # Start Web dev server

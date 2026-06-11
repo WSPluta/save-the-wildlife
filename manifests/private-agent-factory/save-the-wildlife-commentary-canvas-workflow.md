@@ -7,6 +7,12 @@ in-database commentary package for a bounded Select AI or agent draft, and then
 posts that bounded telemetry to the published Oracle Private Agent Factory
 Canvas endpoint.
 
+The demo message is Canvas plus harness. Business users can shape the final
+agent experience in Canvas; AI engineers keep the production harness around it.
+Here, the harness is the endpoint adapter connected to the live 3D game,
+Oracle AI Database SQL telemetry, Select AI or in-database agent drafts, replay
+context, safety checks, and the commentary broadcast back into the experience.
+
 ## Flow
 
 1. Import `save-the-wildlife-commentary-canvas-flow.json` into Oracle Private Agent Factory Canvas.

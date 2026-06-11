@@ -12,11 +12,3 @@ resource "random_password" "adb_admin_password" {
   min_upper        = 3
   override_special = "-_"
 }
-
-resource "random_password" "redis_password" {
-  length      = 32
-  special     = false
-  min_numeric = 3
-  min_lower   = 3
-  min_upper   = 3
-}

@@ -4,6 +4,9 @@
   "description": "OCI Multiplayer Web",
   "repository": "https://github.com/oracle-devrel/save-the-wildlife",
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24 <27"
+  },
   "scripts": {
     "build": "webpack --config ./bundler/webpack.prod.js",
     "dev": "webpack serve --config ./bundler/webpack.dev.js",
@@ -11,36 +14,35 @@
     "test:unit": "vitest run"
   },
   "dependencies": {
-    "@babel/core": "^7.28.3",
-    "@babel/preset-env": "^7.28.3",
-    "babel-loader": "^10.0.0",
-    "clean-webpack-plugin": "^4.0.0",
-    "copy-webpack-plugin": "^13.0.1",
-    "css-loader": "^7.1.2",
     "dat.gui": "^0.7.7",
+    "short-uuid": "^6.0.3",
+    "socket.io-client": "^4.8.3",
+    "three": "^0.184.0",
+    "throttle-debounce": "^5.0.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/preset-env": "^7.29.7",
+    "@vitest/coverage-v8": "^4.1.8",
+    "babel-loader": "^10.0.0",
+    "c8": "^11.0.0",
+    "clean-webpack-plugin": "^4.0.0",
+    "copy-webpack-plugin": "^14.0.0",
+    "css-loader": "^7.1.2",
+    "es-module-shims": "^2.6.2",
     "file-loader": "^6.2.0",
     "html-loader": "^5.1.0",
     "html-webpack-plugin": "^5.6.4",
+    "jsdom": "^29.1.1",
     "mini-css-extract-plugin": "^2.9.4",
     "portfinder-sync": "0.0.2",
     "raw-loader": "^4.0.2",
-    "short-uuid": "^5.2.0",
-    "shortid": "^2.2.17",
-    "socket.io-client": "^4.8.1",
     "style-loader": "^4.0.0",
-    "three": "^0.179.1",
-    "throttle-debounce": "^5.0.2",
-    "webpack": "^5.101.3",
-    "webpack-cli": "^6.0.1",
+    "threejs-editor": "^1.0.0",
+    "vitest": "^4.1.8",
+    "webpack": "^5.107.2",
+    "webpack-cli": "^7.0.3",
     "webpack-dev-server": "^5.2.2",
     "webpack-merge": "^6.0.1"
-  },
-  "devDependencies": {
-    "@vitest/coverage-v8": "^2.1.9",
-    "c8": "^9.1.0",
-    "es-module-shims": "^2.6.2",
-    "jsdom": "^24.0.0",
-    "threejs-editor": "^1.0.0",
-    "vitest": "^2.0.5"
   }
 }

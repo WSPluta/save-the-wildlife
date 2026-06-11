@@ -11,8 +11,8 @@ steps:
     timeoutInSeconds: 3600
     command: |
       dnf update -y
-      dnf module enable -y nodejs:18
-      dnf module install -y nodejs
+      dnf module enable -y nodejs:24 || true
+      dnf module install -y nodejs || dnf install -y nodejs
   - type: Command
     name: "Git Clone"
     shell: bash
@@ -47,7 +47,6 @@ steps:
     timeoutInSeconds: 300
     command: |
       cd save-the-wildlife
-      redis_password=$(oci secrets secret-bundle get --secret-id ${redis_password_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
       adb_admin_password=$(oci secrets secret-bundle get --secret-id ${adb_admin_password_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
       adb_wallet_password=$(cat .adb_wallet_password)
       export OCI_REGION=${region}
@@ -59,7 +58,7 @@ steps:
       export PAF_CANVAS_ROOM_ID="${paf_canvas_room_id}"
       export PAF_CANVAS_TIMEOUT_MS="${paf_canvas_timeout_ms}"
       export PAF_CANVAS_VERIFY_TLS="${paf_canvas_verify_tls}"
-      npx zx scripts/kustom.mjs ${region_key} $redis_password $adb_admin_password ${adb_service} "$adb_wallet_password"
+      npx zx scripts/kustom.mjs ${region_key} $adb_admin_password ${adb_service} "$adb_wallet_password"
       rm -f .adb_wallet_password
       echo "Wallet and config files generated successfully"
   - type: Command

@@ -14,7 +14,7 @@ env:
 
 steps:
   - type: Command
-    name: "Install libraries (jq, Node.js 18, podman, zx)"
+    name: "Install libraries (jq, Node.js 24, podman, zx)"
     command: |
       set -Eeuo pipefail
       trap 'echo "[FATAL] Install libraries failed at line $LINENO" >&2' ERR
@@ -27,15 +27,15 @@ steps:
         echo "Using dnf"
         dnf -y update || true
         dnf -y install jq podman || true
-        # Try AppStream modules for Node 18 (OL8+)
-        dnf -y module enable nodejs:18 || true
+        # Try AppStream modules for Node 24 (OL8+)
+        dnf -y module enable nodejs:24 || true
         dnf -y module install nodejs || dnf -y install nodejs || true
       else
         echo "Using yum"
         yum -y update || true
         yum -y install jq podman || true
-        # Install Node.js 18 from NodeSource on OL7/RHEL-like
-        curl -fsSL https://rpm.nodesource.com/setup_18.x | bash - || true
+        # Install Node.js 24 from NodeSource on OL7/RHEL-like
+        curl -fsSL https://rpm.nodesource.com/setup_24.x | bash - || true
         yum -y install nodejs || true
       fi
 

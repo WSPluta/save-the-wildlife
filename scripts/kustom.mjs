@@ -7,15 +7,14 @@ import { exitWithError } from "./lib/utils.mjs";
 $.verbose = false;
 
 const { _ } = argv;
-const [key, redisPassword, adbAdminPassword, adbService, adbWalletPassword = ""] = _;
+const [key, adbAdminPassword, adbService, adbWalletPassword = ""] = _;
 
 const regionKey = key;
 const namespace = await getNamespace();
 
 await createKustomizationYaml(regionKey, namespace);
 
-await createWsServerConfigFile(redisPassword, adbAdminPassword, adbService);
-await createRedisConfigFile(redisPassword);
+await createWsServerConfigFile(adbAdminPassword, adbService);
 await createScoreConfigFile(adbAdminPassword, adbService);
 await createReplayConfigFile(adbAdminPassword, adbService);
 await createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService, adbWalletPassword);
@@ -66,39 +65,20 @@ async function createKustomizationYaml(regionKey, namespace) {
   }
 }
 
-async function createWsServerConfigFile(redisPassword, adbAdminPassword, adbService) {
+async function createWsServerConfigFile(adbAdminPassword, adbService) {
   const pwdOutput = (await $`pwd`).stdout.trim();
   await cd("./deploy/k8s/base/ws-server/");
-  const replaceCmdRedisPassword = `s/MASTERPASSWORD/${redisPassword}/`;
   const replaceCmdAdbPassword = `s/TEMPLATE_ADB_PASSWORD/${adbAdminPassword}/`;
   const replaceCmdAdbService = `s/TEMPLATE_ADB_SERVICE/${adbService}/`;
   try {
-    let { exitCode, stderr } = await $`sed '${replaceCmdRedisPassword}' \
-          env_server_template | sed '${replaceCmdAdbPassword}' \
+    let { exitCode, stderr } = await $`sed '${replaceCmdAdbPassword}' \
+          env_server_template \
           | sed '${replaceCmdAdbService}' \
           > .env_server`;
     if (exitCode !== 0) {
       exitWithError(`Error creating .env_server: ${stderr}`);
     }
     console.log(`Overlay ${chalk.green(".env_server")} created.`);
-  } catch (error) {
-    exitWithError(error.stderr);
-  } finally {
-    await cd(pwdOutput);
-  }
-}
-
-async function createRedisConfigFile(redisPassword) {
-  const pwdOutput = (await $`pwd`).stdout.trim();
-  await cd("./deploy/k8s/base/ws-server/");
-  const replaceCmdRedisPassword = `s/MASTERPASSWORD/${redisPassword}/`;
-  try {
-    let { exitCode, stderr } = await $`sed '${replaceCmdRedisPassword}' \
-              redis.conf.template > redis.conf`;
-    if (exitCode !== 0) {
-      exitWithError(`Error creating redis.conf: ${stderr}`);
-    }
-    console.log(`Overlay ${chalk.green("redis.conf")} created.`);
   } catch (error) {
     exitWithError(error.stderr);
   } finally {

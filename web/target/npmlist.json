@@ -1,1 +1,158 @@
-{"version":"0.0.8","name":"web","dependencies":{"@babel/core":{"version":"7.20.12"},"@babel/preset-env":{"version":"7.20.2"},"babel-loader":{"version":"8.3.0"},"clean-webpack-plugin":{"version":"3.0.0"},"copy-webpack-plugin":{"version":"7.0.0"},"css-loader":{"version":"5.2.7"},"dat.gui":{"version":"0.7.9"},"file-loader":{"version":"6.2.0"},"html-loader":{"version":"2.1.2"},"html-webpack-plugin":{"version":"5.5.0"},"mini-css-extract-plugin":{"version":"1.6.2"},"portfinder-sync":{"version":"0.0.2"},"raw-loader":{"version":"4.0.2"},"short-uuid":{"version":"4.2.2"},"shortid":{"version":"2.2.16"},"socket.io-client":{"version":"4.5.4"},"style-loader":{"version":"2.0.0"},"three":{"version":"0.153.0"},"throttle-debounce":{"version":"3.0.1"},"webpack-cli":{"version":"4.10.0"},"webpack-dev-server":{"version":"3.11.3"},"webpack-merge":{"version":"5.8.0"},"webpack":{"version":"5.75.0"}}}
+{
+  "version": "0.0.12",
+  "name": "web",
+  "problems": [
+    "extraneous: @emnapi/wasi-threads@1.2.2 /Users/wojtekpluta/Documents/GitHub/save-the-wildlife-fork/web/node_modules/@emnapi/wasi-threads"
+  ],
+  "dependencies": {
+    "@babel/core": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/core/-/core-7.29.7.tgz",
+      "overridden": false
+    },
+    "@babel/preset-env": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/preset-env/-/preset-env-7.29.7.tgz",
+      "overridden": false
+    },
+    "@emnapi/wasi-threads": {
+      "version": "1.2.2",
+      "resolved": "https://registry.npmjs.org/@emnapi/wasi-threads/-/wasi-threads-1.2.2.tgz",
+      "overridden": false,
+      "extraneous": true,
+      "problems": [
+        "extraneous: @emnapi/wasi-threads@1.2.2 /Users/wojtekpluta/Documents/GitHub/save-the-wildlife-fork/web/node_modules/@emnapi/wasi-threads"
+      ]
+    },
+    "@vitest/coverage-v8": {
+      "version": "4.1.8",
+      "resolved": "https://registry.npmjs.org/@vitest/coverage-v8/-/coverage-v8-4.1.8.tgz",
+      "overridden": false
+    },
+    "babel-loader": {
+      "version": "10.0.0",
+      "resolved": "https://registry.npmjs.org/babel-loader/-/babel-loader-10.0.0.tgz",
+      "overridden": false
+    },
+    "c8": {
+      "version": "11.0.0",
+      "resolved": "https://registry.npmjs.org/c8/-/c8-11.0.0.tgz",
+      "overridden": false
+    },
+    "clean-webpack-plugin": {
+      "version": "4.0.0",
+      "resolved": "https://registry.npmjs.org/clean-webpack-plugin/-/clean-webpack-plugin-4.0.0.tgz",
+      "overridden": false
+    },
+    "copy-webpack-plugin": {
+      "version": "14.0.0",
+      "resolved": "https://registry.npmjs.org/copy-webpack-plugin/-/copy-webpack-plugin-14.0.0.tgz",
+      "overridden": false
+    },
+    "css-loader": {
+      "version": "7.1.2",
+      "resolved": "https://registry.npmjs.org/css-loader/-/css-loader-7.1.2.tgz",
+      "overridden": false
+    },
+    "dat.gui": {
+      "version": "0.7.9",
+      "resolved": "https://registry.npmjs.org/dat.gui/-/dat.gui-0.7.9.tgz",
+      "overridden": false
+    },
+    "es-module-shims": {
+      "version": "2.6.2",
+      "resolved": "https://registry.npmjs.org/es-module-shims/-/es-module-shims-2.6.2.tgz",
+      "overridden": false
+    },
+    "file-loader": {
+      "version": "6.2.0",
+      "resolved": "https://registry.npmjs.org/file-loader/-/file-loader-6.2.0.tgz",
+      "overridden": false
+    },
+    "html-loader": {
+      "version": "5.1.0",
+      "resolved": "https://registry.npmjs.org/html-loader/-/html-loader-5.1.0.tgz",
+      "overridden": false
+    },
+    "html-webpack-plugin": {
+      "version": "5.6.4",
+      "resolved": "https://registry.npmjs.org/html-webpack-plugin/-/html-webpack-plugin-5.6.4.tgz",
+      "overridden": false
+    },
+    "jsdom": {
+      "version": "29.1.1",
+      "resolved": "https://registry.npmjs.org/jsdom/-/jsdom-29.1.1.tgz",
+      "overridden": false
+    },
+    "mini-css-extract-plugin": {
+      "version": "2.9.4",
+      "resolved": "https://registry.npmjs.org/mini-css-extract-plugin/-/mini-css-extract-plugin-2.9.4.tgz",
+      "overridden": false
+    },
+    "portfinder-sync": {
+      "version": "0.0.2",
+      "resolved": "https://registry.npmjs.org/portfinder-sync/-/portfinder-sync-0.0.2.tgz",
+      "overridden": false
+    },
+    "raw-loader": {
+      "version": "4.0.2",
+      "resolved": "https://registry.npmjs.org/raw-loader/-/raw-loader-4.0.2.tgz",
+      "overridden": false
+    },
+    "short-uuid": {
+      "version": "6.0.3",
+      "resolved": "https://registry.npmjs.org/short-uuid/-/short-uuid-6.0.3.tgz",
+      "overridden": false
+    },
+    "socket.io-client": {
+      "version": "4.8.3",
+      "resolved": "https://registry.npmjs.org/socket.io-client/-/socket.io-client-4.8.3.tgz",
+      "overridden": false
+    },
+    "style-loader": {
+      "version": "4.0.0",
+      "resolved": "https://registry.npmjs.org/style-loader/-/style-loader-4.0.0.tgz",
+      "overridden": false
+    },
+    "three": {
+      "version": "0.184.0",
+      "resolved": "https://registry.npmjs.org/three/-/three-0.184.0.tgz",
+      "overridden": false
+    },
+    "threejs-editor": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/threejs-editor/-/threejs-editor-1.0.0.tgz",
+      "overridden": false
+    },
+    "throttle-debounce": {
+      "version": "5.0.2",
+      "resolved": "https://registry.npmjs.org/throttle-debounce/-/throttle-debounce-5.0.2.tgz",
+      "overridden": false
+    },
+    "vitest": {
+      "version": "4.1.8",
+      "resolved": "https://registry.npmjs.org/vitest/-/vitest-4.1.8.tgz",
+      "overridden": false
+    },
+    "webpack-cli": {
+      "version": "7.0.3",
+      "resolved": "https://registry.npmjs.org/webpack-cli/-/webpack-cli-7.0.3.tgz",
+      "overridden": false
+    },
+    "webpack-dev-server": {
+      "version": "5.2.2",
+      "resolved": "https://registry.npmjs.org/webpack-dev-server/-/webpack-dev-server-5.2.2.tgz",
+      "overridden": false
+    },
+    "webpack-merge": {
+      "version": "6.0.1",
+      "resolved": "https://registry.npmjs.org/webpack-merge/-/webpack-merge-6.0.1.tgz",
+      "overridden": false
+    },
+    "webpack": {
+      "version": "5.107.2",
+      "resolved": "https://registry.npmjs.org/webpack/-/webpack-5.107.2.tgz",
+      "overridden": false
+    }
+  }
+}

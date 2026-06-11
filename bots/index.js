@@ -1,6 +1,6 @@
 import { io } from "socket.io-client";
 import * as dotenv from "dotenv";
-import short from "shortid";
+import short from "short-uuid";
 import pino from "pino";
 
 dotenv.config({ path: "./config/.env" });
@@ -12,7 +12,7 @@ logger.info(`NODE_ENV: ${NODE_ENV}`);
 const TRACE_RATE_IN_MILLIS = parseInt(process.env.TRACE_RATE_IN_MILLIS) || 10;
 logger.info(`TRACE_RATE_IN_MILLIS: ${TRACE_RATE_IN_MILLIS} ms`);
 
-const yourId = short();
+const yourId = short.generate();
 const yourName = `Bot ${yourId}`;
 logger.info(`Name: ${yourName}`);
 
@@ -46,7 +46,7 @@ const MAX_BOTS = 10; // Cap to prevent overload
 const TARGET_PLAYERS = 4;
 
 function createBotInstance(id) {
-  const botId = id || short();
+  const botId = id || short.generate();
   const botName = `Bot ${botId.substring(0, 4)}`;
   const botSocket = io(webSocketServerUrl);
   let botItems = {};

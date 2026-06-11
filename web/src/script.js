@@ -1,4 +1,4 @@
-import short from "shortid";
+import short from "short-uuid";
 import * as THREE from "three";
 import { MathUtils } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -29,7 +29,7 @@ let sendYourPosition;
 let boundaries = { width: 89, height: 23 };
 
 if (!localStorage.getItem("yourId")) {
-  localStorage.setItem("yourId", short());
+  localStorage.setItem("yourId", short.generate());
 }
 const yourId = localStorage.getItem("yourId");
 let playerName;
@@ -2828,6 +2828,17 @@ function checkTrailCollisionsWithPlayer() {
           related_player_id: id,
           freeze_ms: 5000,
         });
+        try {
+          triggerReplayMoment("player_frozen", {
+            relatedPlayerId: id,
+            freezeMs: 5000,
+            worldPos: currentPlayerPosition(),
+            trailSegment: {
+              from: { x: Number(pts[i].x || 0), y: Number(pts[i].y || 0), z: Number(pts[i].z || 0) },
+              to: { x: Number(pts[i + 1].x || 0), y: Number(pts[i + 1].y || 0), z: Number(pts[i + 1].z || 0) },
+            },
+          });
+        } catch (_) {}
         if (!freezeDiv) {
           freezeDiv = document.createElement("div");
           freezeDiv.style.position = "absolute";
@@ -3435,6 +3446,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           oracleReplay: true,
           version: 1,
           serverVersion: serverVersion || null,
+          sessionId: currentSessionId || `${roomId || "ROOM"}:${yourId}:pending`,
           room: roomId || null,
           player: { id: yourId, name: playerName || localStorage.getItem("yourName") || "Default" },
           event: __pendingReplay.event, // { type, at, meta }
@@ -3624,6 +3636,13 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         item_type: item.type,
         item_position: { x: px, y: py, z: pz },
       });
+      try {
+        triggerReplayMoment("powerup_collected", {
+          itemId: key,
+          powerupType: item.type,
+          worldPos: { x: px, y: py, z: pz },
+        });
+      } catch (_) {}
       releasePowerupInstance(key);
       delete items[key];
     }
@@ -3671,6 +3690,13 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           item_type: mesh.itemType,
           item_position: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) },
         });
+        try {
+          triggerReplayMoment("powerup_collected", {
+            itemId: key,
+            powerupType: mesh.itemType,
+            worldPos: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) },
+          });
+        } catch (_) {}
         scene.remove(mesh);
         delete itemMeshes[key];
         continue;
@@ -3711,6 +3737,13 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           item_type: mesh.itemType,
           item_position: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) },
         });
+        try {
+          triggerReplayMoment("marine_hit", {
+            itemId: key,
+            itemType: mesh.itemType,
+            worldPos: { x: Number(mesh.position.x || 0), y: Number(mesh.position.y || 0), z: Number(mesh.position.z || 0) },
+          });
+        } catch (_) {}
       } else {
         eventStats.trash_collected++;
         emitGameplayEvent("trash_collected", {
