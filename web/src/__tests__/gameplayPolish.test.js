@@ -6,9 +6,12 @@ const worker = readFileSync("src/commsWorker.js", "utf8");
 
 describe("gameplay polish regressions", () => {
   it("uses browser-safe short uuid generation for fresh players", () => {
-    expect(script).toMatch(/import \{ generate as generateShortUuid \} from "short-uuid";/);
-    expect(script).toMatch(/localStorage\.setItem\("yourId", generateShortUuid\(\)\);/);
-    expect(script).not.toMatch(/short\.generate\(\)/);
+    expect(script).toMatch(/import \{ createTranslator \} from "short-uuid";/);
+    expect(script).toMatch(/function generatePlayerId\(\)/);
+    expect(script).toMatch(/typeof globalThis\.crypto\.randomUUID === "function"/);
+    expect(script).toMatch(/typeof globalThis\.crypto\.getRandomValues === "function"/);
+    expect(script).toMatch(/localStorage\.setItem\("yourId", generatePlayerId\(\)\);/);
+    expect(script).not.toMatch(/generateShortUuid\(\)/);
   });
 
   it("uses the presenter start path for dev/test autostart", () => {
