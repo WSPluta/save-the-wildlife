@@ -26,7 +26,11 @@ function readMapEventKey(mapEvent) {
 }
 
 export function createCoherenceAdapter(options) {
-  return (nsp) => new CoherenceSocketAdapter(nsp, options);
+  return class CoherenceSocketIoAdapter extends CoherenceSocketAdapter {
+    constructor(nsp) {
+      super(nsp, options);
+    }
+  };
 }
 
 export class CoherenceSocketAdapter extends ClusterAdapterWithHeartbeat {

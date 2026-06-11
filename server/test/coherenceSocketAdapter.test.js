@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { CoherenceSocketAdapter } from "../lib/coherenceSocketAdapter.js";
+import {
+  CoherenceSocketAdapter,
+  createCoherenceAdapter,
+} from "../lib/coherenceSocketAdapter.js";
 
 class FakeBusMap {
   constructor() {
@@ -64,6 +67,20 @@ function makeAdapter(options = {}) {
 }
 
 describe("Coherence Socket.IO adapter", () => {
+  it("returns a Socket.IO adapter constructor from the factory", () => {
+    const busMap = new FakeBusMap();
+    const AdapterConstructor = createCoherenceAdapter({
+      busMap,
+      serverId: "local-server",
+      ttlMs: 1000,
+      maxPayloadBytes: 4096,
+    });
+    const adapter = new AdapterConstructor(fakeNamespace());
+
+    expect(adapter).toBeInstanceOf(CoherenceSocketAdapter);
+    adapter.close();
+  });
+
   it("publishes cluster messages to the Coherence bus and self-skips the map event", async () => {
     const busMap = new FakeBusMap();
     const adapter = makeAdapter({ busMap });
