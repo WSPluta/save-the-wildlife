@@ -686,17 +686,23 @@ function endRoomMatch(room) {
 
     socket.emit("server.info", serverInfoPayload());
 
-    const initialItems = await getItemsForRoom(DEFAULT_ROOM_ID);
-    socket.emit("items.all", initialItems);
+    (async () => {
+      try {
+        const initialItems = await getItemsForRoom(DEFAULT_ROOM_ID);
+        socket.emit("items.all", initialItems);
 
-    // TODO: Implement spatial scoping for players (e.g., using rooms based on grid positions)
-    // For now, emitting to all - optimization needed for large player counts
-    socket.emit(
-      "player.info.all",
-      ENABLE_COHERENCE_BACKEND
-        ? await readCacheEntries(mapPlayersInfo)
-        : mapPlayersInfo
-    );
+        // TODO: Implement spatial scoping for players (e.g., using rooms based on grid positions)
+        // For now, emitting to all - optimization needed for large player counts
+        socket.emit(
+          "player.info.all",
+          ENABLE_COHERENCE_BACKEND
+            ? await readCacheEntries(mapPlayersInfo)
+            : mapPlayersInfo
+        );
+      } catch (e) {
+        logger.error(`initial socket sync error: ${e && e.message ? e.message : e}`);
+      }
+    })();
 
     // Default assignment: put every new socket into DEFAULT_ROOM_ID immediately
     const defRoom = DEFAULT_ROOM_ID;

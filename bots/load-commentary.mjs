@@ -380,7 +380,6 @@ function connectPlayer({ index, tier, room, config }) {
       player.connectedAt = nowIso();
       setTimeout(() => {
         if (settled || !socket.connected) return;
-        socket.emit("player.info.joining", { id, name, room });
         socket.emit("room.join", { id: room });
       }, config.joinEmitDelayMs);
     });
@@ -388,6 +387,9 @@ function connectPlayer({ index, tier, room, config }) {
     socket.once("room.joined", (body = {}) => {
       player.joined = body.id === room;
       if (!player.joined) player.errors.push(`joined_wrong_room:${body.id || "missing"}`);
+      if (player.joined && socket.connected) {
+        socket.emit("player.info.joining", { id, name, room });
+      }
       finish();
     });
 
@@ -423,11 +425,6 @@ async function connectAdmin({ room, config }) {
     });
   });
   await sleep(config.joinEmitDelayMs);
-  socket.emit("player.info.joining", {
-    id: adminId,
-    name: "Load Test Presenter",
-    room,
-  });
   socket.emit("room.join", { id: room });
   await new Promise((resolve) => {
     const timer = setTimeout(resolve, 750);
@@ -435,6 +432,11 @@ async function connectAdmin({ room, config }) {
       clearTimeout(timer);
       resolve();
     });
+  });
+  socket.emit("player.info.joining", {
+    id: adminId,
+    name: "Load Test Presenter",
+    room,
   });
   return { id: adminId, socket };
 }
