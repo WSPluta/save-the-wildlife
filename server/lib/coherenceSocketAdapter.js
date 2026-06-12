@@ -58,6 +58,10 @@ export class CoherenceSocketAdapter extends ClusterAdapterWithHeartbeat {
     this.ttlMs = options.ttlMs || DEFAULT_SOCKET_BUS_TTL_MS;
     this.maxPayloadBytes =
       options.maxPayloadBytes || DEFAULT_SOCKET_EVENT_MAX_PAYLOAD_BYTES;
+    this.useCacheTtl = options.useCacheTtl !== false;
+    this.cleanupIntervalMs = Number.isFinite(options.cleanupIntervalMs)
+      ? options.cleanupIntervalMs
+      : Math.max(1000, Math.min(this.ttlMs, 15000));
     this.logger = options.logger || console;
     this.sequence = 0;
     this.listener = new event.MapListener();
@@ -66,12 +70,16 @@ export class CoherenceSocketAdapter extends ClusterAdapterWithHeartbeat {
     this.listenPromise = this.busMap.addMapListener(this.listener).catch((error) => {
       this.reportBusError(error, "addMapListener");
     });
-    this.busCleanupTimer = setInterval(() => {
-      this.cleanupExpiredEntries().catch((error) => {
-        this.reportBusError(error, "cleanupExpiredEntries");
-      });
-    }, Math.max(1000, Math.min(this.ttlMs, 15000)));
-    this.busCleanupTimer.unref?.();
+    if (this.cleanupIntervalMs > 0) {
+      this.busCleanupTimer = setInterval(() => {
+        this.cleanupExpiredEntries().catch((error) => {
+          this.reportBusError(error, "cleanupExpiredEntries");
+        });
+      }, this.cleanupIntervalMs);
+      this.busCleanupTimer.unref?.();
+    } else {
+      this.busCleanupTimer = null;
+    }
   }
 
   reportBusError(error, context) {
@@ -112,7 +120,11 @@ export class CoherenceSocketAdapter extends ClusterAdapterWithHeartbeat {
     if (payloadSize > this.maxPayloadBytes) {
       throw new Error(`coherence_socket_event_payload_too_large:${payloadSize}`);
     }
-    await this.busMap.set(envelope.id, envelope);
+    if (this.useCacheTtl) {
+      await this.busMap.set(envelope.id, envelope, this.ttlMs);
+    } else {
+      await this.busMap.set(envelope.id, envelope);
+    }
     return envelope.id;
   }
 
@@ -152,7 +164,7 @@ export class CoherenceSocketAdapter extends ClusterAdapterWithHeartbeat {
   }
 
   close() {
-    clearInterval(this.busCleanupTimer);
+    if (this.busCleanupTimer) clearInterval(this.busCleanupTimer);
     if (this.listener && typeof this.busMap.removeMapListener === "function") {
       this.busMap.removeMapListener(this.listener).catch((error) => {
         this.reportBusError(error, "removeMapListener");

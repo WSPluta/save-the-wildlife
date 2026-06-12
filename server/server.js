@@ -494,12 +494,16 @@ export async function start(
     if (!cacheSession) {
       throw new Error("coherence_realtime_backend_requires_cache_session");
     }
-    const socketBusMap = await cacheSession.getMap(socketBusConfig.mapName);
+    const socketBusMap =
+      typeof cacheSession.getCache === "function"
+        ? await cacheSession.getCache(socketBusConfig.mapName)
+        : await cacheSession.getMap(socketBusConfig.mapName);
     io.adapter(createCoherenceAdapter({
       busMap: socketBusMap,
       serverId,
       ttlMs: socketBusConfig.ttlMs,
       maxPayloadBytes: socketBusConfig.maxPayloadBytes,
+      cleanupIntervalMs: 0,
       logger,
     }));
     logger.info(`Socket.IO Coherence bus enabled on map ${socketBusConfig.mapName}`);
