@@ -12,6 +12,7 @@ import {
   parseTiers,
   percentile,
   planTier,
+  stringifyRunReport,
 } from "../load-commentary.mjs";
 
 test("parses tier lists and falls back to the production sequence", () => {
@@ -205,4 +206,16 @@ test("builds varied per-player telemetry ending in game_over", () => {
   assert.equal(events.at(-1).type, "game_over");
   assert.equal(events.at(-1).playerName, "Load Player");
   assert.ok(events.some((event) => event.type === "trail_crossed" || event.type === "player_frozen"));
+});
+
+test("serializes reports without runtime socket handles", () => {
+  const socket = { connected: true };
+  socket.self = socket;
+  const text = stringifyRunReport({
+    runId: "unit",
+    tiers: [{ tier: 5, players: [{ id: "p1", joined: true, socket }] }],
+  });
+
+  assert.ok(!text.includes("socket"));
+  assert.match(text, /"id": "p1"/);
 });

@@ -861,8 +861,17 @@ async function captureK8sSnapshot(config) {
 async function writeReports(runReport, config) {
   const runDir = path.join(config.outputDir, config.runId);
   await mkdir(runDir, { recursive: true });
-  await writeFile(path.join(runDir, "run.json"), JSON.stringify(runReport, null, 2), "utf8");
+  await writeFile(path.join(runDir, "run.json"), stringifyRunReport(runReport), "utf8");
   await writeFile(path.join(runDir, "summary.md"), renderMarkdownSummary(runReport), "utf8");
+}
+
+function reportJsonReplacer(key, value) {
+  if (key === "socket") return undefined;
+  return value;
+}
+
+export function stringifyRunReport(runReport) {
+  return JSON.stringify(runReport, reportJsonReplacer, 2);
 }
 
 function renderMarkdownSummary(runReport) {
