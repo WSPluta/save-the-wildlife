@@ -39,10 +39,23 @@ describe("gameplay polish regressions", () => {
 
   it("turns turtles toward movement and applies lightweight buoyancy", () => {
     expect(script).toMatch(/import \{ applyTilt, getHeightAndNormal \} from "\.\/buoyancy";/);
+    expect(script).toMatch(/const TURTLE_WATERLINE_OFFSET = -0\.045;/);
+    expect(script).toMatch(/const TURTLE_TURN_RESPONSE = 2\.8;/);
+    expect(script).toMatch(/const TURTLE_VERTICAL_LERP = 0\.065;/);
     expect(script).toMatch(/const yawDelta = \(\(yaw - mesh\.rotation\.y \+ Math\.PI\) % \(Math\.PI \* 2\)\) - Math\.PI;/);
-    expect(script).toMatch(/mesh\.rotation\.y \+= yawDelta \* Math\.min\(1, dt \* 4\.5\);/);
+    expect(script).toMatch(/mesh\.rotation\.y \+= yawDelta \* Math\.min\(1, dt \* TURTLE_TURN_RESPONSE\);/);
     expect(script).toMatch(/const wave = getHeightAndNormal\(mesh\.position\.x, mesh\.position\.z, tSec\);/);
-    expect(script).toMatch(/applyTilt\(mesh, wave\.normal, 0\.65, 0\.08\);/);
-    expect(script).toMatch(/group\.userData\.floatOffset = Math\.random\(\) \* Math\.PI \* 2;/);
+    expect(script).toMatch(/const downwardBob = -Math\.abs\(Math\.sin\(tSec \* floatSpeed \+ phase\)\) \* floatAmplitude;/);
+    expect(script).toMatch(/const targetY = \(wave\.height \|\| 0\) \+ TURTLE_WATERLINE_OFFSET \+ downwardBob;/);
+    expect(script).toMatch(/applyTilt\(mesh, wave\.normal, 0\.5, 0\.045\);/);
+    expect(script).toMatch(/function resetTurtleFloatState\(object3d\)/);
+    expect(script).toMatch(/object3d\.userData\.floatOffset = Math\.random\(\) \* Math\.PI \* 2;/);
+    expect(script).toMatch(/object3d\.userData\.floatSpeed = TURTLE_BOB_SPEED_MIN \+ Math\.random\(\) \* \(TURTLE_BOB_SPEED_MAX - TURTLE_BOB_SPEED_MIN\);/);
+    expect(script).toMatch(/object3d\.userData\.floatAmplitude = TURTLE_BOB_AMPLITUDE_MIN \+ Math\.random\(\) \* \(TURTLE_BOB_AMPLITUDE_MAX - TURTLE_BOB_AMPLITUDE_MIN\);/);
+    expect(script).toMatch(/resetTurtleFloatState\(group\);/);
+    expect(script).toMatch(/resetTurtleFloatState\(mesh\);/);
+    expect(script).toMatch(/turtleSamples = Object\.values\(itemMeshes \|\| \{\}\)/);
+    expect(script).toMatch(/turtlesVisible: turtleSamples\.length,/);
+    expect(script).toMatch(/waterColor: 0x00568f,/);
   });
 });

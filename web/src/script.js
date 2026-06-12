@@ -128,6 +128,19 @@ const trashTmpPos = new THREE.Vector3();
 const trashTmpScale = new THREE.Vector3();
 const turtleTmpVec3 = new THREE.Vector3();
 const turtleTmpVec2 = new THREE.Vector2();
+const TURTLE_WATERLINE_OFFSET = -0.045;
+const TURTLE_BOB_AMPLITUDE_MIN = 0.006;
+const TURTLE_BOB_AMPLITUDE_MAX = 0.018;
+const TURTLE_BOB_SPEED_MIN = 0.45;
+const TURTLE_BOB_SPEED_MAX = 0.85;
+const TURTLE_TURN_RESPONSE = 2.8;
+const TURTLE_VERTICAL_LERP = 0.065;
+function resetTurtleFloatState(object3d) {
+  if (!object3d || !object3d.userData) return;
+  object3d.userData.floatOffset = Math.random() * Math.PI * 2;
+  object3d.userData.floatSpeed = TURTLE_BOB_SPEED_MIN + Math.random() * (TURTLE_BOB_SPEED_MAX - TURTLE_BOB_SPEED_MIN);
+  object3d.userData.floatAmplitude = TURTLE_BOB_AMPLITUDE_MIN + Math.random() * (TURTLE_BOB_AMPLITUDE_MAX - TURTLE_BOB_AMPLITUDE_MIN);
+}
 const LOD_DISTANCES = {
   high: 50,
   medium: 100,
@@ -1701,7 +1714,7 @@ async function init() {
     group.renderOrder = 2;
     group.userData.turtle = turtle;
     group.userData.boatVisual = turtle;
-    group.userData.floatOffset = Math.random() * Math.PI * 2;
+    resetTurtleFloatState(group);
     group.visible = false;
     scene.add(group);
     return group;
@@ -1720,7 +1733,7 @@ async function init() {
       group.rotation.set(0, 0, 0);
       group.scale.set(1, 1, 1);
       group.userData.ai = null;
-      group.userData.floatOffset = Math.random() * Math.PI * 2;
+      resetTurtleFloatState(group);
       if (group.userData && group.userData.turtle) {
         group.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
       }
@@ -1735,7 +1748,7 @@ async function init() {
       group.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
     }
     group.userData.ai = null;
-    group.userData.floatOffset = Math.random() * Math.PI * 2;
+    resetTurtleFloatState(group);
     group.visible = true;
     return group;
   }
@@ -1751,7 +1764,7 @@ async function init() {
     mesh.rotation.set(0, 0, 0);
     mesh.scale.set(1, 1, 1);
     mesh.userData.ai = null;
-    mesh.userData.floatOffset = Math.random() * Math.PI * 2;
+    resetTurtleFloatState(mesh);
     if (mesh.userData && mesh.userData.turtle) {
       mesh.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
     }
@@ -3056,7 +3069,7 @@ function returnToPool(mesh) {
   if (mesh.rotation) mesh.rotation.set(0, 0, 0);
   if (mesh.userData) {
     mesh.userData.ai = null;
-    mesh.userData.floatOffset = Math.random() * Math.PI * 2;
+    resetTurtleFloatState(mesh);
   }
   // Ensure turtle child stays flat for reuse
   if (mesh.itemType === "turtle" && mesh.userData && mesh.userData.turtle) {
@@ -3219,8 +3232,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     textureHeight: 512,
     waterNormals: waternormals,
     sunDirection: new THREE.Vector3(),
-    sunColor: 0xffffff,
-    waterColor: 0x001e0f,
+    sunColor: 0xeaf8ff,
+    waterColor: 0x00568f,
     distortionScale: 0.08,
     fog: scene.fog !== undefined,
   });
@@ -3498,15 +3511,18 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           if (Math.abs(moveX) + Math.abs(moveZ) > 0.0001) {
             const yaw = Math.atan2(moveX, moveZ);
             const yawDelta = ((yaw - mesh.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
-            mesh.rotation.y += yawDelta * Math.min(1, dt * 4.5);
+            mesh.rotation.y += yawDelta * Math.min(1, dt * TURTLE_TURN_RESPONSE);
           }
         }
 
         const wave = getHeightAndNormal(mesh.position.x, mesh.position.z, tSec);
         const phase = mesh.userData.floatOffset || 0;
-        const targetY = (wave.height || 0) + 0.035 + Math.sin(tSec * 1.7 + phase) * 0.035;
-        mesh.position.y = THREE.MathUtils.lerp(mesh.position.y, targetY, 0.12);
-        applyTilt(mesh, wave.normal, 0.65, 0.08);
+        const floatSpeed = mesh.userData.floatSpeed || TURTLE_BOB_SPEED_MIN;
+        const floatAmplitude = mesh.userData.floatAmplitude || TURTLE_BOB_AMPLITUDE_MIN;
+        const downwardBob = -Math.abs(Math.sin(tSec * floatSpeed + phase)) * floatAmplitude;
+        const targetY = (wave.height || 0) + TURTLE_WATERLINE_OFFSET + downwardBob;
+        mesh.position.y = THREE.MathUtils.lerp(mesh.position.y, targetY, TURTLE_VERTICAL_LERP);
+        applyTilt(mesh, wave.normal, 0.5, 0.045);
       } else {
         // Simple idle bobbing for non-turtles above the water line
         const t = tSec;
@@ -4304,6 +4320,15 @@ function hideMessages() {
 }
 
 function renderGameToText() {
+  const turtleSamples = Object.values(itemMeshes || {})
+    .filter((mesh) => mesh && String(mesh.itemType || "") === "turtle" && mesh.visible !== false)
+    .slice(0, 3)
+    .map((mesh) => ({
+      x: Number((mesh.position?.x || 0).toFixed(3)),
+      y: Number((mesh.position?.y || 0).toFixed(3)),
+      z: Number((mesh.position?.z || 0).toFixed(3)),
+      rotY: Number((mesh.rotation?.y || 0).toFixed(3)),
+    }));
   const payload = {
     mode: gameState,
     coordinateSystem: "World origin is center; +x right, +z forward, +y up",
@@ -4316,6 +4341,8 @@ function renderGameToText() {
     itemsVisible: Object.keys(items || {}).length,
     trashInstances: trashInstances && trashInstances.map ? trashInstances.map.size : 0,
     powerupInstances: powerupInstances && powerupInstances.map ? powerupInstances.map.size : 0,
+    turtlesVisible: turtleSamples.length,
+    turtleSamples,
     powerUps: {
       speed: Number(powerUpState.speedMultiplier || 1),
       shield: !!powerUpState.shield,

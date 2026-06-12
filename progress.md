@@ -217,3 +217,15 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - Mobile viewport smoke artifacts at `output/mobile-polish-smoke/` reached RUNNING with visible joystick and healthy item counts (`trashInstances: 11`, `powerupInstances: 5`).
     - `node --check` passed for `server/server.js`, `web/src/script.js`, and `web/src/commsWorker.js`.
     - Scoped `git diff --check` passed for touched tracked files; new-file no-index checks reported no whitespace diagnostics.
+- Deployed gameplay polish verification on 2026-06-11:
+  - Confirmed OCI DevOps build/deploy had landed `web@0.0.14` and `server@0.0.16` from commit `f282b27`.
+  - Ran deployed mobile smoke against `http://130.162.174.167/`; result reached `RUNNING`, joystick was visible, no browser errors were captured, and item counts stayed healthy (`itemsVisible: 65`, `trashInstances: 24`, `powerupInstances: 4`).
+  - Visual screenshot at `output/mobile-polish-smoke/mobile-running.png` shows rendered mobile gameplay with HUD, joystick, turtles, and trash.
+  - Load balancer health checks returned `200` for `/healthz` and `/paf/healthz`.
+- Water/turtle feel pass on 2026-06-12:
+  - Shifted the Three.js water material from dark green-teal to a bluer `waterColor` and cooler sun tint.
+  - Changed turtle buoyancy to stay below the waterline with a negative baseline and downward-only bob, so turtles sit slightly submerged instead of jumping out.
+  - Slowed turtle turn response and randomized each turtle's bob speed/amplitude to avoid synchronized, twitchy motion.
+  - Added concise turtle position samples to `window.render_game_to_text` for smoke validation.
+  - Verified `node --check web/src/script.js`, focused gameplay polish tests, full `npm --prefix web run test:unit`, and `npm --prefix web run build`.
+  - Ran local desktop Playwright smoke at `output/water-turtle-polish-smoke/` and mobile smoke at `output/mobile-polish-smoke/`; latest mobile result reached `RUNNING`, joystick was visible, and sampled turtle Y was `-0.06`.

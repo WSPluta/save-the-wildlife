@@ -1,0 +1,18 @@
+{
+  "bodyClass": "phase-lobby",
+  "localName": "SmokePlayer",
+  "waitingText": "",
+  "eventConsole": "",
+  "lobbyText": "Lobby\nRoom: ROOM-0001\nWaiting\nWaiting for game...\nCHANGE NAME\nInvite\nCOPY LINK\nPlayers\nRooms\nTop Scores\nLobby Chat",
+  "state": "{\"mode\":\"WAITING\",\"coordinateSystem\":\"World origin is center; +x right, +z forward, +y up\",\"player\":null,\"score\":0,\"timeRemaining\":0,\"playersVisible\":0,\"itemsVisible\":0,\"trashInstances\":0,\"powerupInstances\":0,\"powerUps\":{\"speed\":1,\"shield\":false,\"magnet\":false,\"freeze\":false}}",
+  "logs": [
+    "info:[webpack-dev-server] Server started: Hot Module Replacement enabled, Live Reloading enabled, Progress enabled, Overlay enabled.",
+    "log:[HMR] Waiting for update signal from WDS...",
+    "log:956722026041",
+    "log:StartGame:  Texture",
+    "error:THREE.WebGLRenderer: A WebGL context could not be created. Reason:  Could not create a WebGL context, VENDOR = 0xffff, DEVICE = 0xffff, GL_VENDOR = Google Inc. (Google), GL_RENDERER = ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver-5.0.0), GL_VERSION = 5.0.0, Sandboxed = no, Optimus = no, AMD switchable = no, Reset notification strategy = 0x8252, ErrorMessage = BindToCurrentSequence failed: .",
+    "error:THREE.WebGLRenderer: A WebGL context could not be created. Reason:  Could not create a WebGL context, VENDOR = 0xffff, DEVICE = 0xffff, GL_VENDOR = Google Inc. (Google), GL_RENDERER = ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver-5.0.0), GL_VERSION = 5.0.0, Sandboxed = no, Optimus = no, AMD switchable = no, Reset notification strategy = 0x8252, ErrorMessage = BindToCurrentSequence failed: .",
+    "error:THREE.WebGLRenderer: Error creating WebGL context.",
+    "pageerror:Error creating WebGL context."
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "url": "http://130.162.174.167/?name=MobilePolish&room=MOBILE-911095&autostart=1",
+  "room": "MOBILE-911095",
+  "error": "page.waitForFunction: Timeout 120000ms exceeded.",
+  "errors": [
+    {
+      "type": "pageerror",
+      "text": "globalThis.crypto?.randomUUID is not a function"
+    }
+  ]
+}

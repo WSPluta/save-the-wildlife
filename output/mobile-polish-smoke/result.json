@@ -1,0 +1,47 @@
+{
+  "url": "http://127.0.0.1:8080/?name=MobilePolish&room=MOBILE-230991&autostart=1",
+  "room": "MOBILE-230991",
+  "result": {
+    "state": {
+      "mode": "RUNNING",
+      "coordinateSystem": "World origin is center; +x right, +z forward, +y up",
+      "player": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "score": 0,
+      "timeRemaining": 178,
+      "playersVisible": 0,
+      "itemsVisible": 29,
+      "trashInstances": 11,
+      "powerupInstances": 5,
+      "turtlesVisible": 1,
+      "turtleSamples": [
+        {
+          "x": -2.392,
+          "y": -0.06,
+          "z": 11.799,
+          "rotY": 2.319
+        }
+      ],
+      "powerUps": {
+        "speed": 1,
+        "shield": false,
+        "magnet": false,
+        "freeze": false
+      }
+    },
+    "bodyClass": "phase-gameplay",
+    "joystick": {
+      "display": "block",
+      "visibility": "visible",
+      "opacity": "1",
+      "width": 134,
+      "height": 134,
+      "left": 18,
+      "top": 692
+    }
+  },
+  "errors": []
+}
