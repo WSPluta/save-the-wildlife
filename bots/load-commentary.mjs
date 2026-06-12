@@ -11,6 +11,7 @@ const DEFAULT_COMMENTARY_TIMEOUT_MS = 10_000;
 const DEFAULT_JOIN_TIMEOUT_MS = 10_000;
 const DEFAULT_EVENT_ACK_TIMEOUT_MS = 5_000;
 const DEFAULT_SCORE_TIMEOUT_MS = 10_000;
+const DEFAULT_JOIN_EMIT_DELAY_MS = 250;
 const DEFAULT_NAMESPACE = "default";
 const DEFAULT_SOCKET_PATH = "/socket.io";
 const DEFAULT_LOCAL_TARGET = "http://localhost:3000";
@@ -261,6 +262,11 @@ export function loadConfig(env = process.env, argv = process.argv.slice(2)) {
       DEFAULT_JOIN_TIMEOUT_MS,
       "stwl_load_join_timeout_ms"
     ),
+    joinEmitDelayMs: positiveInt(
+      env.STWL_LOAD_JOIN_EMIT_DELAY_MS,
+      DEFAULT_JOIN_EMIT_DELAY_MS,
+      "stwl_load_join_emit_delay_ms"
+    ),
     eventAckTimeoutMs: positiveInt(
       env.STWL_LOAD_EVENT_ACK_TIMEOUT_MS,
       DEFAULT_EVENT_ACK_TIMEOUT_MS,
@@ -372,8 +378,11 @@ function connectPlayer({ index, tier, room, config }) {
     socket.once("connect", () => {
       player.connected = true;
       player.connectedAt = nowIso();
-      socket.emit("player.info.joining", { id, name, room });
-      socket.emit("room.join", { id: room });
+      setTimeout(() => {
+        if (settled || !socket.connected) return;
+        socket.emit("player.info.joining", { id, name, room });
+        socket.emit("room.join", { id: room });
+      }, config.joinEmitDelayMs);
     });
 
     socket.once("room.joined", (body = {}) => {
@@ -413,6 +422,7 @@ async function connectAdmin({ room, config }) {
       reject(error);
     });
   });
+  await sleep(config.joinEmitDelayMs);
   socket.emit("player.info.joining", {
     id: adminId,
     name: "Load Test Presenter",

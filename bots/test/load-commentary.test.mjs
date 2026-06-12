@@ -50,6 +50,25 @@ test("plans tier ramping with stable short room names", () => {
   assert.ok(buildRoomName("THIS-RUN-ID-IS-TOO-LONG-FOR-SERVER", 1000).length <= 24);
 });
 
+test("parses join emit delay with a conservative default", () => {
+  const defaultConfig = loadConfig({
+    STWL_LOAD_RUN_ID: "202606121235",
+    STWL_LOAD_TIERS: "5",
+    STWL_LOAD_WS_URL: "https://stwl.example.test",
+    STWL_LOAD_CAPTURE_K8S: "false",
+  });
+  const customConfig = loadConfig({
+    STWL_LOAD_RUN_ID: "202606121236",
+    STWL_LOAD_TIERS: "5",
+    STWL_LOAD_WS_URL: "https://stwl.example.test",
+    STWL_LOAD_CAPTURE_K8S: "false",
+    STWL_LOAD_JOIN_EMIT_DELAY_MS: "1000",
+  });
+
+  assert.equal(defaultConfig.joinEmitDelayMs, 250);
+  assert.equal(customConfig.joinEmitDelayMs, 1000);
+});
+
 test("normalizes and detects duplicate commentary text", () => {
   const players = [
     { id: "a", commentary: { text: " Great run. " } },
