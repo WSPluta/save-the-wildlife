@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import {
   __resetGameEventsForTests,
@@ -155,5 +156,34 @@ describe("game event telemetry", () => {
     const response = await buildCommentary(sessionId, "P2");
     expect(response.commentary.length).toBeLessThanOrEqual(200);
     expect(response.summary.freezes).toBe(1);
+  });
+
+  it("reads PAF commentary config at request time", async () => {
+    const previousBaseUrl = process.env.PAF_AGENT_BASE_URL;
+    const previousTimeoutMs = process.env.PAF_AGENT_TIMEOUT_MS;
+    const server = createServer((req, res) => {
+      expect(req.url).toBe("/api/commentary");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ commentary: "Oracle path commentary." }));
+    });
+
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address();
+    process.env.PAF_AGENT_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.PAF_AGENT_TIMEOUT_MS = "1000";
+
+    try {
+      const sessionId = `S-PAF-${Date.now()}-${Math.random()}`;
+      await recordGameEvent({ type: "game_over", sessionId, roomId: "ROOM-PAF", playerId: "P-PAF", score: 44 });
+      const response = await buildCommentary(sessionId, "P-PAF");
+      expect(response.source).toBe("oracle-private-agent-factory");
+      expect(response.commentary).toBe("Oracle path commentary.");
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      if (previousBaseUrl == null) delete process.env.PAF_AGENT_BASE_URL;
+      else process.env.PAF_AGENT_BASE_URL = previousBaseUrl;
+      if (previousTimeoutMs == null) delete process.env.PAF_AGENT_TIMEOUT_MS;
+      else process.env.PAF_AGENT_TIMEOUT_MS = previousTimeoutMs;
+    }
   });
 });

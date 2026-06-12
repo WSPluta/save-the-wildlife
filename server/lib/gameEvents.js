@@ -14,9 +14,6 @@ export const GAME_EVENT_TYPES = new Set([
 const MAX_LOCAL_EVENTS = parseInt(process.env.GAME_EVENTS_LOCAL_LIMIT ?? "5000", 10);
 const POSITION_SAMPLE_MIN_MS = parseInt(process.env.GAME_EVENTS_POSITION_SAMPLE_MIN_MS ?? "1000", 10);
 const COMMENTARY_MAX_CHARS = parseInt(process.env.COMMENTARY_MAX_CHARS ?? "200", 10);
-const PAF_AGENT_BASE_URL = (process.env.PAF_AGENT_BASE_URL || "").replace(/\/+$/, "");
-const PAF_AGENT_TIMEOUT_MS = parseInt(process.env.PAF_AGENT_TIMEOUT_MS ?? "2500", 10);
-const GAME_EVENTS_SERVICE_BASE_URL = (process.env.GAME_EVENTS_SERVICE_BASE_URL || "").replace(/\/+$/, "");
 const profanityPattern = /\b(fuck|shit|bitch|asshole|bastard|dick|cunt)\b/i;
 
 const localEvents = [];
@@ -224,8 +221,9 @@ async function persistOracle(event) {
 }
 
 async function persistService(event) {
-  if (!GAME_EVENTS_SERVICE_BASE_URL) return false;
-  const response = await fetch(`${GAME_EVENTS_SERVICE_BASE_URL}/api/game-events`, {
+  const serviceBaseUrl = (process.env.GAME_EVENTS_SERVICE_BASE_URL || "").replace(/\/+$/, "");
+  if (!serviceBaseUrl) return false;
+  const response = await fetch(`${serviceBaseUrl}/api/game-events`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Accept": "application/json" },
     body: JSON.stringify(event),
@@ -320,13 +318,15 @@ export function deterministicCommentary(summary) {
 }
 
 async function requestPafCommentary(summary) {
-  if (!PAF_AGENT_BASE_URL) return null;
+  const pafAgentBaseUrl = (process.env.PAF_AGENT_BASE_URL || "").replace(/\/+$/, "");
+  const pafAgentTimeoutMs = parseInt(process.env.PAF_AGENT_TIMEOUT_MS ?? "2500", 10);
+  if (!pafAgentBaseUrl) return null;
   try {
-    const response = await fetch(`${PAF_AGENT_BASE_URL}/api/commentary`, {
+    const response = await fetch(`${pafAgentBaseUrl}/api/commentary`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify({ summary, max_chars: COMMENTARY_MAX_CHARS }),
-      signal: AbortSignal.timeout(PAF_AGENT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(pafAgentTimeoutMs),
     });
     if (!response.ok) return null;
     const body = await response.json();
