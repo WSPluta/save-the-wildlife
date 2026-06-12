@@ -321,6 +321,9 @@ function socketOptions(config) {
     path: config.socketPath,
     transports: config.transports,
     timeout: config.connectionTimeoutMs,
+    query: {
+      stwlLoadRun: config.runId,
+    },
     reconnection: false,
     forceNew: true,
   };

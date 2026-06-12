@@ -304,12 +304,28 @@ function normalizeRoom(r) {
   return cleaned || null;
 }
 
+function isLoadCanaryRoom(room) {
+  return /^LOAD-[A-Za-z0-9-]+$/.test(String(room || ""));
+}
+
+function isLoadCanarySocket(socket) {
+  const query = socket?.handshake?.query || {};
+  const auth = socket?.handshake?.auth || {};
+  return Boolean(
+    query.stwlLoadRun ||
+    query.stwl_load_run ||
+    auth.stwlLoadRun ||
+    auth.stwl_load_run
+  );
+}
+
 // Directory cache (in-memory, optionally persisted via Coherence)
 const roomDirectory = new Map();
 let roomsUpdateTimer = null;
 
 async function humansInRoomDirectory(room) {
   const want = room || GLOBAL_ROOM;
+  if (isLoadCanaryRoom(want)) return 0;
   let info = {};
   try {
     if (ENABLE_COHERENCE_BACKEND && mapPlayersInfo) {
@@ -333,8 +349,13 @@ async function humansInRoomDirectory(room) {
 async function buildRoomsPayload() {
   // Discover rooms: default + any with timers + any where players are present
   const set = new Set([DEFAULT_ROOM_ID]);
-  for (const k of roomTimers.keys()) set.add(k);
-  for (const [, r] of playerRooms.entries()) set.add(r || GLOBAL_ROOM);
+  for (const k of roomTimers.keys()) {
+    if (!isLoadCanaryRoom(k)) set.add(k);
+  }
+  for (const [, r] of playerRooms.entries()) {
+    const room = r || GLOBAL_ROOM;
+    if (!isLoadCanaryRoom(room)) set.add(room);
+  }
 
   const rooms = [];
   for (const id of set.values()) {
@@ -544,9 +565,6 @@ export async function start(
     }
     return Array.from(rooms.values());
   }
-  function isLoadCanaryRoom(room) {
-    return /^LOAD-[A-Za-z0-9-]+$/.test(String(room || ""));
-  }
   function shouldSyncVisualItems(room) {
     return !isLoadCanaryRoom(room);
   }
@@ -636,7 +654,7 @@ function broadcastRoomState(room, state, extra = {}) {
   roomTimers.set(room, rs);
   persistRoomState(room, rs);
   io.to(room).emit("game.state", state);
-  scheduleRoomsUpdate(io);
+  if (!isLoadCanaryRoom(room)) scheduleRoomsUpdate(io);
   if (extra.startsAt) io.to(room).emit("startingGame", extra);
   if (extra.startPosition) io.to(room).emit("game.on", extra);
   if (extra.remaining) io.to(room).emit("game.time", extra.remaining);
@@ -741,67 +759,74 @@ function scheduleRoomRefill(room, delayMs = 0) {
 
   io.on("connection", async (socket) => {
     let playerIdForSocket;
+    const loadCanarySocket = isLoadCanarySocket(socket);
 
     socket.emit("server.info", serverInfoPayload());
 
-    (async () => {
-      try {
-        const initialItems = await getItemsForRoom(DEFAULT_ROOM_ID);
-        socket.emit("items.all", initialItems);
-
-        // TODO: Implement spatial scoping for players (e.g., using rooms based on grid positions)
-        // For now, emitting to all - optimization needed for large player counts
-        socket.emit(
-          "player.info.all",
-          ENABLE_COHERENCE_BACKEND
-            ? await readCacheEntries(mapPlayersInfo)
-            : mapPlayersInfo
-        );
-      } catch (e) {
-        logger.error(`initial socket sync error: ${e && e.message ? e.message : e}`);
-      }
-    })();
-
-    // Default assignment: put every new socket into DEFAULT_ROOM_ID immediately
-    const defRoom = DEFAULT_ROOM_ID;
     socket.data = socket.data || {};
-    const prevRoom = socket.data.room || null;
-    if (prevRoom && prevRoom !== defRoom) { try { socket.leave(prevRoom); } catch (_) {} }
-    socket.data.room = defRoom;
-    try { socket.join(defRoom); } catch (_) {}
-    scheduleRoomsUpdate(io);
+    if (!loadCanarySocket) {
+      (async () => {
+        try {
+          const initialItems = await getItemsForRoom(DEFAULT_ROOM_ID);
+          socket.emit("items.all", initialItems);
+
+          // TODO: Implement spatial scoping for players (e.g., using rooms based on grid positions)
+          // For now, emitting to all - optimization needed for large player counts
+          socket.emit(
+            "player.info.all",
+            ENABLE_COHERENCE_BACKEND
+              ? await readCacheEntries(mapPlayersInfo)
+              : mapPlayersInfo
+          );
+        } catch (e) {
+          logger.error(`initial socket sync error: ${e && e.message ? e.message : e}`);
+        }
+      })();
+
+      // Default assignment: put every new socket into DEFAULT_ROOM_ID immediately
+      const defRoom = DEFAULT_ROOM_ID;
+      const prevRoom = socket.data.room || null;
+      if (prevRoom && prevRoom !== defRoom) { try { socket.leave(prevRoom); } catch (_) {} }
+      socket.data.room = defRoom;
+      try { socket.join(defRoom); } catch (_) {}
+      scheduleRoomsUpdate(io);
+    }
 
 
     socket.on("player.info.joining", async ({ id, name, room }) => {
       // Track the playerId bound to this socket for chat attribution/throttling
       playerIdForSocket = id;
+      const requestedRoom = normalizeRoom(room);
+      const currentRoom = (socket.data && socket.data.room) || (requestedRoom || DEFAULT_ROOM_ID);
+      const loadRoom = loadCanarySocket || isLoadCanaryRoom(currentRoom);
       if (ENABLE_COHERENCE_BACKEND) {
         await writeCache(mapPlayersInfo, id, { name });
       } else {
         mapPlayersInfo[id] = { name };
       }
       // Seed chat history for this socket's current room
-      try {
-        const r = getSocketRoom(socket);
-        const hist = roomChats.get(r) || [];
-        socket.emit("chat.history", hist);
-      } catch (_) {}
-      // Broadcast updated lobby roster
-      io.emit(
-        "lobby.players",
-        ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo
-      );
-      await emitPlayerCount();
+      if (!loadRoom) {
+        try {
+          const r = getSocketRoom(socket);
+          const hist = roomChats.get(r) || [];
+          socket.emit("chat.history", hist);
+        } catch (_) {}
+        // Broadcast updated lobby roster
+        io.emit(
+          "lobby.players",
+          ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo
+        );
+        await emitPlayerCount();
+      }
 
       // Track player -> room mapping for scoped broadcasts (use socket-assigned default if none provided)
       try {
-        const rnorm = normalizeRoom(room);
-        const cur = (socket.data && socket.data.room) || (rnorm || DEFAULT_ROOM_ID);
+        const cur = currentRoom;
         playerRooms.set(id, cur);
         // Assign admin if unset for this room and joiner is a human
         try {
           const isBot = typeof name === "string" && name.toLowerCase().startsWith("bot ");
-          if (cur && !roomAdmin.has(cur) && !isBot) {
+          if (cur && !loadRoom && !roomAdmin.has(cur) && !isBot) {
             roomAdmin.set(cur, id);
             io.to(cur).emit("room.admin", { id });
           }
@@ -818,7 +843,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           socket.data.room = rnorm;
           try { socket.join(rnorm); } catch (_) {}
           try { socket.leave(GLOBAL_ROOM); } catch (_) {}
-          scheduleRoomsUpdate(io);
+          if (!isLoadCanaryRoom(rnorm)) scheduleRoomsUpdate(io);
 
           let rs = roomTimers.get(rnorm);
           if (!rs && ENABLE_COHERENCE_BACKEND) {
@@ -883,7 +908,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           const itemsDefault = await getItemsForRoom(defRoom);
           socket.emit("items.all", itemsDefault);
         } catch (_) {}
-        scheduleRoomsUpdate(io);
+        if (!isLoadCanaryRoom(defRoom)) scheduleRoomsUpdate(io);
       }
 
       // Coalesce join-triggered refills so large rooms do not run a full top-up per player.
@@ -932,7 +957,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           const itemsForRoom = await getItemsForRoom(wanted);
           socket.emit("items.all", itemsForRoom);
         } catch (_) {}
-        scheduleRoomsUpdate(io);
+        if (!isLoadCanaryRoom(wanted)) scheduleRoomsUpdate(io);
         // Send chat history for this room to the joiner
         try {
           const hist = roomChats.get(wanted) || [];
@@ -1308,7 +1333,9 @@ function scheduleRoomRefill(room, delayMs = 0) {
     });
 
     socket.on("disconnect", async (reason) => {
-      io.emit("player.info.left", playerIdForSocket);
+      const prevRoom = playerRooms.get(playerIdForSocket) || null;
+      const loadRoom = loadCanarySocket || isLoadCanaryRoom(prevRoom);
+      if (!loadRoom) io.emit("player.info.left", playerIdForSocket);
       if (ENABLE_COHERENCE_BACKEND) {
         await deleteCache(mapPlayersTraces, playerIdForSocket);
         await deleteCache(mapPlayersInfo, playerIdForSocket);
@@ -1322,11 +1349,10 @@ function scheduleRoomRefill(room, delayMs = 0) {
       // Remove authoritative state/input if present
       playersState.delete(playerIdForSocket);
       playersInput.delete(playerIdForSocket);
-      const prevRoom = playerRooms.get(playerIdForSocket) || null;
       playerRooms.delete(playerIdForSocket);
       // Reassign admin if necessary
       try {
-        if (prevRoom && roomAdmin.get(prevRoom) === playerIdForSocket) {
+        if (!loadRoom && prevRoom && roomAdmin.get(prevRoom) === playerIdForSocket) {
           const next = await pickNextAdmin(prevRoom);
           if (next) {
             roomAdmin.set(prevRoom, next);
@@ -1337,15 +1363,17 @@ function scheduleRoomRefill(room, delayMs = 0) {
         }
       } catch (_) {}
       // Update rooms directory after membership change
-      scheduleRoomsUpdate(io);
+      if (!loadRoom) scheduleRoomsUpdate(io);
 
       // Broadcast updated lobby roster after removal
-      io.emit(
-        "lobby.players",
-        ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo
-      );
+      if (!loadRoom) {
+        io.emit(
+          "lobby.players",
+          ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo
+        );
+      }
       logger.info(`${playerIdForSocket} disconnected because ${reason}`);
-      await emitPlayerCount();
+      if (!loadRoom) await emitPlayerCount();
       playerIdForSocket = undefined;
     });
 
