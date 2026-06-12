@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   CoherenceSocketAdapter,
   createCoherenceAdapter,
@@ -174,6 +174,33 @@ describe("Coherence Socket.IO adapter", () => {
     await adapter.cleanupExpiredEntries();
 
     expect(busMap.store.has("old")).toBe(false);
+    adapter.close();
+  });
+
+  it("logs Coherence bus cleanup failures without emitting a fatal error event", async () => {
+    const busMap = new FakeBusMap();
+    busMap.delete = vi.fn(async () => {
+      const error = new Error("coherence deadline");
+      error.code = 4;
+      throw error;
+    });
+    const logger = { warn: vi.fn() };
+    const adapter = makeAdapter({ busMap, logger });
+    const busErrors = [];
+    adapter.on("bus.error", (payload) => busErrors.push(payload));
+    busMap.store.set("old", {
+      id: "old",
+      expiresAt: Date.now() - 10,
+      namespace: "/",
+      message: { uid: "remote" },
+    });
+
+    await adapter.cleanupExpiredEntries();
+
+    expect(busMap.delete).toHaveBeenCalledWith("old");
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn.mock.calls[0][0].context).toBe("cleanupExpiredEntry");
+    expect(busErrors).toHaveLength(1);
     adapter.close();
   });
 

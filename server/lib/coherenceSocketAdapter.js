@@ -25,6 +25,17 @@ function readMapEventKey(mapEvent) {
   return mapEvent.key ?? mapEvent.id ?? null;
 }
 
+function serializeError(error) {
+  if (!error) return { message: "unknown" };
+  return {
+    name: error.name,
+    message: error.message || String(error),
+    code: error.code,
+    details: error.details,
+    stack: error.stack,
+  };
+}
+
 export function createCoherenceAdapter(options) {
   return class CoherenceSocketIoAdapter extends CoherenceSocketAdapter {
     constructor(nsp) {
@@ -47,17 +58,39 @@ export class CoherenceSocketAdapter extends ClusterAdapterWithHeartbeat {
     this.ttlMs = options.ttlMs || DEFAULT_SOCKET_BUS_TTL_MS;
     this.maxPayloadBytes =
       options.maxPayloadBytes || DEFAULT_SOCKET_EVENT_MAX_PAYLOAD_BYTES;
+    this.logger = options.logger || console;
     this.sequence = 0;
     this.listener = new event.MapListener();
     this.listener.on(EVENT_INSERT, (mapEvent) => this.handleMapEvent(mapEvent));
     this.listener.on(EVENT_UPDATE, (mapEvent) => this.handleMapEvent(mapEvent));
     this.listenPromise = this.busMap.addMapListener(this.listener).catch((error) => {
-      this.emit("error", error);
+      this.reportBusError(error, "addMapListener");
     });
     this.busCleanupTimer = setInterval(() => {
-      this.cleanupExpiredEntries().catch((error) => this.emit("error", error));
+      this.cleanupExpiredEntries().catch((error) => {
+        this.reportBusError(error, "cleanupExpiredEntries");
+      });
     }, Math.max(1000, Math.min(this.ttlMs, 15000)));
     this.busCleanupTimer.unref?.();
+  }
+
+  reportBusError(error, context) {
+    const payload = {
+      context,
+      err: serializeError(error),
+    };
+    if (this.logger && typeof this.logger.warn === "function") {
+      this.logger.warn(payload, "Coherence Socket.IO adapter bus operation failed");
+    }
+    this.emit("bus.error", payload);
+  }
+
+  async deleteBusEntry(key, context) {
+    try {
+      await this.busMap.delete(key);
+    } catch (error) {
+      this.reportBusError(error, context);
+    }
   }
 
   buildEnvelope(message) {
@@ -98,7 +131,7 @@ export class CoherenceSocketAdapter extends ClusterAdapterWithHeartbeat {
     if (envelope.expiresAt && envelope.expiresAt < Date.now()) {
       const key = readMapEventKey(mapEvent) || envelope.id;
       if (key) {
-        this.busMap.delete(key).catch((error) => this.emit("error", error));
+        this.deleteBusEntry(key, "deleteExpiredMapEvent");
       }
       return;
     }
@@ -113,7 +146,7 @@ export class CoherenceSocketAdapter extends ClusterAdapterWithHeartbeat {
       const key = entry.key ?? entry[0];
       const value = entry.value ?? entry[1];
       if (value?.expiresAt && value.expiresAt < cutoff) {
-        await this.busMap.delete(key);
+        await this.deleteBusEntry(key, "cleanupExpiredEntry");
       }
     }
   }
@@ -121,7 +154,9 @@ export class CoherenceSocketAdapter extends ClusterAdapterWithHeartbeat {
   close() {
     clearInterval(this.busCleanupTimer);
     if (this.listener && typeof this.busMap.removeMapListener === "function") {
-      this.busMap.removeMapListener(this.listener).catch((error) => this.emit("error", error));
+      this.busMap.removeMapListener(this.listener).catch((error) => {
+        this.reportBusError(error, "removeMapListener");
+      });
     }
     super.close();
   }

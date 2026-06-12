@@ -445,6 +445,7 @@ export async function start(
       serverId,
       ttlMs: socketBusConfig.ttlMs,
       maxPayloadBytes: socketBusConfig.maxPayloadBytes,
+      logger,
     }));
     logger.info(`Socket.IO Coherence bus enabled on map ${socketBusConfig.mapName}`);
   }
