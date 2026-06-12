@@ -255,6 +255,7 @@ let gameStartingAt = null;
 let gameTimer = null;
 const roomTimers = new Map(); // roomId -> { state, startTime, startingAt, timerId }
 const GLOBAL_ROOM = "__global__";
+const pendingRoomRefills = new Map();
 
 // Default room and rooms directory (authoritative on server)
 const DEFAULT_ROOM_ID = (process.env.ROOM_DEFAULT_ID || "ROOM-0001").toUpperCase();
@@ -664,6 +665,20 @@ function endRoomMatch(room) {
   return { ok: true, scope: "room", room, state: "ENDED" };
 }
 
+function scheduleRoomRefill(room, delayMs = 0) {
+  const key = room || GLOBAL_ROOM;
+  if (pendingRoomRefills.has(key)) return;
+  const timer = setTimeout(async () => {
+    pendingRoomRefills.delete(key);
+    try {
+      await refillOnce(key);
+    } catch (e) {
+      logger.error(`scheduled refill error: ${e && e.message ? e.message : e}`);
+    }
+  }, Math.max(0, delayMs));
+  pendingRoomRefills.set(key, timer);
+}
+
   async function emitPlayerCount() {
     try {
       const info = await getPlayersInfoObject();
@@ -828,48 +843,8 @@ function endRoomMatch(room) {
         scheduleRoomsUpdate(io);
       }
 
-      // Immediately top-up items in this player's room so they see objects without waiting for the next tick.
-      (async () => {
-        try {
-          const roomX = (socket.data && socket.data.room) || GLOBAL_ROOM;
-          const humans = await humansInRoom(roomX);
-          const targets = computeEffectiveTargets(humans);
-          const counts = await countItemsForRoom(roomX);
-
-          const addTrash = Math.max(0, targets.trash - counts.trash);
-          const addMarine = Math.max(0, targets.marine - counts.marine);
-
-          for (let i = 0; i < addTrash; i++) {
-            const obj = itemPool.getObject();
-            if (obj) {
-              reinitItem(obj, 'trash');
-              obj.room = roomX;
-              io.to(roomX).emit('item.new', { id: obj.id, data: obj });
-              if (ENABLE_COHERENCE_BACKEND) {
-                await writeCache(mapTrash, obj.id, obj);
-              } else {
-                mapTrash[obj.id] = obj;
-              }
-            }
-          }
-
-          for (let i = 0; i < addMarine; i++) {
-            const obj = itemPool.getObject();
-            if (obj) {
-              reinitItem(obj, 'turtle');
-              obj.room = roomX;
-              io.to(roomX).emit('item.new', { id: obj.id, data: obj });
-              if (ENABLE_COHERENCE_BACKEND) {
-                await writeCache(mapMarineLife, obj.id, obj);
-              } else {
-                mapMarineLife[obj.id] = obj;
-              }
-            }
-          }
-        } catch (e) {
-          logger.error(`immediate top-up error: ${e && e.message ? e.message : e}`);
-        }
-      })();
+      // Coalesce join-triggered refills so large rooms do not run a full top-up per player.
+      scheduleRoomRefill((socket.data && socket.data.room) || GLOBAL_ROOM);
     });
 
     // Client requests to join a room explicitly
