@@ -56,6 +56,28 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/resetTurtleFloatState\(mesh\);/);
     expect(script).toMatch(/turtleSamples = Object\.values\(itemMeshes \|\| \{\}\)/);
     expect(script).toMatch(/turtlesVisible: turtleSamples\.length,/);
-    expect(script).toMatch(/waterColor: 0x00568f,/);
+    expect(script).toMatch(/waterColor: ARCADE_ENVIRONMENT\.waterColor,/);
+  });
+
+  it("pins the arcade-bright water and lightweight environment prop pass", () => {
+    expect(script).toMatch(/const ARCADE_ENVIRONMENT = Object\.freeze\(\{/);
+    expect(script).toMatch(/toneMappingExposure: 0\.6,/);
+    expect(script).toMatch(/fogColor: 0x7fd4ef,/);
+    expect(script).toMatch(/waterColor: 0x006fb8,/);
+    expect(script).toMatch(/waterNormalRepeat: 5,/);
+    expect(script).toMatch(/waterTimeStep: 1\.0 \/ 1800\.0,/);
+    expect(script).toMatch(/skyMieCoefficient: 0\.0012,/);
+    expect(script).toMatch(/sunElevation: 10,/);
+    expect(script).toMatch(/sunAzimuth: 132,/);
+    expect(script).toMatch(/renderer\.toneMappingExposure = ARCADE_ENVIRONMENT\.toneMappingExposure;/);
+    expect(script).toMatch(/scene\.fog = new THREE\.FogExp2\(ARCADE_ENVIRONMENT\.fogColor, ARCADE_ENVIRONMENT\.fogDensity\);/);
+    expect(script).toMatch(/waternormals\.repeat\.set\(\s*ARCADE_ENVIRONMENT\.waterNormalRepeat,\s*ARCADE_ENVIRONMENT\.waterNormalRepeat\s*\);/);
+    expect(script).toMatch(/function createArcadeEnvironmentProps\(isMobileViewport\)/);
+    expect(script).toMatch(/const ENVIRONMENT_PROP_LIMITS = Object\.freeze\(\{/);
+    expect(script).toMatch(/desktop: 14,/);
+    expect(script).toMatch(/mobile: 8,/);
+    expect(script).toMatch(/child\.userData\.environmentProp = true;/);
+    expect(script).toMatch(/child\.userData\.noCollision = true;/);
+    expect(script).toMatch(/environmentPropsVisible: environmentPropStats\.total \|\| 0,/);
   });
 });

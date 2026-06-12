@@ -229,3 +229,12 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Added concise turtle position samples to `window.render_game_to_text` for smoke validation.
   - Verified `node --check web/src/script.js`, focused gameplay polish tests, full `npm --prefix web run test:unit`, and `npm --prefix web run build`.
   - Ran local desktop Playwright smoke at `output/water-turtle-polish-smoke/` and mobile smoke at `output/mobile-polish-smoke/`; latest mobile result reached `RUNNING`, joystick was visible, and sampled turtle Y was `-0.06`.
+- Arcade-bright environment pass started on 2026-06-12:
+  - Added named water/sky/tone-mapping constants for a brighter blue ocean with reduced horizon glare.
+  - Added a sparse primitive-only environment prop layer (buoys, rocks, markers) outside gameplay lanes and flagged it as non-collision/non-scoring.
+  - Added `environmentPropsVisible` to `window.render_game_to_text` so visual smoke runs can confirm the environment layer loaded.
+  - Focused validation passed: `node --check web/src/script.js` and `npm --prefix web run test:unit -- --run src/__tests__/gameplayPolish.test.js`.
+  - Full validation passed: `npm --prefix web run test:unit` (7 files, 24 tests) and `npm --prefix web run build` with only existing asset-size warnings.
+  - Required `develop-web-game` Playwright loop passed against local foreground server/web sessions; latest state showed `environmentPropsVisible: 14`, healthy item counts, and submerged turtle samples.
+  - Desktop smoke artifacts at `output/arcade-environment-smoke/` reached `RUNNING` with no browser errors, 14 props, healthy trash/power-up counts, and a full-canvas screenshot.
+  - Mobile smoke artifacts at `output/mobile-polish-smoke/` reached `RUNNING` with no browser errors, visible joystick, 8 mobile props, healthy item counts, and turtle Y around `-0.072`.

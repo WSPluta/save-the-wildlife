@@ -112,6 +112,8 @@ let boatPool = null;
 let uiNameTagPool = null;
 let trashInstances = null;
 let powerupInstances = null;
+let environmentPropGroup = null;
+let environmentPropStats = { total: 0, buoys: 0, rocks: 0, markers: 0 };
 let latestPoolMetrics = null;
 let clearTrashInstances = () => {};
 let clearPowerupInstances = () => {};
@@ -135,11 +137,148 @@ const TURTLE_BOB_SPEED_MIN = 0.45;
 const TURTLE_BOB_SPEED_MAX = 0.85;
 const TURTLE_TURN_RESPONSE = 2.8;
 const TURTLE_VERTICAL_LERP = 0.065;
+const ARCADE_ENVIRONMENT = Object.freeze({
+  toneMappingExposure: 0.6,
+  fogColor: 0x7fd4ef,
+  fogDensity: 0.0025,
+  waterColor: 0x006fb8,
+  waterSunColor: 0xcdefff,
+  waterDistortionScale: 0.12,
+  waterNormalRepeat: 5,
+  waterTimeStep: 1.0 / 1800.0,
+  skyTurbidity: 6.5,
+  skyRayleigh: 1.35,
+  skyMieCoefficient: 0.0012,
+  skyMieDirectionalG: 0.68,
+  sunElevation: 10,
+  sunAzimuth: 132,
+  ambientColor: 0x5c7180,
+  ambientIntensity: 2.2,
+  hemisphereSkyColor: 0xc8f2ff,
+  hemisphereGroundColor: 0x1a4655,
+  hemisphereIntensity: 1.35,
+  directionalColor: 0xfff3dc,
+  directionalIntensity: 1.1,
+  fillColor: 0x86d7ff,
+  fillIntensity: 0.55,
+});
+const ENVIRONMENT_PROP_LIMITS = Object.freeze({
+  desktop: 14,
+  mobile: 8,
+});
 function resetTurtleFloatState(object3d) {
   if (!object3d || !object3d.userData) return;
   object3d.userData.floatOffset = Math.random() * Math.PI * 2;
   object3d.userData.floatSpeed = TURTLE_BOB_SPEED_MIN + Math.random() * (TURTLE_BOB_SPEED_MAX - TURTLE_BOB_SPEED_MIN);
   object3d.userData.floatAmplitude = TURTLE_BOB_AMPLITUDE_MIN + Math.random() * (TURTLE_BOB_AMPLITUDE_MAX - TURTLE_BOB_AMPLITUDE_MIN);
+}
+
+function makeStaticMaterial(color, options = {}) {
+  return new THREE.MeshLambertMaterial({
+    color,
+    flatShading: true,
+    ...options,
+  });
+}
+
+function disableGameplayInteraction(object3d) {
+  object3d.traverse((child) => {
+    child.frustumCulled = true;
+    child.castShadow = false;
+    child.receiveShadow = false;
+    child.userData.environmentProp = true;
+    child.userData.noCollision = true;
+  });
+}
+
+function createBuoyProp({ x, z, scale = 1, accent = 0xff5d4d }) {
+  const group = new THREE.Group();
+  group.position.set(x, 0.08, z);
+  group.scale.setScalar(scale);
+
+  const bodyMat = makeStaticMaterial(accent, { emissive: 0x361010, emissiveIntensity: 0.12 });
+  const bandMat = makeStaticMaterial(0xf7fbff, { emissive: 0x0c1a1f, emissiveIntensity: 0.05 });
+  const capMat = makeStaticMaterial(0x18324b);
+
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.62, 12), bodyMat);
+  body.position.y = 0.22;
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.235, 0.285, 0.12, 12), bandMat);
+  band.position.y = 0.24;
+  const top = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), capMat);
+  top.position.y = 0.62;
+  const anchor = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.5, 6), capMat);
+  anchor.position.y = 0.74;
+
+  group.add(body, band, top, anchor);
+  group.rotation.y = Math.random() * Math.PI * 2;
+  disableGameplayInteraction(group);
+  return group;
+}
+
+function createRockProp({ x, z, scale = 1, color = 0x416b70 }) {
+  const group = new THREE.Group();
+  group.position.set(x, -0.14, z);
+  group.scale.set(scale * 1.6, scale * 0.42, scale);
+  const mat = makeStaticMaterial(color, { emissive: 0x071416, emissiveIntensity: 0.12 });
+  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.85, 0), mat);
+  rock.rotation.set(0.18, Math.random() * Math.PI, -0.08);
+  group.add(rock);
+  disableGameplayInteraction(group);
+  return group;
+}
+
+function createMarkerProp({ x, z, scale = 1, color = 0xffc857 }) {
+  const group = new THREE.Group();
+  group.position.set(x, 0.02, z);
+  group.scale.setScalar(scale);
+  const mastMat = makeStaticMaterial(0x21495d);
+  const flagMat = makeStaticMaterial(color, { emissive: 0x332000, emissiveIntensity: 0.18 });
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.1, 6), mastMat);
+  mast.position.y = 0.5;
+  const flag = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.26, 0.03), flagMat);
+  flag.position.set(0.24, 0.82, 0);
+  const float = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.22, 10), mastMat);
+  float.position.y = 0.05;
+  group.add(float, mast, flag);
+  group.rotation.y = Math.random() * 0.45 - 0.225;
+  disableGameplayInteraction(group);
+  return group;
+}
+
+function createArcadeEnvironmentProps(isMobileViewport) {
+  const group = new THREE.Group();
+  group.name = "ArcadeEnvironmentProps";
+  group.renderOrder = 1;
+  const stats = { total: 0, buoys: 0, rocks: 0, markers: 0 };
+  const layout = [
+    ["buoys", { x: -24, z: 23, scale: 0.9, accent: 0xff5d4d, mobile: true }],
+    ["buoys", { x: 28, z: 28, scale: 0.85, accent: 0xffd047, mobile: true }],
+    ["rocks", { x: -42, z: 34, scale: 1.1, color: 0x3f686d, mobile: true }],
+    ["rocks", { x: 45, z: 42, scale: 0.95, color: 0x4c7478, mobile: true }],
+    ["markers", { x: -15, z: 48, scale: 0.9, color: 0xffc857, mobile: true }],
+    ["buoys", { x: 14, z: 58, scale: 0.72, accent: 0x53d2dc, mobile: true }],
+    ["markers", { x: 38, z: 78, scale: 0.8, color: 0xff7f50, mobile: true }],
+    ["rocks", { x: -30, z: 80, scale: 0.82, color: 0x355d64, mobile: true }],
+    ["buoys", { x: -38, z: 66, scale: 0.78, accent: 0xff5d4d }],
+    ["markers", { x: 58, z: 110, scale: 0.72, color: 0x8ee3f5 }],
+    ["markers", { x: -58, z: 118, scale: 0.72, color: 0xffc857 }],
+    ["rocks", { x: 28, z: 104, scale: 0.74, color: 0x2f535b }],
+    ["buoys", { x: 0, z: 92, scale: 0.62, accent: 0xffd047 }],
+    ["markers", { x: 0, z: 138, scale: 0.68, color: 0xff7f50 }],
+  ];
+  const limit = isMobileViewport ? ENVIRONMENT_PROP_LIMITS.mobile : ENVIRONMENT_PROP_LIMITS.desktop;
+  for (const [kind, cfg] of layout) {
+    if (stats.total >= limit) break;
+    if (isMobileViewport && !cfg.mobile) continue;
+    const prop =
+      kind === "buoys" ? createBuoyProp(cfg) :
+      kind === "rocks" ? createRockProp(cfg) :
+      createMarkerProp(cfg);
+    group.add(prop);
+    stats[kind] += 1;
+    stats.total += 1;
+  }
+  return { group, stats };
 }
 const LOD_DISTANCES = {
   high: 50,
@@ -1503,6 +1642,7 @@ async function init() {
   gameInitialized = true;
   playerName = localStorage.getItem("yourName") || "Default";
   scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(ARCADE_ENVIRONMENT.fogColor, ARCADE_ENVIRONMENT.fogDensity);
 
   // Preload models/textures (asset preloading + caching)
   const assets = await preloadAssets();
@@ -3091,7 +3231,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.68;
+  renderer.toneMappingExposure = ARCADE_ENVIRONMENT.toneMappingExposure;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
@@ -3155,12 +3295,25 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   // No local name tag (only show names above other boats)
 
   // lights
-  const ambientLight = new THREE.AmbientLight(0x3a4650, 5.2);
+  const ambientLight = new THREE.AmbientLight(ARCADE_ENVIRONMENT.ambientColor, ARCADE_ENVIRONMENT.ambientIntensity);
   player.add(ambientLight);
-  const hemi = new THREE.HemisphereLight(0xbcdbe9, 0x1f2f3d, 1.05);
+  const hemi = new THREE.HemisphereLight(
+    ARCADE_ENVIRONMENT.hemisphereSkyColor,
+    ARCADE_ENVIRONMENT.hemisphereGroundColor,
+    ARCADE_ENVIRONMENT.hemisphereIntensity
+  );
   scene.add(hemi);
-  dirLight = new THREE.DirectionalLight(0xfff6ea, 0.85);
+  dirLight = new THREE.DirectionalLight(
+    ARCADE_ENVIRONMENT.directionalColor,
+    ARCADE_ENVIRONMENT.directionalIntensity
+  );
   scene.add(dirLight);
+  const fillLight = new THREE.DirectionalLight(
+    ARCADE_ENVIRONMENT.fillColor,
+    ARCADE_ENVIRONMENT.fillIntensity
+  );
+  fillLight.position.set(-120, 85, -90);
+  scene.add(fillLight);
 
   // audio (autoplay-safe across browsers)
   const listener = new THREE.AudioListener();
@@ -3202,6 +3355,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     // Update environment once on resize instead of every frame
+    skyNeedsEnvironmentRefresh = true;
     try { updateSun(); } catch (_) {}
   });
 
@@ -3227,14 +3381,23 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
   // water (Three.js Water)
   const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
+  if (waternormals && waternormals.isTexture) {
+    waternormals.wrapS = THREE.RepeatWrapping;
+    waternormals.wrapT = THREE.RepeatWrapping;
+    waternormals.repeat.set(
+      ARCADE_ENVIRONMENT.waterNormalRepeat,
+      ARCADE_ENVIRONMENT.waterNormalRepeat
+    );
+    waternormals.needsUpdate = true;
+  }
   water = new Water(waterGeometry, {
     textureWidth: 512,
     textureHeight: 512,
     waterNormals: waternormals,
     sunDirection: new THREE.Vector3(),
-    sunColor: 0xeaf8ff,
-    waterColor: 0x00568f,
-    distortionScale: 0.08,
+    sunColor: ARCADE_ENVIRONMENT.waterSunColor,
+    waterColor: ARCADE_ENVIRONMENT.waterColor,
+    distortionScale: ARCADE_ENVIRONMENT.waterDistortionScale,
     fog: scene.fog !== undefined,
   });
   water.rotation.x = -Math.PI / 2;
@@ -3246,17 +3409,19 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   scene.add(sky);
 
   const skyUniforms = sky.material.uniforms;
-  skyUniforms["turbidity"].value = 10;
-  skyUniforms["rayleigh"].value = 2;
-  skyUniforms["mieCoefficient"].value = 0.005;
-  skyUniforms["mieDirectionalG"].value = 0.8;
+  skyUniforms["turbidity"].value = ARCADE_ENVIRONMENT.skyTurbidity;
+  skyUniforms["rayleigh"].value = ARCADE_ENVIRONMENT.skyRayleigh;
+  skyUniforms["mieCoefficient"].value = ARCADE_ENVIRONMENT.skyMieCoefficient;
+  skyUniforms["mieDirectionalG"].value = ARCADE_ENVIRONMENT.skyMieDirectionalG;
 
   const parameters = {
-    elevation: 5,
-    azimuth: 162,
+    elevation: ARCADE_ENVIRONMENT.sunElevation,
+    azimuth: ARCADE_ENVIRONMENT.sunAzimuth,
   };
 
   const pmremGenerator = new THREE.PMREMGenerator(renderer);
+  let skyEnvironmentTexture = null;
+  let skyNeedsEnvironmentRefresh = true;
   sun = new THREE.Vector3(0, 0, 0);
 
   function updateSun() {
@@ -3272,8 +3437,20 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       dirLight.target.position.set(0, 0, 0);
       dirLight.target.updateMatrixWorld();
     }
-    scene.environment = pmremGenerator.fromScene(sky).texture;
+    if (skyNeedsEnvironmentRefresh || !skyEnvironmentTexture) {
+      if (skyEnvironmentTexture && typeof skyEnvironmentTexture.dispose === "function") {
+        skyEnvironmentTexture.dispose();
+      }
+      skyEnvironmentTexture = pmremGenerator.fromScene(sky).texture;
+      scene.environment = skyEnvironmentTexture;
+      skyNeedsEnvironmentRefresh = false;
+    }
   }
+
+  const envProps = createArcadeEnvironmentProps(window.innerWidth < 800);
+  environmentPropGroup = envProps.group;
+  environmentPropStats = envProps.stats;
+  scene.add(environmentPropGroup);
 
   let lastTrace = null;
   sendYourPosition = throttle(traceRateInMillis, () => {
@@ -4166,7 +4343,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
   function render() {
     // Update water time uniform (Three.js Water shader)
-    water.material.uniforms["time"].value += 1.0 / 2330.0;
+    water.material.uniforms["time"].value += ARCADE_ENVIRONMENT.waterTimeStep;
 
     // Frustum culling
     camera.updateMatrixWorld();
@@ -4341,6 +4518,7 @@ function renderGameToText() {
     itemsVisible: Object.keys(items || {}).length,
     trashInstances: trashInstances && trashInstances.map ? trashInstances.map.size : 0,
     powerupInstances: powerupInstances && powerupInstances.map ? powerupInstances.map.size : 0,
+    environmentPropsVisible: environmentPropStats.total || 0,
     turtlesVisible: turtleSamples.length,
     turtleSamples,
     powerUps: {
