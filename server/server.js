@@ -329,7 +329,7 @@ async function humansInRoomDirectory(room) {
   let info = {};
   try {
     if (ENABLE_COHERENCE_BACKEND && mapPlayersInfo) {
-      info = await readCacheEntries(mapPlayersInfo);
+      info = await getPlayersInfoObject();
     } else {
       info = mapPlayersInfo || {};
     }
@@ -400,6 +400,8 @@ let mapMarineLife;
 let mapPowerUps;
 let mapRooms;
 let mapPlayerSockets;
+const localPlayersInfo = {};
+const localPlayerTraces = {};
 
 const adminCmdSeen = new Map();
 const ADMIN_CMD_TTL_MS = 2 * 60 * 1000;
@@ -539,7 +541,7 @@ export async function start(
   }
 
   async function getPlayersInfoObject() {
-    return ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo;
+    return ENABLE_COHERENCE_BACKEND ? localPlayersInfo : mapPlayersInfo;
   }
 
   // Persist per-room timer state (document-like record)
@@ -778,9 +780,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           // For now, emitting to all - optimization needed for large player counts
           socket.emit(
             "player.info.all",
-            ENABLE_COHERENCE_BACKEND
-              ? await readCacheEntries(mapPlayersInfo)
-              : mapPlayersInfo
+            await getPlayersInfoObject()
           );
         } catch (e) {
           logger.error(`initial socket sync error: ${e && e.message ? e.message : e}`);
@@ -818,7 +818,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         // Broadcast updated lobby roster
         io.emit(
           "lobby.players",
-          ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo
+          await getPlayersInfoObject()
         );
         await emitPlayerCount();
       }
@@ -1032,7 +1032,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       if (!id) return;
       const body = { ...traceData, updated: new Date() };
       if (ENABLE_COHERENCE_BACKEND) {
-        await writeCache(mapPlayersTraces, id, body);
+        localPlayerTraces[id] = body;
       } else {
         mapPlayersTraces[id] = body;
       }
@@ -1373,7 +1373,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       if (!loadRoom) {
         io.emit(
           "lobby.players",
-          ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo
+          await getPlayersInfoObject()
         );
       }
       logger.info(`${playerIdForSocket} disconnected because ${reason}`);
@@ -1648,7 +1648,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         if (Number.isFinite(baseZ)) worldScaleCfg.baseZ = parseInt(baseZ);
         if (Number.isFinite(basePlayers)) worldScaleCfg.basePlayers = parseInt(basePlayers);
         runAsyncTask("admin.worldScaling.set", async () => {
-          const info = ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo;
+          const info = await getPlayersInfoObject();
           const ids = Object.keys(info || {});
           let bots = 0;
           ids.forEach((id) => {
@@ -1789,7 +1789,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
   // broadcast all players traces (scoped per room)
   setAsyncInterval("player.trace.broadcast", async () => {
     const tracesAll = ENABLE_COHERENCE_BACKEND
-      ? await readCacheEntries(mapPlayersTraces)
+      ? localPlayerTraces
       : mapPlayersTraces;
     const byRoom = new Map();
     for (const [id, trace] of Object.entries(tracesAll || {})) {
@@ -1806,7 +1806,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
   async function refillOnce(roomParam) {
     if (roomParam && !shouldSyncVisualItems(roomParam)) return;
     // Keep world scaling based on global humans (shared water surface), but items are per-room.
-    const info = ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo;
+    const info = await getPlayersInfoObject();
     const ids = Object.keys(info || {});
     let bots = 0;
     ids.forEach((id) => { const n = (info[id] && info[id].name) ? String(info[id].name) : ""; if (n.toLowerCase().startsWith("bot ")) bots++; });
@@ -1910,7 +1910,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
     // TODO: Optimize stale detection; investigate Coherence TTL for automatic expiration
     // Currently adding elapsed to check; consider if cleanup is necessary or can be handled by disconnect events
     const traces = ENABLE_COHERENCE_BACKEND
-      ? await readCacheEntries(mapPlayersTraces)
+      ? localPlayerTraces
       : mapPlayersTraces;
     const elapsedTimesById = Object.entries(traces).map((player) => ({
       id: player[0],
@@ -1959,7 +1959,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
   setAsyncInterval("server.metrics.broadcast", async () => {
     try {
       const info = ENABLE_COHERENCE_BACKEND
-        ? await readCacheEntries(mapPlayersInfo)
+        ? localPlayersInfo
         : mapPlayersInfo;
       const counts = {
         trash: await mapEntryCount(mapTrash),
@@ -1989,6 +1989,8 @@ function scheduleRoomRefill(room, delayMs = 0) {
 
 async function writeCache(cache, id, value) {
   try {
+    if (cache === mapPlayersInfo) localPlayersInfo[id] = value;
+    if (cache === mapPlayersTraces) localPlayerTraces[id] = value;
     await cache.set(id, value);
   } catch (error) {
     logger.error(
@@ -2008,6 +2010,8 @@ async function readCache(cache, id) {
 async function deleteCache(cache, id) {
   if (!id) return;
   try {
+    if (cache === mapPlayersInfo) delete localPlayersInfo[id];
+    if (cache === mapPlayersTraces) delete localPlayerTraces[id];
     await cache.delete(id);
   } catch (error) {
     logger.error(`Error deleting ${id}. ${error.message}`);
@@ -2032,12 +2036,15 @@ async function mapEntryCount(mapLike) {
   if (!mapLike) return 0;
   if (!ENABLE_COHERENCE_BACKEND) return Object.keys(mapLike).length;
   try {
+    if (mapLike === mapPlayersInfo) return Object.keys(localPlayersInfo).length;
+    if (mapLike === mapPlayersTraces) return Object.keys(localPlayerTraces).length;
+    if (typeof mapLike.size === "function") return await mapLike.size();
+    if (mapLike.size && typeof mapLike.size.then === "function") return await mapLike.size;
+    if (Number.isFinite(mapLike.size)) return mapLike.size;
     if (typeof mapLike.entries === "function") {
       const entries = await readCacheEntries(mapLike);
       return Object.keys(entries || {}).length;
     }
-    if (typeof mapLike.size === "function") return await mapLike.size();
-    if (Number.isFinite(mapLike.size)) return mapLike.size;
     return 0;
   } catch (error) {
     logger.error(`Error counting entries. ${error.message}`);
