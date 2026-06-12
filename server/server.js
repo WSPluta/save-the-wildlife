@@ -22,6 +22,40 @@ dotenv.config({ path: "../.config/.env" });
 const isProduction = process.env.NODE_ENV === "production";
 const logger = pino({ level: isProduction ? "warn" : "debug" });
 
+function logAsyncFailure(context, error) {
+  logger.error(
+    {
+      context,
+      err: {
+        name: error?.name,
+        message: error?.message || String(error),
+        code: error?.code,
+        details: error?.details,
+        stack: error?.stack,
+      },
+    },
+    `${context} failed`
+  );
+}
+
+function runAsyncTask(context, task) {
+  Promise.resolve()
+    .then(task)
+    .catch((error) => logAsyncFailure(context, error));
+}
+
+function setAsyncInterval(context, task, delayMs) {
+  return setInterval(() => runAsyncTask(context, task), delayMs);
+}
+
+process.on("unhandledRejection", (reason) => {
+  logAsyncFailure("unhandledRejection", reason);
+});
+
+process.on("uncaughtExceptionMonitor", (error) => {
+  logAsyncFailure("uncaughtExceptionMonitor", error);
+});
+
 const version = pkg.version;
 logger.info(`Server version ${version}`);
 const serverId = short.generate();
@@ -510,6 +544,12 @@ export async function start(
     }
     return Array.from(rooms.values());
   }
+  function isLoadCanaryRoom(room) {
+    return /^LOAD-[A-Za-z0-9-]+$/.test(String(room || ""));
+  }
+  function shouldSyncVisualItems(room) {
+    return !isLoadCanaryRoom(room);
+  }
   async function humansInRoom(room) {
     const info = await getPlayersInfoObject();
     const ids = Object.keys(info || {});
@@ -548,6 +588,7 @@ export async function start(
     return { trash: trash || {}, marine: marine || {}, power: power || {} };
   }
   async function getItemsForRoom(room) {
+    if (!shouldSyncVisualItems(room)) return {};
     const { trash, marine, power } = await readAllItemsObjects();
     const want = room || GLOBAL_ROOM;
     const filtered = {};
@@ -668,6 +709,7 @@ function endRoomMatch(room) {
 
 function scheduleRoomRefill(room, delayMs = 0) {
   const key = room || GLOBAL_ROOM;
+  if (!shouldSyncVisualItems(key)) return;
   if (pendingRoomRefills.has(key)) return;
   const timer = setTimeout(async () => {
     pendingRoomRefills.delete(key);
@@ -1397,7 +1439,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         gameStartTime = Date.now();
 
         // Seed initial items and power-ups immediately for visibility
-        (async () => {
+        runAsyncTask("admin.start.initialItems", async () => {
           const numPlayersNow = await mapEntryCount(mapPlayersInfo);
 
           // Trash
@@ -1435,7 +1477,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
               ENABLE_COHERENCE_BACKEND ? await writeCache(mapPowerUps, obj.id, obj) : (mapPowerUps[obj.id] = obj);
             }
           }
-        })();
+        });
 
         gameTimer = setInterval(() => {
           const elapsed = Date.now() - gameStartTime;
@@ -1573,7 +1615,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         if (Number.isFinite(baseX)) worldScaleCfg.baseX = parseInt(baseX);
         if (Number.isFinite(baseZ)) worldScaleCfg.baseZ = parseInt(baseZ);
         if (Number.isFinite(basePlayers)) worldScaleCfg.basePlayers = parseInt(basePlayers);
-        (async () => {
+        runAsyncTask("admin.worldScaling.set", async () => {
           const info = ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo;
           const ids = Object.keys(info || {});
           let bots = 0;
@@ -1588,7 +1630,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           io.emit("server.info", {
             ...serverInfoPayload(),
           });
-        })();
+        });
       } catch (e) {
         logger.error(`admin.worldScaling.set error: ${e && e.message ? e.message : e}`);
       }
@@ -1713,7 +1755,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
   }
 
   // broadcast all players traces (scoped per room)
-  setInterval(async () => {
+  setAsyncInterval("player.trace.broadcast", async () => {
     const tracesAll = ENABLE_COHERENCE_BACKEND
       ? await readCacheEntries(mapPlayersTraces)
       : mapPlayersTraces;
@@ -1730,6 +1772,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
 
   // Fast refill helper used on interval and after item removals
   async function refillOnce(roomParam) {
+    if (roomParam && !shouldSyncVisualItems(roomParam)) return;
     // Keep world scaling based on global humans (shared water surface), but items are per-room.
     const info = ENABLE_COHERENCE_BACKEND ? await readCacheEntries(mapPlayersInfo) : mapPlayersInfo;
     const ids = Object.keys(info || {});
@@ -1747,7 +1790,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       });
     }
 
-    const rooms = roomParam ? [roomParam] : listActiveRooms();
+    const rooms = (roomParam ? [roomParam] : listActiveRooms()).filter(shouldSyncVisualItems);
     for (const room of rooms) {
       const humans = await humansInRoom(room);
       const targets = computeEffectiveTargets(humans);
@@ -1790,15 +1833,15 @@ function scheduleRoomRefill(room, delayMs = 0) {
   }
 
   // refresh items (per-room targets)
-  setInterval(async () => {
+  setAsyncInterval("item.refill", async () => {
     await refillOnce();
     nextItemsSpawnAt = Date.now() + ITEMS_REFRESH_MS;
   }, ITEMS_REFRESH_MS);
 
 
   // Spawn power-ups to per-room targets (refill smoothly)
-  setInterval(async () => {
-    const rooms = listActiveRooms();
+  setAsyncInterval("powerup.refill", async () => {
+    const rooms = listActiveRooms().filter(shouldSyncVisualItems);
     for (const room of rooms) {
       const humans = await humansInRoom(room);
       const targets = computeTargets(humans);
@@ -1830,7 +1873,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
   }, POWERUP_REFRESH_MS);
 
   // Clean stale players, and send delete player if stale
-  setInterval(async () => {
+  setAsyncInterval("stale-player.cleanup", async () => {
     const now = new Date();
     // TODO: Optimize stale detection; investigate Coherence TTL for automatic expiration
     // Currently adding elapsed to check; consider if cleanup is necessary or can be handled by disconnect events
@@ -1867,7 +1910,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
     emitPlayerCount();
   }, CLEANUP_STALE_IN_SECONDS * 1000);
 
-  setInterval(async () => {
+  setAsyncInterval("item.count.log", async () => {
     const numPlayers = await mapEntryCount(mapPlayersInfo);
     const numTrash = await mapEntryCount(mapTrash);
     const numMarineLife = await mapEntryCount(mapMarineLife);
@@ -1881,7 +1924,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
   }, 5000);
 
   // Emit combined server metrics for the Object Monitor (~3Hz for smoother countdown)
-  setInterval(async () => {
+  setAsyncInterval("server.metrics.broadcast", async () => {
     try {
       const info = ENABLE_COHERENCE_BACKEND
         ? await readCacheEntries(mapPlayersInfo)
@@ -1957,10 +2000,13 @@ async function mapEntryCount(mapLike) {
   if (!mapLike) return 0;
   if (!ENABLE_COHERENCE_BACKEND) return Object.keys(mapLike).length;
   try {
+    if (typeof mapLike.entries === "function") {
+      const entries = await readCacheEntries(mapLike);
+      return Object.keys(entries || {}).length;
+    }
     if (typeof mapLike.size === "function") return await mapLike.size();
     if (Number.isFinite(mapLike.size)) return mapLike.size;
-    const entries = await readCacheEntries(mapLike);
-    return Object.keys(entries || {}).length;
+    return 0;
   } catch (error) {
     logger.error(`Error counting entries. ${error.message}`);
     return 0;
