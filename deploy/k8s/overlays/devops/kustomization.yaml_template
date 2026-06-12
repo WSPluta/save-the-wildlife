@@ -6,8 +6,12 @@ bases:
   - "../../base/replay"
   - "../../base/private-agent-factory"
 
+resources:
+  - "hpa_commentary_load.yaml"
+
 patchesStrategicMerge:
   - "patch_server_replicas.yaml"
+  - "patch_load_resources.yaml"
 
 images:
 - name: ws-server

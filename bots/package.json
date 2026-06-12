@@ -8,7 +8,9 @@
     "node": ">=24 <27"
   },
   "scripts": {
-    "start": "nodemon index.js | pino-pretty"
+    "start": "nodemon index.js | pino-pretty",
+    "load:commentary": "node load-commentary.mjs",
+    "test:unit": "node --test test/*.test.mjs"
   },
   "repository": {
     "type": "git",

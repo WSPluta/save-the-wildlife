@@ -22,7 +22,9 @@ metadata:
     app.kubernetes.io/part-of: ingress-nginx
     app.kubernetes.io/version: 1.5.1
   annotations:
-    service.beta.kubernetes.io/oci-load-balancer-shape: "100Mbps"
+    service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+    service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "100"
+    service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "400"
     # Use TCP health checks to avoid false warnings on HTTP 80/443 (ingress returns 404 for unknown paths)
     service.beta.kubernetes.io/oci-load-balancer-health-check-protocol: "TCP"
     # Increase idle timeout for long-running connections/WebSockets

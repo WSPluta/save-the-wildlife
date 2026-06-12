@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ws-server
+spec:
+  template:
+    spec:
+      containers:
+        - name: ws-server
+          resources:
+            requests:
+              cpu: 500m
+              memory: 768Mi
+            limits:
+              cpu: 2000m
+              memory: 1536Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: private-agent-factory
+spec:
+  template:
+    spec:
+      containers:
+        - name: private-agent-factory
+          resources:
+            requests:
+              cpu: 500m
+              memory: 768Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: score
+spec:
+  template:
+    spec:
+      containers:
+        - name: score
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 1500m
+              memory: 2Gi

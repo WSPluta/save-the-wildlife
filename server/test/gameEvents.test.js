@@ -146,6 +146,7 @@ describe("game event telemetry", () => {
     expect(summary.trail_crosses).toBe(1);
     expect(summary.freezes).toBe(1);
     expect(summary.score).toBe(12);
+    expect(summary.player_name).toBe("Grace");
 
     const text = deterministicCommentary(summary);
     expect(text.length).toBeLessThanOrEqual(200);

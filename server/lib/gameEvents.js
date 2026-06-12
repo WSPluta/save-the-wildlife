@@ -15,6 +15,7 @@ const MAX_LOCAL_EVENTS = parseInt(process.env.GAME_EVENTS_LOCAL_LIMIT ?? "5000",
 const POSITION_SAMPLE_MIN_MS = parseInt(process.env.GAME_EVENTS_POSITION_SAMPLE_MIN_MS ?? "1000", 10);
 const COMMENTARY_MAX_CHARS = parseInt(process.env.COMMENTARY_MAX_CHARS ?? "200", 10);
 const PAF_AGENT_BASE_URL = (process.env.PAF_AGENT_BASE_URL || "").replace(/\/+$/, "");
+const PAF_AGENT_TIMEOUT_MS = parseInt(process.env.PAF_AGENT_TIMEOUT_MS ?? "2500", 10);
 const GAME_EVENTS_SERVICE_BASE_URL = (process.env.GAME_EVENTS_SERVICE_BASE_URL || "").replace(/\/+$/, "");
 const profanityPattern = /\b(fuck|shit|bitch|asshole|bastard|dick|cunt)\b/i;
 
@@ -260,6 +261,7 @@ export function summarizeSession(sessionId, playerId) {
   const summary = {
     session_id: sessionId,
     player_id: playerId,
+    player_name: "Player",
     score: 0,
     trash_collected: 0,
     marine_hits: 0,
@@ -270,6 +272,7 @@ export function summarizeSession(sessionId, playerId) {
     prior_best_score: null,
   };
   for (const event of events) {
+    if (event.player_name && event.player_name !== "Player") summary.player_name = event.player_name;
     summary.score = Number.isFinite(event.score) ? event.score : summary.score;
     if (event.x != null && event.z != null) summary.last_position = { x: event.x, y: event.y, z: event.z };
     if (event.event_type === "trash_collected") summary.trash_collected++;
@@ -323,7 +326,7 @@ async function requestPafCommentary(summary) {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify({ summary, max_chars: COMMENTARY_MAX_CHARS }),
-      signal: AbortSignal.timeout(2500),
+      signal: AbortSignal.timeout(PAF_AGENT_TIMEOUT_MS),
     });
     if (!response.ok) return null;
     const body = await response.json();
