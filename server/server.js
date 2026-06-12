@@ -2038,13 +2038,8 @@ async function mapEntryCount(mapLike) {
   try {
     if (mapLike === mapPlayersInfo) return Object.keys(localPlayersInfo).length;
     if (mapLike === mapPlayersTraces) return Object.keys(localPlayerTraces).length;
-    if (typeof mapLike.size === "function") return await mapLike.size();
-    if (mapLike.size && typeof mapLike.size.then === "function") return await mapLike.size;
-    if (Number.isFinite(mapLike.size)) return mapLike.size;
-    if (typeof mapLike.entries === "function") {
-      const entries = await readCacheEntries(mapLike);
-      return Object.keys(entries || {}).length;
-    }
+    // Avoid background Coherence scans/size RPCs in metrics loops; item maps are hydrated on demand.
+    if (mapLike === mapTrash || mapLike === mapMarineLife || mapLike === mapPowerUps || mapLike === mapRooms) return 0;
     return 0;
   } catch (error) {
     logger.error(`Error counting entries. ${error.message}`);
