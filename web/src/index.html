@@ -273,25 +273,25 @@
               <div class="admin-section-eyebrow">Production Canary</div>
               <h3>Player Join and Commentary Evaluation</h3>
             </div>
-            <div class="admin-evidence-verdict">Tier 50 pass; 100 held</div>
+            <div class="admin-evidence-verdict">Tier 100 pass; 500 gate</div>
           </div>
 
           <div class="admin-evidence-metrics" aria-label="Load canary summary">
             <div class="admin-metric">
               <span>Strict pass</span>
-              <strong>50</strong>
+              <strong>100</strong>
             </div>
             <div class="admin-metric">
               <span>Score proof</span>
-              <strong>100/100</strong>
+              <strong>500/500</strong>
             </div>
             <div class="admin-metric">
-              <span>Tier 100 commentary</span>
-              <strong>100/100</strong>
+              <span>Tier 500 commentary</span>
+              <strong>499/500</strong>
             </div>
             <div class="admin-metric">
-              <span>Tier 100 p95</span>
-              <strong>8153 ms</strong>
+              <span>Tier 500 p95</span>
+              <strong>8398 ms</strong>
             </div>
           </div>
 
@@ -316,15 +316,15 @@
                 <li>
                   <span class="admin-step-state scaled">Scale</span>
                   <div>
-                    <strong>PAF budget and replica floor were tuned.</strong>
-                    <span>Tier 50 then passed with 50/50 Select AI commentary, 0 duplicates, and 4513 ms p95 latency.</span>
+                    <strong>Private base and fine-tuned endpoints were wired.</strong>
+                    <span>Tier 100 passed with 100/100 score rows, 100/100 PAF routed commentary, 0 duplicates, and 8196 ms p95 latency.</span>
                   </div>
                 </li>
                 <li>
                   <span class="admin-step-state passed">Pass</span>
                   <div>
-                    <strong>Tier 100 is the next strict gate.</strong>
-                    <span>100/100 joined, score rows, and commentary are proven; source capacity still falls back to Oracle SQL for 41 players.</span>
+                    <strong>Tier 500 found the next capacity gate.</strong>
+                    <span>500/500 joined and wrote score rows, but 411 players fell back to deterministic server commentary before model metadata arrived.</span>
                   </div>
                 </li>
               </ol>
@@ -335,7 +335,7 @@
               <ul class="admin-gate-list">
                 <li><span class="admin-gate-pass">Pass</span> Join failures stayed at 0%</li>
                 <li><span class="admin-gate-pass">Pass</span> High-score test rows matched joined players</li>
-                <li><span class="admin-gate-pass">Hold</span> Tier 100 commentary source must stay on the full Oracle/PAF path</li>
+                <li><span class="admin-gate-pass">Hold</span> Tier 500 commentary source must stay on the full Oracle/PAF path</li>
                 <li><span class="admin-gate-pass">Pass</span> Duplicate commentary count stayed 0</li>
                 <li><span class="admin-gate-pass">Pass</span> p95 commentary latency stayed below 10s</li>
                 <li><span class="admin-gate-pass">Pass</span> No deterministic fallback commentary accepted</li>
@@ -389,24 +389,34 @@
                   <td>16 commentary timeouts</td>
                 </tr>
                 <tr>
-                  <td>202606131128</td>
+                  <td>202606132041</td>
                   <td>50</td>
                   <td><span class="admin-status-pill passed">Passed</span></td>
                   <td>50/50</td>
                   <td>50</td>
                   <td>50</td>
-                  <td>4513 ms</td>
-                  <td>PAF budget tuning held</td>
+                  <td>8208 ms</td>
+                  <td>Private model route held</td>
                 </tr>
                 <tr>
-                  <td>202606131128</td>
+                  <td>202606132043</td>
                   <td>100</td>
-                  <td><span class="admin-status-pill failed">Held</span></td>
+                  <td><span class="admin-status-pill passed">Passed</span></td>
                   <td>100/100</td>
                   <td>100</td>
                   <td>100</td>
-                  <td>8153 ms</td>
-                  <td>41 source fallbacks to Oracle SQL</td>
+                  <td>8196 ms</td>
+                  <td>oci-base to oci-fine-tuned shadow</td>
+                </tr>
+                <tr>
+                  <td>202606132046</td>
+                  <td>500</td>
+                  <td><span class="admin-status-pill failed">Held</span></td>
+                  <td>500/500</td>
+                  <td>500</td>
+                  <td>499</td>
+                  <td>8398 ms</td>
+                  <td>411 deterministic fallback responses</td>
                 </tr>
               </tbody>
             </table>
@@ -485,7 +495,7 @@
               <div class="admin-section-title">DB Evidence and Score Proof</div>
               <ul class="admin-gate-list">
                 <li><span class="admin-gate-pass">Pass</span> STWL_GAME_EVENTS had game_over rows for joined players</li>
-                <li><span class="admin-gate-pass">Pass</span> High-score test table verified 100/100 rows at the held tier</li>
+                <li><span class="admin-gate-pass">Pass</span> High-score test table verified 500/500 rows at the held tier</li>
                 <li><span class="admin-gate-pass">Pass</span> Evidence hash matched the PAF prompt hash lineage</li>
                 <li><span class="admin-gate-pass">Pass</span> Training examples captured redacted behavior traces only</li>
               </ul>
@@ -507,8 +517,8 @@
             <section class="admin-evidence-section">
               <div class="admin-section-title">Gate Explanation</div>
               <div class="admin-learning-note">
-                <strong>Promotion held until the private upstream LLM endpoints are active.</strong>
-                <span>The router, traces, evals, and base-vs-fine-tuned metadata are wired now; the true GPU-backed promotion gate waits for upstream model runtime plus no groundedness or confidence regression across high tiers.</span>
+                <strong>Promotion held until the private upstream LLM endpoints and tier 500 gate are stable.</strong>
+                <span>The router, traces, evals, and base-vs-fine-tuned metadata are wired now; the true GPU-backed promotion gate waits for upstream model runtime plus no deterministic fallback at tiers 500 and 1000.</span>
               </div>
             </section>
           </div>
