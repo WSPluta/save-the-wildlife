@@ -126,6 +126,7 @@ function modelRouterConfig() {
     verifyTls: !["0", "false", "no", "off"].includes(verifyTlsValue),
     tracePersist: boolEnv("PAF_TRACE_PERSIST", true),
     evalEnabled: boolEnv("PAF_EVAL_ENABLED", true),
+    fastPathEnabled: boolEnv("PAF_MODEL_FAST_PATH_ENABLED", true),
     rubricVersion: textValue(process.env.PAF_EVAL_RUBRIC_VERSION || "stwl-commentary-v1"),
     trainingCaptureEnabled: boolEnv("PAF_TRAINING_CAPTURE_ENABLED", true),
     baseEndpointUrl: textValue(process.env.OCI_BASE_MODEL_ENDPOINT_URL),
@@ -166,6 +167,11 @@ function providerEndpoint(provider, config = modelRouterConfig()) {
   if (provider === "oci-base") return config.baseEndpointUrl;
   if (provider === "oci-fine-tuned") return config.fineTunedEndpointUrl;
   return "";
+}
+
+function modelFastPathReady(config = modelRouterConfig()) {
+  if (!config.fastPathEnabled || config.routeMode === "off") return false;
+  return Boolean(providerEndpoint(config.primaryProvider, config));
 }
 
 function normalizePowerups(value) {
@@ -2190,6 +2196,130 @@ async function callInDbAgent(summary, maxChars, options = {}) {
   }
 }
 
+function buildLegacyEnvelope(summary, context = {}, { source = "request-summary", inDbAgent = null, canvas = null, maxChars = COMMENTARY_MAX_CHARS } = {}) {
+  const formats = buildEvidenceFormats(summary, context || {}, maxChars);
+  const baseCommentary = canvas?.commentary || inDbAgent?.commentary || formats.live_line || deterministicScript(summary, maxChars);
+  const legacySource = canvas ? "paf-canvas" : inDbAgent?.source || source;
+  return {
+    formats,
+    baseCommentary,
+    legacySource,
+    legacy: {
+      commentary: baseCommentary,
+      source: legacySource,
+      inDbAgent,
+      canvas,
+      formats,
+      latency_ms: canvas?.elapsed_ms ?? null,
+    },
+  };
+}
+
+function modelRouteWarnings(modelRoute = {}) {
+  return [modelRoute.primary, modelRoute.candidate]
+    .filter((item) => item && item.ok === false && !item.skipped)
+    .map((item) => `${item.provider}:${item.error || "failed"}`);
+}
+
+function publicModelOutput(output) {
+  return output ? {
+    ok: output.ok,
+    provider: output.provider,
+    model_id: output.model_id || null,
+    text: output.text || null,
+    latency_ms: output.latency_ms ?? null,
+    tokens: output.tokens ?? null,
+    finish_reason: output.finish_reason || null,
+    warnings: Array.isArray(output.warnings) ? output.warnings : [],
+    runtime_mode: output.runtime_mode || null,
+    upstream_configured: output.upstream_configured,
+    facts_policy: output.facts_policy || null,
+    error: output.error || null,
+    skipped: Boolean(output.skipped),
+  } : null;
+}
+
+function contextEvidenceSummary(matchContext) {
+  return matchContext ? {
+    json_event_count: matchContext.json_events?.length || 0,
+    graph_fact_count: matchContext.graph_facts?.length || 0,
+    replay_clip_count: matchContext.replay_clips?.length || 0,
+    vector_memory_count: matchContext.vector_memories?.length || 0,
+    replay_clips: (matchContext.replay_clips || []).slice(0, 2),
+    graph_facts: (matchContext.graph_facts || []).slice(0, 4),
+    vector_memories: (matchContext.vector_memories || []).slice(0, 2),
+  } : null;
+}
+
+function buildCommentaryResult({
+  selectedCommentary,
+  requestedOutput,
+  selectedSource,
+  fallbackSource,
+  warning,
+  modelRoute,
+  inDbAgent,
+  canvas,
+  summary,
+  formats,
+  matchContext,
+  maxChars,
+}) {
+  return {
+    ok: true,
+    commentary: enforceCommentary(selectedCommentary, requestedOutput === "clip_title" ? 80 : maxChars),
+    output_format: requestedOutput,
+    source: selectedSource,
+    fallback_source: fallbackSource,
+    warning,
+    trace_id: modelRoute.trace_id,
+    route_mode: modelRoute.route_mode,
+    primary_provider: modelRoute.primary_provider,
+    candidate_provider: modelRoute.candidate_provider,
+    model_id: modelRoute.model_id,
+    latency_ms: modelRoute.latency_ms,
+    evidence_hash: modelRoute.evidence_hash,
+    prompt_hash: modelRoute.prompt_hash,
+    eval_scores: modelRoute.eval_scores,
+    promotion_verdict: modelRoute.promotion_verdict,
+    model_route: {
+      trace_id: modelRoute.trace_id,
+      route_mode: modelRoute.route_mode,
+      primary_provider: modelRoute.primary_provider,
+      candidate_provider: modelRoute.candidate_provider,
+      model_id: modelRoute.model_id,
+      latency_ms: modelRoute.latency_ms,
+      evidence_hash: modelRoute.evidence_hash,
+      prompt_hash: modelRoute.prompt_hash,
+      eval_scores: modelRoute.eval_scores,
+      promotion_verdict: modelRoute.promotion_verdict,
+      trace_persisted: modelRoute.trace_persisted,
+      primary: publicModelOutput(modelRoute.primary),
+      candidate: publicModelOutput(modelRoute.candidate),
+    },
+    in_db_agent: inDbAgent ? {
+      source: inDbAgent.source,
+      configured: true,
+    } : null,
+    canvas: canvas ? {
+      endpoint: canvas.endpoint,
+      room_id: canvas.room_id,
+      status: canvas.status,
+      elapsed_ms: canvas.elapsed_ms,
+      login: canvas.login,
+    } : null,
+    summary,
+    agent: {
+      name: AGENT_NAME,
+      mode: AGENT_MODE,
+      genai_model_id: process.env.OCI_GENAI_MODEL_ID || null,
+    },
+    formats,
+    evidence: contextEvidenceSummary(matchContext),
+    capabilities: matchContext?.capabilities || null,
+  };
+}
+
 async function buildCommentary(body = {}, options = {}) {
   const startedAt = Number(options.startedAt || Date.now());
   const budget = commentaryBudgetConfig();
@@ -2215,6 +2345,43 @@ async function buildCommentary(body = {}, options = {}) {
       }
     } catch (error) {
       warning = error.message;
+    }
+  }
+
+  if (["live_line", "post_match_recap"].includes(requestedOutput) && modelFastPathReady()) {
+    const { formats, legacySource, legacy } = buildLegacyEnvelope(summary, null, {
+      source,
+      maxChars,
+    });
+    const modelRoute = await runModelRoute(
+      {
+        summary,
+        context: {},
+        legacy,
+        outputFormatValue: requestedOutput,
+        maxChars,
+      },
+      options
+    );
+    const modelWarnings = modelRouteWarnings(modelRoute);
+    if (modelRoute.primary?.ok) {
+      return buildCommentaryResult({
+        selectedCommentary: modelRoute.primary.text,
+        requestedOutput,
+        selectedSource: modelRoute.primary.provider,
+        fallbackSource: legacySource,
+        warning: [warning, ...modelWarnings].filter(Boolean).join("; ") || null,
+        modelRoute,
+        inDbAgent: null,
+        canvas: null,
+        summary,
+        formats,
+        matchContext: null,
+        maxChars,
+      });
+    }
+    if (modelWarnings.length) {
+      warning = [warning, ...modelWarnings].filter(Boolean).join("; ");
     }
   }
 
@@ -2283,17 +2450,12 @@ async function buildCommentary(body = {}, options = {}) {
     }
   }
 
-  const formats = buildEvidenceFormats(summary, matchContext || {}, maxChars);
-  const baseCommentary = canvas?.commentary || inDbAgent?.commentary || formats.live_line || deterministicScript(summary, maxChars);
-  const legacySource = canvas ? "paf-canvas" : inDbAgent?.source || source;
-  const legacy = {
-    commentary: baseCommentary,
-    source: legacySource,
+  const { formats, baseCommentary, legacySource, legacy } = buildLegacyEnvelope(summary, matchContext || {}, {
+    source,
     inDbAgent,
     canvas,
-    formats,
-    latency_ms: canvas?.elapsed_ms ?? null,
-  };
+    maxChars,
+  });
   const modelRoute = await runModelRoute(
     {
       summary,
@@ -2313,102 +2475,25 @@ async function buildCommentary(body = {}, options = {}) {
       : formats[requestedOutput] || baseCommentary
   );
   const selectedSource = modelRoute.primary?.ok ? modelRoute.primary.provider : legacySource;
-  const modelWarnings = [modelRoute.primary, modelRoute.candidate]
-    .filter((item) => item && item.ok === false && !item.skipped)
-    .map((item) => `${item.provider}:${item.error || "failed"}`);
+  const modelWarnings = modelRouteWarnings(modelRoute);
   if (modelWarnings.length) {
     warning = [warning, ...modelWarnings].filter(Boolean).join("; ");
   }
 
-  return {
-    ok: true,
-    commentary: enforceCommentary(selectedCommentary, requestedOutput === "clip_title" ? 80 : maxChars),
-    output_format: requestedOutput,
-    source: selectedSource,
-    fallback_source: modelRoute.primary?.ok ? legacySource : (canvas ? inDbAgent?.source || source : null),
+  return buildCommentaryResult({
+    selectedCommentary,
+    requestedOutput,
+    selectedSource,
+    fallbackSource: modelRoute.primary?.ok ? legacySource : (canvas ? inDbAgent?.source || source : null),
     warning,
-    trace_id: modelRoute.trace_id,
-    route_mode: modelRoute.route_mode,
-    primary_provider: modelRoute.primary_provider,
-    candidate_provider: modelRoute.candidate_provider,
-    model_id: modelRoute.model_id,
-    latency_ms: modelRoute.latency_ms,
-    evidence_hash: modelRoute.evidence_hash,
-    prompt_hash: modelRoute.prompt_hash,
-    eval_scores: modelRoute.eval_scores,
-    promotion_verdict: modelRoute.promotion_verdict,
-    model_route: {
-      trace_id: modelRoute.trace_id,
-      route_mode: modelRoute.route_mode,
-      primary_provider: modelRoute.primary_provider,
-      candidate_provider: modelRoute.candidate_provider,
-      model_id: modelRoute.model_id,
-      latency_ms: modelRoute.latency_ms,
-      evidence_hash: modelRoute.evidence_hash,
-      prompt_hash: modelRoute.prompt_hash,
-      eval_scores: modelRoute.eval_scores,
-      promotion_verdict: modelRoute.promotion_verdict,
-      trace_persisted: modelRoute.trace_persisted,
-      primary: modelRoute.primary ? {
-        ok: modelRoute.primary.ok,
-        provider: modelRoute.primary.provider,
-        model_id: modelRoute.primary.model_id || null,
-        text: modelRoute.primary.text || null,
-        latency_ms: modelRoute.primary.latency_ms ?? null,
-        tokens: modelRoute.primary.tokens ?? null,
-        finish_reason: modelRoute.primary.finish_reason || null,
-        warnings: Array.isArray(modelRoute.primary.warnings) ? modelRoute.primary.warnings : [],
-        runtime_mode: modelRoute.primary.runtime_mode || null,
-        upstream_configured: modelRoute.primary.upstream_configured,
-        facts_policy: modelRoute.primary.facts_policy || null,
-        error: modelRoute.primary.error || null,
-        skipped: Boolean(modelRoute.primary.skipped),
-      } : null,
-      candidate: modelRoute.candidate ? {
-        ok: modelRoute.candidate.ok,
-        provider: modelRoute.candidate.provider,
-        model_id: modelRoute.candidate.model_id || null,
-        text: modelRoute.candidate.text || null,
-        latency_ms: modelRoute.candidate.latency_ms ?? null,
-        tokens: modelRoute.candidate.tokens ?? null,
-        finish_reason: modelRoute.candidate.finish_reason || null,
-        warnings: Array.isArray(modelRoute.candidate.warnings) ? modelRoute.candidate.warnings : [],
-        runtime_mode: modelRoute.candidate.runtime_mode || null,
-        upstream_configured: modelRoute.candidate.upstream_configured,
-        facts_policy: modelRoute.candidate.facts_policy || null,
-        error: modelRoute.candidate.error || null,
-        skipped: Boolean(modelRoute.candidate.skipped),
-      } : null,
-    },
-    in_db_agent: inDbAgent ? {
-      source: inDbAgent.source,
-      configured: true,
-    } : null,
-    canvas: canvas ? {
-      endpoint: canvas.endpoint,
-      room_id: canvas.room_id,
-      status: canvas.status,
-      elapsed_ms: canvas.elapsed_ms,
-      login: canvas.login,
-    } : null,
+    modelRoute,
+    inDbAgent,
+    canvas,
     summary,
-    agent: {
-      name: AGENT_NAME,
-      mode: AGENT_MODE,
-      genai_model_id: process.env.OCI_GENAI_MODEL_ID || null,
-    },
     formats,
-    evidence: matchContext ? {
-      json_event_count: matchContext.json_events?.length || 0,
-      graph_fact_count: matchContext.graph_facts?.length || 0,
-      replay_clip_count: matchContext.replay_clips?.length || 0,
-      vector_memory_count: matchContext.vector_memories?.length || 0,
-      replay_clips: (matchContext.replay_clips || []).slice(0, 2),
-      graph_facts: (matchContext.graph_facts || []).slice(0, 4),
-      vector_memories: (matchContext.vector_memories || []).slice(0, 2),
-    } : null,
-    capabilities: matchContext?.capabilities || null,
-  };
+    matchContext,
+    maxChars,
+  });
 }
 
 app.get("/healthz", (_req, res) => {
@@ -2448,6 +2533,7 @@ app.get("/healthz", (_req, res) => {
       fine_tuned_endpoint_configured: Boolean(modelConfig.fineTunedEndpointUrl),
       trace_persist: modelConfig.tracePersist,
       eval_enabled: modelConfig.evalEnabled,
+      fast_path_enabled: modelConfig.fastPathEnabled,
       rubric_version: modelConfig.rubricVersion,
       training_capture_enabled: modelConfig.trainingCaptureEnabled,
     },

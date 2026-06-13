@@ -452,6 +452,85 @@ test("routes base and fine-tuned OCI model endpoints in shadow mode", async () =
   assert.match(calls[0].body.prompt, /Facts stay in Oracle AI Database memory|Model comparison task/);
 });
 
+test("uses model fast path before slow Canvas enrichment when endpoints are configured", async () => {
+  const modelCalls = [];
+  let canvasCalls = 0;
+  const modelRequestJson = async (url, options) => {
+    const body = JSON.parse(options.body || "{}");
+    modelCalls.push({ url, body });
+    const isFineTuned = url.includes("fine-tuned");
+    return {
+      status: 200,
+      headers: {},
+      elapsed_ms: isFineTuned ? 22 : 28,
+      payload: {
+        ok: true,
+        provider: isFineTuned ? "oci-fine-tuned" : "oci-base",
+        model_id: isFineTuned ? "stwl-ft-fast" : "stwl-base-fast",
+        text: isFineTuned
+          ? "Ada closed on 77 points, citing DB evidence."
+          : "Ada finished on 77 points with DB evidence in view.",
+        tokens: isFineTuned ? 9 : 11,
+        finish_reason: "stop",
+        runtime_mode: "behavior-adapter",
+        upstream_configured: false,
+        facts_policy: "facts-in-memory-behavior-in-weights",
+      },
+    };
+  };
+  const requestJson = async () => {
+    canvasCalls += 1;
+    throw new Error("canvas_should_not_run_on_fast_path");
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "http://canvas.example.test/run",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "true",
+    PAF_MODEL_FAST_PATH_ENABLED: "true",
+    PAF_MODEL_ROUTE_MODE: "shadow",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
+    PAF_TRACE_PERSIST: "false",
+    PAF_EVAL_ENABLED: "true",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-FAST",
+          room_id: "ROOM-FAST",
+          player_id: "P-FAST",
+          player_name: "Ada",
+          score: 77,
+          trash_collected: 3,
+        },
+      },
+      {
+        skipOracleSummary: true,
+        traceId: "TRACE-FAST",
+        modelRequestJson,
+        requestJson,
+      }
+    );
+
+    assert.equal(response.source, "oci-base");
+    assert.equal(response.fallback_source, "request-summary");
+    assert.equal(response.commentary, "Ada finished on 77 points with DB evidence in view.");
+    assert.equal(response.trace_id, "TRACE-FAST");
+    assert.equal(response.model_route.primary.runtime_mode, "behavior-adapter");
+    assert.equal(response.model_route.candidate.runtime_mode, "behavior-adapter");
+    assert.equal(response.canvas, null);
+    assert.equal(response.in_db_agent, null);
+    assert.equal(response.evidence, null);
+    assert.equal(response.promotion_verdict, "candidate_ready");
+  });
+
+  assert.equal(modelCalls.length, 2);
+  assert.equal(canvasCalls, 0);
+});
+
 test("model router config clamps invalid numeric environment values", async () => {
   await withEnv({
     PAF_MODEL_ROUTE_MODE: "unexpected",

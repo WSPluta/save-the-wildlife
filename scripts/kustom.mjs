@@ -159,6 +159,7 @@ async function createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService,
       TEMPLATE_OCI_MODEL_ENDPOINT_VERIFY_TLS: process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true",
       TEMPLATE_PAF_TRACE_PERSIST: process.env.PAF_TRACE_PERSIST || "true",
       TEMPLATE_PAF_EVAL_ENABLED: process.env.PAF_EVAL_ENABLED || "true",
+      TEMPLATE_PAF_MODEL_FAST_PATH_ENABLED: process.env.PAF_MODEL_FAST_PATH_ENABLED || "true",
       TEMPLATE_PAF_EVAL_RUBRIC_VERSION: process.env.PAF_EVAL_RUBRIC_VERSION || "stwl-commentary-v1",
       TEMPLATE_PAF_TRAINING_CAPTURE_ENABLED: process.env.PAF_TRAINING_CAPTURE_ENABLED || "true",
     };
