@@ -998,6 +998,8 @@ test("training export maps accepted DB trace rows to behavior-only JSONL records
   });
 
   assert.equal(record.trace_id, "trace-1");
+  assert.equal(record.prompt_text, "Produce one concise Save the Wildlife commentary line using only Oracle AI Database evidence references.");
+  assert.equal(record.prompt_text_redacted, true);
   assert.equal(record.output_text, "Ada stayed evidence-backed and concise.");
   assert.equal(record.provider, "oci-fine-tuned");
   assert.equal(record.eval_scores.unique_commentary, 1);
@@ -1013,6 +1015,7 @@ test("training export CLI parsing keeps accepted-only default and caps limits", 
     "--run-id", "run-1",
     "--room", "LOAD-run-100",
     "--include-rejected",
+    "--include-prompt-text",
     "--limit", "50000",
     "--output", "/tmp/out.jsonl",
   ]);
@@ -1021,6 +1024,7 @@ test("training export CLI parsing keeps accepted-only default and caps limits", 
   assert.equal(parsed.runId, "run-1");
   assert.equal(parsed.roomId, "LOAD-run-100");
   assert.equal(parsed.includeRejected, true);
+  assert.equal(parsed.includePromptText, true);
   assert.equal(parsed.limit, 10000);
   assert.equal(parsed.output, "/tmp/out.jsonl");
 });

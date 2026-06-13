@@ -44,6 +44,8 @@ npm --prefix private-agent-factory run export:training -- \
   --output /tmp/stwl-behavior-v1.jsonl
 ```
 
+The default export redacts raw prompt text because live prompts can contain mutable game facts. It keeps prompt hashes, evidence hashes, trace IDs, citations, provider metadata, eval scores, and the accepted behavior output. Use `--include-prompt-text` only for audited inspection exports, not for behavior fine-tuning.
+
 Local dry run:
 
 ```bash

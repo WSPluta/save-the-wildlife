@@ -11,6 +11,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     runId: process.env.STWL_LOAD_RUN_ID || "",
     roomId: "",
     includeRejected: false,
+    includePromptText: false,
     limit: 1000,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -21,6 +22,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (arg === "--run-id") config.runId = next();
     else if (arg === "--room-id" || arg === "--room") config.roomId = next();
     else if (arg === "--include-rejected") config.includeRejected = true;
+    else if (arg === "--include-prompt-text") config.includePromptText = true;
     else if (arg === "--limit") config.limit = Number(next());
     else if (arg === "--help" || arg === "-h") {
       console.log(`Usage: node scripts/export-training-examples.mjs [options]
@@ -31,6 +33,7 @@ Options:
   --run-id <value>            Filter STWL_MODEL_TRACES.run_id
   --room-id <value>           Filter STWL_MODEL_TRACES.room_id
   --include-rejected          Include rejected examples; default exports accepted only
+  --include-prompt-text       Include raw stored prompt text for audit exports only
   --limit <n>                 Maximum rows, default 1000
 `);
       process.exit(0);
@@ -64,10 +67,13 @@ function buildCitations(row, exampleJson = {}) {
   return [...new Set(citations.filter(Boolean))];
 }
 
-function rowToTrainingRecord(row) {
+function rowToTrainingRecord(row, options = {}) {
   const exampleJson = parseJson(row.EXAMPLE_JSON, {});
   const scores = parseJson(row.SCORES_JSON, {});
   const outputText = text(row.OUTPUT_TEXT) || text(exampleJson.text);
+  const promptText = options.includePromptText
+    ? text(row.PROMPT_TEXT)
+    : "Produce one concise Save the Wildlife commentary line using only Oracle AI Database evidence references.";
   return {
     trace_id: text(row.TRACE_ID),
     session_id: text(row.SESSION_ID),
@@ -79,7 +85,8 @@ function rowToTrainingRecord(row) {
     redaction_status: text(row.REDACTION_STATUS || "metadata-only"),
     prompt_hash: text(row.PROMPT_HASH || exampleJson.prompt_hash),
     evidence_hash: text(row.EVIDENCE_HASH || exampleJson.evidence_hash),
-    prompt_text: text(row.PROMPT_TEXT),
+    prompt_text: promptText,
+    prompt_text_redacted: !options.includePromptText,
     citations: buildCitations(row, exampleJson),
     provider: text(row.PROVIDER || exampleJson.provider),
     model_id: text(row.MODEL_ID || exampleJson.model_id),
@@ -147,7 +154,9 @@ async function main() {
   const { connection, close } = oracle;
   try {
     const rows = await fetchRows(connection, config);
-    const records = rows.map(rowToTrainingRecord).filter((row) => row.output_text);
+    const records = rows.map((row) => rowToTrainingRecord(row, {
+      includePromptText: config.includePromptText,
+    })).filter((row) => row.output_text);
     const jsonl = records.map((row) => JSON.stringify(row)).join("\n") + (records.length ? "\n" : "");
     if (config.output) {
       writeFileSync(config.output, jsonl, "utf8");

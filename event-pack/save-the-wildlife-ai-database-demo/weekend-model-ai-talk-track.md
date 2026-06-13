@@ -175,6 +175,7 @@ Call out:
 
 - The trainer consumes behavior traces from the continuous-learning tables.
 - Evidence is carried as citations, prompt hashes, and evidence hashes.
+- Raw prompt text is redacted by default because live prompts can contain mutable facts; use `--include-prompt-text` only for audited inspection exports.
 - Full mutable facts remain in Oracle AI Database tables.
 - `Dockerfile.gpu` is the OCI Data Science BYOC image path for the bill-impacting A10 run.
 
