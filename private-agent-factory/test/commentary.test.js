@@ -36,6 +36,10 @@ function withEnv(values, fn) {
     });
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 test("builds a Canvas prompt from recorded SQL gameplay telemetry", () => {
   const summary = normalizeSummary({
     session_id: "S1",
@@ -215,6 +219,94 @@ test("uses in-db agent output as the commentary when Canvas is not configured", 
     assert.equal(response.in_db_agent.source, "oracle-ai-database-agent");
     assert.equal(response.canvas, null);
   });
+});
+
+test("returns in-db commentary when Canvas exceeds the remaining commentary budget", async () => {
+  const endpoint = "https://paf.example.test:8080/agentFactory/v1/agentBuilder/run/STWL";
+  const executeCalls = [];
+  const canvasCalls = [];
+  const oracleConnection = {
+    async execute() {
+      executeCalls.push("call");
+      return {
+        outBinds: {
+          result: JSON.stringify({
+            ok: true,
+            source: "select-ai",
+            commentary: "Select AI grounded Ada's 55 point finish in DB evidence.",
+            summary: {
+              session_id: "S-BUDGET",
+              player_id: "P-BUDGET",
+              player_name: "Ada",
+              score: 55,
+              trash_collected: 8,
+            },
+          }),
+        },
+      };
+    },
+  };
+  const requestJson = async (url, options) => {
+    canvasCalls.push({ url, timeoutMs: options.timeoutMs });
+    await sleep(Number(options.timeoutMs || 0) + 80);
+    return {
+      status: 200,
+      headers: {},
+      elapsed_ms: Number(options.timeoutMs || 0) + 80,
+      payload: { message: "Canvas eventually polished the line, too late." },
+    };
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: endpoint,
+    PAF_CANVAS_TIMEOUT_MS: "8000",
+    PAF_CANVAS_RETURN_RESERVE_MS: "25",
+    PAF_CANVAS_MIN_TIMEOUT_MS: "20",
+    PAF_COMMENTARY_DEADLINE_MS: "150",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "shadow",
+    OCI_BASE_MODEL_ENDPOINT_URL: "",
+    OCI_FT_MODEL_ENDPOINT_URL: "",
+    PAF_TRACE_PERSIST: "false",
+  }, async () => {
+    const started = Date.now();
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-BUDGET",
+          player_id: "P-BUDGET",
+          player_name: "Ada",
+          score: 55,
+        },
+      },
+      {
+        skipOracleSummary: true,
+        oracleConnection,
+        oracledb: { BIND_OUT: 3003, STRING: 2001 },
+        requestJson,
+        traceId: "TRACE-BUDGET",
+      }
+    );
+
+    assert.ok(Date.now() - started < 500);
+    assert.equal(response.source, "select-ai");
+    assert.equal(response.commentary, "Select AI grounded Ada's 55 point finish in DB evidence.");
+    assert.match(response.warning, /paf_canvas:paf_canvas_timeout_/);
+    assert.equal(response.trace_id, "TRACE-BUDGET");
+    assert.equal(response.route_mode, "shadow");
+    assert.equal(response.primary_provider, "oci-base");
+    assert.equal(response.candidate_provider, "oci-fine-tuned");
+    assert.ok(response.evidence_hash);
+    assert.ok(response.prompt_hash);
+    assert.equal(response.in_db_agent.source, "select-ai");
+    assert.equal(response.canvas, null);
+  });
+
+  assert.equal(executeCalls.length, 1);
+  assert.equal(canvasCalls.length, 1);
+  assert.ok(canvasCalls[0].timeoutMs < 150);
 });
 
 test("uses a configured PAF Canvas endpoint before deterministic fallback", async () => {

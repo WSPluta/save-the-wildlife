@@ -24,6 +24,9 @@ const AGENT_MEMORIES_TABLE = safeIdentifier(process.env.AGENT_MEMORIES_TABLE || 
 const ORACLE_CONFIG_DIR = process.env.ORACLE_CONFIG_DIR || process.env.TNS_ADMIN || (existsSync("/wallet") ? "/wallet" : "");
 const profanityPattern = /\b(fuck|shit|bitch|asshole|bastard|dick|cunt)\b/i;
 const DEFAULT_CANVAS_TIMEOUT_MS = 8000;
+const DEFAULT_COMMENTARY_DEADLINE_MS = 9000;
+const DEFAULT_CANVAS_RETURN_RESERVE_MS = 1000;
+const DEFAULT_CANVAS_MIN_TIMEOUT_MS = 250;
 let inDbPackageInitAttempted = false;
 let selectAiInitAttempted = false;
 let matchIntelligenceInitAttempted = false;
@@ -129,6 +132,33 @@ function modelRouterConfig() {
     fineTunedEndpointUrl: textValue(process.env.OCI_FT_MODEL_ENDPOINT_URL),
     temperature: Math.max(0, Math.min(2, numberValue(process.env.OCI_MODEL_ENDPOINT_TEMPERATURE || 0.2, 0.2))),
     maxTokens: Math.max(32, Math.min(512, numberValue(process.env.OCI_MODEL_ENDPOINT_MAX_TOKENS || 120, 120))),
+  };
+}
+
+function boundedMs(value, fallback, min = 1, max = 60_000) {
+  return Math.max(min, Math.min(max, numberValue(value, fallback)));
+}
+
+function commentaryBudgetConfig() {
+  return {
+    deadlineMs: boundedMs(
+      process.env.PAF_COMMENTARY_DEADLINE_MS || process.env.PAF_TOTAL_TIMEOUT_MS || DEFAULT_COMMENTARY_DEADLINE_MS,
+      DEFAULT_COMMENTARY_DEADLINE_MS,
+      50,
+      60_000
+    ),
+    canvasReturnReserveMs: boundedMs(
+      process.env.PAF_CANVAS_RETURN_RESERVE_MS || DEFAULT_CANVAS_RETURN_RESERVE_MS,
+      DEFAULT_CANVAS_RETURN_RESERVE_MS,
+      0,
+      10_000
+    ),
+    canvasMinTimeoutMs: boundedMs(
+      process.env.PAF_CANVAS_MIN_TIMEOUT_MS || DEFAULT_CANVAS_MIN_TIMEOUT_MS,
+      DEFAULT_CANVAS_MIN_TIMEOUT_MS,
+      1,
+      10_000
+    ),
   };
 }
 
@@ -862,23 +892,27 @@ async function callPafCanvas(summary, maxChars, options = {}) {
   const config = canvasConfig();
   if (!config.runEndpointUrl) return null;
   const requestFn = options.requestJson || requestJson;
+  const timeoutMs = boundedMs(options.timeoutMs || config.timeoutMs, config.timeoutMs, 1, config.timeoutMs);
+  const effectiveConfig = { ...config, timeoutMs };
 
-  const login = config.sessionCookie ? { attempted: false, ok: false, cookie: "" } : await loginWithBasic(config, requestFn);
+  const login = effectiveConfig.sessionCookie
+    ? { attempted: false, ok: false, cookie: "" }
+    : await loginWithBasic(effectiveConfig, requestFn);
   const headers = {
     Accept: "application/json",
     "Content-Type": "application/json",
     "User-Agent": "save-the-wildlife-paf-canvas/1.0",
   };
-  const cookie = config.sessionCookie || login.cookie;
+  const cookie = effectiveConfig.sessionCookie || login.cookie;
   if (cookie) headers.Cookie = cookie;
-  if (config.basicUsername && config.basicPassword) {
-    headers.Authorization = `Basic ${Buffer.from(`${config.basicUsername}:${config.basicPassword}`).toString("base64")}`;
+  if (effectiveConfig.basicUsername && effectiveConfig.basicPassword) {
+    headers.Authorization = `Basic ${Buffer.from(`${effectiveConfig.basicUsername}:${effectiveConfig.basicPassword}`).toString("base64")}`;
   }
 
-  const response = await requestFn(config.runEndpointUrl, {
+  const response = await requestFn(effectiveConfig.runEndpointUrl, {
     method: "POST",
-    timeoutMs: config.timeoutMs,
-    verifyTls: config.verifyTls,
+    timeoutMs: effectiveConfig.timeoutMs,
+    verifyTls: effectiveConfig.verifyTls,
     headers,
     body: JSON.stringify({
       message: buildCanvasMessage(summary, {
@@ -886,7 +920,7 @@ async function callPafCanvas(summary, maxChars, options = {}) {
         context: options.context,
         outputFormat: options.outputFormat,
       }),
-      roomId: config.roomId || null,
+      roomId: effectiveConfig.roomId || null,
     }),
   });
 
@@ -907,7 +941,7 @@ async function callPafCanvas(summary, maxChars, options = {}) {
     room_id: response.payload?.roomId || response.payload?.room_id || null,
     status: response.status,
     elapsed_ms: response.elapsed_ms,
-    endpoint: safeCanvasEndpoint(config.runEndpointUrl),
+    endpoint: safeCanvasEndpoint(effectiveConfig.runEndpointUrl),
     login: login.attempted ? { attempted: true, ok: login.ok, status: login.status } : { attempted: false },
     request_headers: redactHeaders(headers),
   };
@@ -2154,6 +2188,9 @@ async function callInDbAgent(summary, maxChars, options = {}) {
 }
 
 async function buildCommentary(body = {}, options = {}) {
+  const startedAt = Number(options.startedAt || Date.now());
+  const budget = commentaryBudgetConfig();
+  const remainingBudgetMs = () => budget.deadlineMs - (Date.now() - startedAt);
   const maxChars = Number(body.max_chars || body.maxChars || COMMENTARY_MAX_CHARS);
   const bodySummary = normalizeSummary(body.summary || body);
   const requestedOutput = outputFormat(body.output_format || body.outputFormat || body.format);
@@ -2216,14 +2253,28 @@ async function buildCommentary(body = {}, options = {}) {
   }
 
   let canvas = null;
-  if (canvasConfig().runEndpointUrl) {
+  const canvasRuntimeConfig = canvasConfig();
+  if (canvasRuntimeConfig.runEndpointUrl) {
     try {
-      canvas = await callPafCanvas(summary, maxChars, {
-        ...options,
-        inDbCommentary: inDbAgent?.commentary,
-        context: matchContext,
-        outputFormat: requestedOutput,
-      });
+      const remaining = remainingBudgetMs();
+      const canvasTimeoutMs = Math.floor(Math.min(
+        canvasRuntimeConfig.timeoutMs,
+        remaining - budget.canvasReturnReserveMs
+      ));
+      if (canvasTimeoutMs < budget.canvasMinTimeoutMs) {
+        throw new Error(`budget_exhausted_${Math.max(0, Math.floor(remaining))}ms_remaining`);
+      }
+      canvas = await withTimeout(
+        callPafCanvas(summary, maxChars, {
+          ...options,
+          timeoutMs: canvasTimeoutMs,
+          inDbCommentary: inDbAgent?.commentary,
+          context: matchContext,
+          outputFormat: requestedOutput,
+        }),
+        canvasTimeoutMs,
+        "paf_canvas"
+      );
     } catch (error) {
       warning = [warning, `paf_canvas:${error.message}`].filter(Boolean).join("; ");
     }
