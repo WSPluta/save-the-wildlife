@@ -75,6 +75,7 @@ resource "oci_devops_deploy_artifact" "command_spec_deploy" {
       oci_model_endpoint_verify_tls     = var.oci_model_endpoint_verify_tls
       paf_trace_persist                 = var.paf_trace_persist
       paf_eval_enabled                  = var.paf_eval_enabled
+      paf_model_fast_path_enabled       = var.paf_model_fast_path_enabled
       paf_eval_rubric_version           = var.paf_eval_rubric_version
       paf_training_capture_enabled      = var.paf_training_capture_enabled
     })

@@ -296,6 +296,7 @@ async function devopsTFvars() {
   const ociModelEndpointVerifyTls = process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true";
   const pafTracePersist = process.env.PAF_TRACE_PERSIST || "true";
   const pafEvalEnabled = process.env.PAF_EVAL_ENABLED || "true";
+  const pafModelFastPathEnabled = process.env.PAF_MODEL_FAST_PATH_ENABLED || "true";
   const pafEvalRubricVersion = process.env.PAF_EVAL_RUBRIC_VERSION || "stwl-commentary-v1";
   const pafTrainingCaptureEnabled = process.env.PAF_TRAINING_CAPTURE_ENABLED || "true";
 
@@ -339,6 +340,7 @@ async function devopsTFvars() {
       .replace(/OCI_MODEL_ENDPOINT_VERIFY_TLS/g, ociModelEndpointVerifyTls)
       .replace(/PAF_TRACE_PERSIST/g, pafTracePersist)
       .replace(/PAF_EVAL_ENABLED/g, pafEvalEnabled)
+      .replace(/PAF_MODEL_FAST_PATH_ENABLED/g, pafModelFastPathEnabled)
       .replace(/PAF_EVAL_RUBRIC_VERSION/g, pafEvalRubricVersion)
       .replace(/PAF_TRAINING_CAPTURE_ENABLED/g, pafTrainingCaptureEnabled)
       .replace(/GITHUB_REPOSITORY_URL/g, githubURL)

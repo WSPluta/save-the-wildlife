@@ -70,6 +70,7 @@ steps:
       export OCI_MODEL_ENDPOINT_VERIFY_TLS="${oci_model_endpoint_verify_tls}"
       export PAF_TRACE_PERSIST="${paf_trace_persist}"
       export PAF_EVAL_ENABLED="${paf_eval_enabled}"
+      export PAF_MODEL_FAST_PATH_ENABLED="${paf_model_fast_path_enabled}"
       export PAF_EVAL_RUBRIC_VERSION="${paf_eval_rubric_version}"
       export PAF_TRAINING_CAPTURE_ENABLED="${paf_training_capture_enabled}"
       npx zx scripts/kustom.mjs ${region_key} $adb_admin_password ${adb_service} "$adb_wallet_password"

@@ -183,6 +183,12 @@ variable "paf_eval_enabled" {
   description = "Whether PAF evaluates base vs fine-tuned outputs."
 }
 
+variable "paf_model_fast_path_enabled" {
+  type        = string
+  default     = "true"
+  description = "Whether PAF should route directly to private OCI model endpoints before optional Canvas enrichment."
+}
+
 variable "paf_eval_rubric_version" {
   type        = string
   default     = "stwl-commentary-v1"
