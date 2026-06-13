@@ -10,7 +10,7 @@ Use this as the anchor before any deeper AI discussion:
 - Oracle AI Database is the evidence and memory layer: game facts, score proof, traces, outputs, evals, training examples, and promotion records stay inspectable.
 - The load gate now passes tiers `5, 10, 50, 100, 500, 1000`.
 - The current model endpoints are private OKE behavior adapters, not yet GPU-backed upstream LLMs.
-- Say this plainly: the harness and proof path are real through tier 1000; the next proof is swapping the adapters to private upstream vanilla and fine-tuned LLM runtime.
+- Say this plainly: the harness and proof path are real through tier 1000; the upstream LLM proof gate is still pending until both route outputs report `runtime_mode=upstream-llm`.
 
 ## One-Sentence Thesis
 
@@ -68,6 +68,8 @@ Here is the version to practice.
 > The fix was not to relax the gate. We changed the harness so live commentary goes to the private model route first, before optional slow enrichment. After that, the full canary sequence passed: 5, 10, 50, 100, 500, and 1000 players. At 1000, we verified 1000 joins, 1000 high-score rows, 1000 commentary events, zero duplicate commentary, and p95 commentary latency around 2.4 seconds.
 >
 > The honest caveat is this: the private endpoints are currently behavior adapters in OKE. The route, metadata, load gates, evals, and Oracle AI Database learning tables are live. The next proof is to attach private upstream GPU-backed vanilla and fine-tuned LLM deployments, then rerun the same canary gates. That is the right standard: do not claim the fine-tune won until the harness proves it.
+>
+> The sentence to remember is: tier-1000 canary proves the harness; upstream runtime gate proves the two LLMs.
 
 ## Ten-Minute Technical Walkthrough
 
@@ -107,6 +109,16 @@ Call out:
 - Source `oci-base`.
 - Route `oci-base->oci-fine-tuned`.
 - Runtime `behavior-adapter`.
+
+For the real two-LLM proof run, use the same harness with the runtime gate enabled:
+
+```bash
+STWL_LOAD_REQUIRE_UPSTREAM_LLM=true \
+STWL_LOAD_TIERS=5,10,50,100,500,1000 \
+npm --prefix bots run load:commentary
+```
+
+That run should fail if either primary or candidate output still reports `behavior-adapter` or `upstream_configured=false`.
 
 ### 2. PAF Router
 
@@ -154,13 +166,16 @@ Use this line:
 7. Point to `Facts in memory, behavior in weights`.
 8. Point to primary/candidate providers.
 9. Point to `behavior-adapter`.
-10. Say the next stage is private upstream GPU runtime, not a new harness.
+10. Point to `LLM proof gate`.
+11. Say the next stage is private upstream GPU runtime, not a new harness.
 
 ## Questions You Should Be Ready For
 
 **Is this really fine-tuned yet?**
 
 Not yet in the live runtime. The PAF route, shadow comparison, evals, traces, admin evidence, and canary gates are live. The current private endpoints are behavior adapters. The next step is to attach real private upstream vanilla and fine-tuned LLM endpoints behind those adapters and rerun the same gates.
+
+The repository now has a separate runtime gate for that claim: `STWL_LOAD_REQUIRE_UPSTREAM_LLM=true`. Adapter-mode canary success cannot pass as two live LLMs when that gate is enabled.
 
 **Why show this before the GPU model is live?**
 
@@ -190,7 +205,7 @@ Attach real upstream LLM runtime behind the existing private endpoints:
 2. Train or attach a LoRA/QLoRA behavior adapter for the candidate.
 3. Configure `stwl-base-commentary` and `stwl-ft-commentary` with upstream URLs.
 4. Keep `runtime_mode=upstream-llm` visible in PAF metadata.
-5. Rerun `STWL_LOAD_TIERS=5,10,50,100,500,1000`.
+5. Rerun `STWL_LOAD_REQUIRE_UPSTREAM_LLM=true STWL_LOAD_TIERS=5,10,50,100,500,1000`.
 6. Promote only if groundedness and confidence stay green and the candidate improves quality or token efficiency.
 
 ## Source Material Incorporated

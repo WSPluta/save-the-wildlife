@@ -49,9 +49,12 @@ describe("admin load evaluation view", () => {
     expect(html).toContain("oci-fine-tuned");
     expect(html).toContain("private OKE endpoints");
     expect(html).toContain("behavior-adapter");
+    expect(html).toContain("LLM proof gate");
+    expect(html).toContain("Upstream LLM runtime gate waits for both route outputs to report upstream-llm");
     expect(html).toContain("uses_retrieved_evidence");
     expect(html).toContain("High-score test table verified 1000/1000 rows");
     expect(html).toContain("Promotion held for upstream GPU LLM runtime");
+    expect(html).toContain("adapter-mode canary success cannot be mistaken for two live LLMs");
   });
 
   it("styles the AI learning pipeline, comparison, and rubric panels", () => {
@@ -59,5 +62,6 @@ describe("admin load evaluation view", () => {
     expect(styles).toMatch(/\.admin-comparison\s*{/);
     expect(styles).toMatch(/\.admin-rubric-grid\s*{/);
     expect(styles).toMatch(/\.admin-learning-note\s*{/);
+    expect(styles).toMatch(/\.admin-gate-pending\s*{/);
   });
 });

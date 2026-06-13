@@ -312,6 +312,7 @@ export function loadConfig(env = process.env, argv = process.argv.slice(2)) {
     requireScoreRows: boolValue(env.STWL_LOAD_REQUIRE_SCORE_ROWS, true),
     requireModelMetadata: boolValue(env.STWL_LOAD_REQUIRE_MODEL_METADATA, true),
     requireValidPromotionGate: boolValue(env.STWL_LOAD_REQUIRE_VALID_PROMOTION_GATE, true),
+    requireUpstreamLlm: boolValue(args["require-upstream-llm"] || env.STWL_LOAD_REQUIRE_UPSTREAM_LLM, false),
     disallowedSources,
   };
 }
@@ -811,6 +812,11 @@ export function evaluateTierGates(tierReport, config = {}) {
         .map((player) => ({ id: player.id, warnings: modelFallbackWarnings(player.commentary) }))
         .filter((item) => item.warnings.length)
     : [];
+  const runtimeFailures = modelRequired && config.requireUpstreamLlm
+    ? commentaryPlayers
+        .map((player) => ({ id: player.id, failures: modelRuntimeFailures(player.commentary) }))
+        .filter((item) => item.failures.length)
+    : [];
   const disallowedSources = new Set(
     (config.disallowedSources || DEFAULT_DISALLOWED_SOURCES).map((item) => String(item).trim())
   );
@@ -847,6 +853,9 @@ export function evaluateTierGates(tierReport, config = {}) {
   if (modelFallbacks.length) {
     reasons.push(`model_endpoint_fallback:${modelFallbacks.length}`);
   }
+  if (runtimeFailures.length) {
+    reasons.push(`model_runtime_not_upstream_llm:${runtimeFailures.length}`);
+  }
 
   return {
     verdict: reasons.length ? "failed" : "passed",
@@ -871,6 +880,7 @@ export function evaluateTierGates(tierReport, config = {}) {
     })),
     modelMetadata: {
       required: modelRequired,
+      upstreamRuntimeRequired: Boolean(config.requireUpstreamLlm),
       missing: missingModelMetadata.map((player) => player.id),
       routeCounts: modelRouteCounts(commentaryPlayers),
       runtimeCounts: modelRuntimeCounts(commentaryPlayers),
@@ -881,6 +891,7 @@ export function evaluateTierGates(tierReport, config = {}) {
         promotionVerdict: player.commentary?.promotionVerdict || "",
       })),
       fallbackWarnings: modelFallbacks,
+      runtimeFailures,
     },
     latency: {
       p50: percentile(latencies, 50),
@@ -979,6 +990,25 @@ function modelFallbackWarnings(commentary = {}) {
   return warnings;
 }
 
+function modelRuntimeFailures(commentary = {}) {
+  const failures = [];
+  for (const role of ["primary", "candidate"]) {
+    const output = commentary?.modelRoute?.[role];
+    if (!output?.provider) {
+      failures.push(`${role}:missing_output`);
+      continue;
+    }
+    const runtimeMode = String(output.runtime_mode || "").trim();
+    if (runtimeMode !== "upstream-llm") {
+      failures.push(`${role}:runtime_mode=${runtimeMode || "missing"}`);
+    }
+    if (output.upstream_configured === false) {
+      failures.push(`${role}:upstream_configured=false`);
+    }
+  }
+  return failures;
+}
+
 function closeSocket(socket) {
   try {
     socket.removeAllListeners();
@@ -1051,6 +1081,7 @@ function renderMarkdownSummary(runReport) {
     `- Finished: ${runReport.finishedAt || "in progress"}`,
     `- Target: ${runReport.target.socketUrl}${runReport.target.socketPath}`,
     `- Score API: ${runReport.target.scoreBaseUrl}/api/score`,
+    `- Upstream LLM runtime required: ${runReport.target.upstreamRuntimeRequired ? "yes" : "no"}`,
     `- Verdict: ${runReport.verdict || "running"}`,
     "",
     "| Tier | Room | Verdict | Joined | Join failures | High-score rows | Commentary | p95 commentary | Duplicates | Sources | Model routes | Model runtimes | Promotions |",
@@ -1175,6 +1206,7 @@ export async function runLoad(config = loadConfig()) {
       socketPath: config.socketPath,
       scoreBaseUrl: config.scoreBaseUrl,
       namespace: config.namespace,
+      upstreamRuntimeRequired: Boolean(config.requireUpstreamLlm),
     },
     tiers: [],
     verdict: "running",

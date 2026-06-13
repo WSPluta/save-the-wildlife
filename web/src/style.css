@@ -1017,7 +1017,8 @@ body.phase-admin #monitor-panel {
 .admin-evidence-verdict,
 .admin-status-pill,
 .admin-step-state,
-.admin-gate-pass {
+.admin-gate-pass,
+.admin-gate-pending {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1036,7 +1037,7 @@ body.phase-admin #monitor-panel {
 
 .admin-evidence-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
   padding: 0 12px;
 }
@@ -1127,6 +1128,10 @@ body.phase-admin #monitor-panel {
   background: rgba(30, 167, 253, 0.24);
 }
 
+.admin-gate-pending {
+  background: rgba(255, 184, 77, 0.24);
+}
+
 .admin-gate-list li {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1134,7 +1139,8 @@ body.phase-admin #monitor-panel {
   gap: 8px;
 }
 
-.admin-gate-pass {
+.admin-gate-pass,
+.admin-gate-pending {
   min-width: 46px;
   padding: 4px 7px;
   font-size: 11px;

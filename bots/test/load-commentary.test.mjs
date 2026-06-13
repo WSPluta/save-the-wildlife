@@ -108,6 +108,25 @@ test("parses join emit delay with a conservative default", () => {
   assert.equal(customConfig.joinEmitDelayMs, 1000);
 });
 
+test("parses the opt-in upstream LLM runtime proof gate", () => {
+  const defaultConfig = loadConfig({
+    STWL_LOAD_RUN_ID: "202606121237",
+    STWL_LOAD_TIERS: "5",
+    STWL_LOAD_WS_URL: "https://stwl.example.test",
+    STWL_LOAD_CAPTURE_K8S: "false",
+  });
+  const strictConfig = loadConfig({
+    STWL_LOAD_RUN_ID: "202606121238",
+    STWL_LOAD_TIERS: "5",
+    STWL_LOAD_WS_URL: "https://stwl.example.test",
+    STWL_LOAD_CAPTURE_K8S: "false",
+    STWL_LOAD_REQUIRE_UPSTREAM_LLM: "true",
+  });
+
+  assert.equal(defaultConfig.requireUpstreamLlm, false);
+  assert.equal(strictConfig.requireUpstreamLlm, true);
+});
+
 test("normalizes and detects duplicate commentary text", () => {
   const players = [
     { id: "a", commentary: { text: " Great run. " } },
@@ -314,6 +333,103 @@ test("fails model gate when OCI endpoint reports adapter fallback", () => {
   assert.deepEqual(gates.modelMetadata.fallbackWarnings, [
     { id: "p1", warnings: ["primary:adapter_fallback_no_upstream"] },
   ]);
+});
+
+test("fails upstream runtime gate when model route is still behavior-adapter", () => {
+  const report = {
+    attempted: 1,
+    players: [
+      {
+        id: "p1",
+        joined: true,
+        scoreRow: { ok: true },
+        commentary: modelCommentary("Ada closed on 42 points from DB evidence.", {
+          modelRoute: {
+            primary: {
+              provider: "oci-base",
+              latency_ms: 90,
+              runtime_mode: "behavior-adapter",
+              upstream_configured: false,
+              warnings: [],
+            },
+            candidate: {
+              provider: "oci-fine-tuned",
+              latency_ms: 72,
+              runtime_mode: "behavior-adapter",
+              upstream_configured: false,
+              warnings: [],
+            },
+          },
+        }),
+      },
+    ],
+  };
+
+  const gates = evaluateTierGates(report, {
+    commentaryTimeoutMs: 10_000,
+    requireFullPath: true,
+    requireScoreRows: true,
+    requireModelMetadata: true,
+    requireUpstreamLlm: true,
+  });
+
+  assert.equal(gates.verdict, "failed");
+  assert.equal(gates.modelMetadata.upstreamRuntimeRequired, true);
+  assert.ok(gates.reasons.includes("model_runtime_not_upstream_llm:1"));
+  assert.deepEqual(gates.modelMetadata.runtimeFailures, [
+    {
+      id: "p1",
+      failures: [
+        "primary:runtime_mode=behavior-adapter",
+        "primary:upstream_configured=false",
+        "candidate:runtime_mode=behavior-adapter",
+        "candidate:upstream_configured=false",
+      ],
+    },
+  ]);
+});
+
+test("does not require upstream runtime unless the LLM proof gate is enabled", () => {
+  const report = {
+    attempted: 1,
+    players: [
+      {
+        id: "p1",
+        joined: true,
+        scoreRow: { ok: true },
+        commentary: modelCommentary("Ada closed on 42 points from DB evidence.", {
+          modelRoute: {
+            primary: {
+              provider: "oci-base",
+              latency_ms: 90,
+              runtime_mode: "behavior-adapter",
+              upstream_configured: false,
+              warnings: [],
+            },
+            candidate: {
+              provider: "oci-fine-tuned",
+              latency_ms: 72,
+              runtime_mode: "behavior-adapter",
+              upstream_configured: false,
+              warnings: [],
+            },
+          },
+        }),
+      },
+    ],
+  };
+
+  const gates = evaluateTierGates(report, {
+    commentaryTimeoutMs: 10_000,
+    requireFullPath: true,
+    requireScoreRows: true,
+    requireModelMetadata: true,
+    requireUpstreamLlm: false,
+  });
+
+  assert.equal(gates.verdict, "passed");
+  assert.equal(gates.modelMetadata.upstreamRuntimeRequired, false);
+  assert.deepEqual(gates.modelMetadata.runtimeFailures, []);
 });
 
 test("join-failure aborts do not also require commentary", () => {

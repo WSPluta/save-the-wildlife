@@ -481,6 +481,10 @@
               <span>Runtime</span>
               <strong>Adapter</strong>
             </div>
+            <div class="admin-metric">
+              <span>LLM proof gate</span>
+              <strong>Pending</strong>
+            </div>
           </div>
 
           <div class="admin-learning-pipeline" aria-label="Learning pipeline timeline">
@@ -525,6 +529,7 @@
                 <li><span class="admin-gate-pass">Pass</span> High-score test table verified 1000/1000 rows at tier 1000</li>
                 <li><span class="admin-gate-pass">Pass</span> Evidence hash matched the PAF prompt hash lineage</li>
                 <li><span class="admin-gate-pass">Pass</span> Training examples captured redacted behavior traces only</li>
+                <li><span class="admin-gate-pending">Pending</span> Upstream LLM runtime gate waits for both route outputs to report upstream-llm</li>
               </ul>
             </section>
 
@@ -545,7 +550,7 @@
               <div class="admin-section-title">Gate Explanation</div>
               <div class="admin-learning-note">
                 <strong>Promotion held for upstream GPU LLM runtime, not for the load gate.</strong>
-                <span>The router, traces, evals, and base-vs-fine-tuned metadata are stable through tier 1000; the true fine-tuned promotion gate still waits for private upstream model runtime instead of behavior-adapter mode.</span>
+                <span>The router, traces, evals, and base-vs-fine-tuned metadata are stable through tier 1000; the true fine-tuned promotion gate still waits for private upstream model runtime instead of behavior-adapter mode. The production load harness now has an explicit upstream LLM gate so adapter-mode canary success cannot be mistaken for two live LLMs.</span>
               </div>
             </section>
           </div>
