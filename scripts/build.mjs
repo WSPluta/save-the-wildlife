@@ -40,6 +40,16 @@ if (action === "model-ai-training") {
   process.exit(0);
 }
 
+if (action === "model-ai-training-gpu") {
+  await releaseStaticImage(
+    "model-ai/training",
+    "model-ai-training-gpu",
+    process.env.MODEL_AI_TRAINING_GPU_VERSION || process.env.MODEL_AI_TRAINING_VERSION || "latest",
+    { dockerfile: "Dockerfile.gpu" }
+  );
+  process.exit(0);
+}
+
 if (action === "model-ai-inference") {
   await releaseStaticImage("model-ai/inference", "model-ai-inference", process.env.MODEL_AI_INFERENCE_VERSION || "latest");
   process.exit(0);
@@ -63,6 +73,7 @@ console.log("\tnpx zx scripts/build.mjs score");
 console.log("\tnpx zx scripts/build.mjs replay");
 console.log("\tnpx zx scripts/build.mjs private-agent-factory");
 console.log("\tnpx zx scripts/build.mjs model-ai-training");
+console.log("\tnpx zx scripts/build.mjs model-ai-training-gpu");
 console.log("\tnpx zx scripts/build.mjs model-ai-inference");
 
 async function releaseNpm(service, versionOverride) {
@@ -81,9 +92,9 @@ async function releaseGradle(service) {
   await cd("..");
 }
 
-async function releaseStaticImage(directory, imageName, version) {
+async function releaseStaticImage(directory, imageName, version, options = {}) {
   await cd(directory);
   console.log(`Releasing ${imageName}:${version})`);
-  await buildImage(imageName, version);
+  await buildImage(imageName, version, options);
   await cd("../..");
 }

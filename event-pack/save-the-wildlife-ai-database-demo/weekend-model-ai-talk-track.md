@@ -10,6 +10,7 @@ Use this as the anchor before any deeper AI discussion:
 - Oracle AI Database is the evidence and memory layer: game facts, score proof, traces, outputs, evals, training examples, and promotion records stay inspectable.
 - The load gate now passes tiers `5, 10, 50, 100, 500, 1000`.
 - The current model endpoints are private OKE behavior adapters, not yet GPU-backed upstream LLMs.
+- The repository now has a GPU-ready behavior-only QLoRA trainer under `model-ai/training`; local dry-run validates dataset shape without claiming the live endpoints are fine-tuned.
 - Say this plainly: the harness and proof path are real through tier 1000; the upstream LLM proof gate is still pending until both route outputs report `runtime_mode=upstream-llm`.
 
 ## One-Sentence Thesis
@@ -154,6 +155,28 @@ The core engineering argument:
 Use this line:
 
 > A fine-tune should make the model better at using memory, not pretend memory is unnecessary.
+
+### 5. Behavior-Only Training Path
+
+Show the repo path:
+
+```bash
+npm --prefix private-agent-factory run export:training -- \
+  --dataset-version stwl-commentary-v1 \
+  --output /tmp/stwl-behavior-v1.jsonl
+
+python3 model-ai/training/train_behavior_lora.py \
+  --dataset-uri /tmp/stwl-behavior-v1.jsonl \
+  --adapter-uri /tmp/stwl-commentary-adapter \
+  --dry-run
+```
+
+Call out:
+
+- The trainer consumes behavior traces from the continuous-learning tables.
+- Evidence is carried as citations, prompt hashes, and evidence hashes.
+- Full mutable facts remain in Oracle AI Database tables.
+- `Dockerfile.gpu` is the OCI Data Science BYOC image path for the bill-impacting A10 run.
 
 ## Demo Click Path
 

@@ -106,12 +106,18 @@ export async function build_image(name, version) {
   }
 }
 
-export async function buildImage(name, version) {
+export async function buildImage(name, version, options = {}) {
   const tag = `${name}:${version}`;
-  console.log(`${ce} build . -t ${tag}`);
+  const dockerfile = options.dockerfile || process.env.DOCKERFILE || "";
+  const buildLabel = dockerfile ? `${ce} build -f ${dockerfile} . -t ${tag}` : `${ce} build . -t ${tag}`;
+  console.log(buildLabel);
   console.time(`[build] ${tag}`);
   try {
-    await $`${ce} build . -t ${tag}`;
+    if (dockerfile) {
+      await $`${ce} build -f ${dockerfile} . -t ${tag}`;
+    } else {
+      await $`${ce} build . -t ${tag}`;
+    }
     console.timeEnd(`[build] ${tag}`);
   } catch (error) {
     console.timeEnd(`[build] ${tag}`);

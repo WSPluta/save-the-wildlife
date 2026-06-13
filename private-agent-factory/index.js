@@ -2598,6 +2598,7 @@ export {
   canvasConfig,
   deterministicScript,
   evaluateModelOutputs,
+  getOracleConnection,
   inDbAgentConfig,
   inDbPackageStatements,
   learningTraceStatements,

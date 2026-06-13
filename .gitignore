@@ -56,6 +56,9 @@ logs
 
 *.retry
 
+__pycache__/
+*.pyc
+
 *.pem
 *.key
 *.crt

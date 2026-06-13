@@ -20,6 +20,11 @@ const {
   selectAiInitStatements,
 } = await import("../index.js");
 
+const {
+  parseArgs: parseTrainingExportArgs,
+  rowToTrainingRecord,
+} = await import("../scripts/export-training-examples.mjs");
+
 function withEnv(values, fn) {
   const previous = {};
   for (const key of Object.keys(values)) {
@@ -965,4 +970,57 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(learningInit, /CREATE TABLE STWL_MODEL_EVALS/i);
   assert.match(learningInit, /CREATE TABLE STWL_TRAINING_EXAMPLES/i);
   assert.match(learningInit, /CREATE TABLE STWL_MODEL_PROMOTIONS/i);
+});
+
+test("training export maps accepted DB trace rows to behavior-only JSONL records", () => {
+  const record = rowToTrainingRecord({
+    TRACE_ID: "trace-1",
+    SESSION_ID: "session-1",
+    ROOM_ID: "LOAD-run-5",
+    PLAYER_ID: "player-1",
+    RUN_ID: "run-1",
+    DATASET_VERSION: "stwl-commentary-v1",
+    SPLIT: "candidate",
+    REDACTION_STATUS: "metadata-only",
+    PROMPT_HASH: "prompt-hash",
+    EVIDENCE_HASH: "evidence-hash",
+    PROMPT_TEXT: "Write one concise commentary line from evidence refs.",
+    RUBRIC_VERSION: "stwl-commentary-v1",
+    VERDICT: "candidate_ready",
+    SCORES_JSON: JSON.stringify({ unique_commentary: 1, confidence_calibrated: 1 }),
+    PROVIDER: "oci-fine-tuned",
+    MODEL_ID: "ft-adapter-v1",
+    OUTPUT_TEXT: "Ada stayed evidence-backed and concise.",
+    EXAMPLE_JSON: JSON.stringify({
+      citations: ["STWL_MODEL_OUTPUTS:trace-1:oci-fine-tuned"],
+      text: "unused fallback",
+    }),
+  });
+
+  assert.equal(record.trace_id, "trace-1");
+  assert.equal(record.output_text, "Ada stayed evidence-backed and concise.");
+  assert.equal(record.provider, "oci-fine-tuned");
+  assert.equal(record.eval_scores.unique_commentary, 1);
+  assert.ok(record.citations.includes("STWL_GAME_EVENTS:session-1:player-1"));
+  assert.ok(record.citations.includes("STWL_MODEL_TRACES:trace-1"));
+  assert.ok(record.citations.includes("STWL_MODEL_EVALS:trace-1:stwl-commentary-v1"));
+  assert.equal(Object.hasOwn(record, "evidence_json"), false);
+});
+
+test("training export CLI parsing keeps accepted-only default and caps limits", () => {
+  const parsed = parseTrainingExportArgs([
+    "--dataset-version", "v1",
+    "--run-id", "run-1",
+    "--room", "LOAD-run-100",
+    "--include-rejected",
+    "--limit", "50000",
+    "--output", "/tmp/out.jsonl",
+  ]);
+
+  assert.equal(parsed.datasetVersion, "v1");
+  assert.equal(parsed.runId, "run-1");
+  assert.equal(parsed.roomId, "LOAD-run-100");
+  assert.equal(parsed.includeRejected, true);
+  assert.equal(parsed.limit, 10000);
+  assert.equal(parsed.output, "/tmp/out.jsonl");
 });

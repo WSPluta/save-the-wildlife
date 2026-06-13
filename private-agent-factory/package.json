@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node index.js",
     "check": "node --check index.js",
+    "export:training": "node scripts/export-training-examples.mjs",
     "test": "node --test test/*.test.js"
   },
   "license": "ISC",

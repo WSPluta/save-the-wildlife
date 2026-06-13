@@ -1,0 +1,15 @@
+ARG BASE_IMAGE=nvcr.io/nvidia/pytorch:24.05-py3
+FROM ${BASE_IMAGE}
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    STWL_USE_4BIT=true
+
+WORKDIR /app
+
+COPY requirements-gpu.txt /app/requirements-gpu.txt
+RUN python -m pip install --no-cache-dir -r /app/requirements-gpu.txt
+
+COPY train_behavior_lora.py /app/train_behavior_lora.py
+
+CMD ["python", "/app/train_behavior_lora.py"]
