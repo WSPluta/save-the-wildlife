@@ -59,6 +59,9 @@ spec:
         - secretRef:
             name: private-agent-factory-canvas-auth
             optional: true
+        - secretRef:
+            name: private-agent-factory-model-auth
+            optional: true
         volumeMounts:
         - name: wallet-volume
           mountPath: /wallet

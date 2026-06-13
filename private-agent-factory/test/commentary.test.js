@@ -9,9 +9,13 @@ const {
   buildCommentary,
   buildMatchContext,
   callInDbAgent,
+  callModelProvider,
   callPafCanvas,
+  evaluateModelOutputs,
   extractCanvasText,
+  learningTraceStatements,
   matchIntelligenceStatements,
+  modelRouterConfig,
   normalizeSummary,
   selectAiInitStatements,
 } = await import("../index.js");
@@ -270,6 +274,99 @@ test("uses a configured PAF Canvas endpoint before deterministic fallback", asyn
   assert.match(seen[0].body.message, /trail_crosses=1/);
   assert.match(seen[0].body.message, /freezes=1/);
   assert.equal(seen[0].body.roomId, null);
+});
+
+test("routes base and fine-tuned OCI model endpoints in shadow mode", async () => {
+  const calls = [];
+  const modelRequestJson = async (url, options) => {
+    const body = JSON.parse(options.body || "{}");
+    calls.push({ url, body });
+    assert.equal(body.trace_id, "TRACE-UNIT");
+    assert.equal(body.route_context.primary_provider, "oci-base");
+    assert.equal(body.route_context.candidate_provider, "oci-fine-tuned");
+    const isFineTuned = url.includes("fine-tuned");
+    return {
+      status: 200,
+      headers: {},
+      elapsed_ms: isFineTuned ? 88 : 104,
+      payload: {
+        ok: true,
+        provider: isFineTuned ? "oci-fine-tuned" : "oci-base",
+        model_id: isFineTuned ? "stwl-ft-v1" : "stwl-base-v1",
+        text: isFineTuned
+          ? "Ada closed on 42 points, grounded in SQL evidence."
+          : "Ada finished with 42 points after a clean evidence-backed run.",
+        tokens: isFineTuned ? 9 : 12,
+        finish_reason: "stop",
+      },
+    };
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "shadow",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
+    OCI_MODEL_ENDPOINT_AUTH_SECRET: "unit-secret",
+    PAF_TRACE_PERSIST: "false",
+    PAF_EVAL_ENABLED: "true",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-MODEL",
+          room_id: "ROOM-MODEL",
+          player_id: "P-MODEL",
+          player_name: "Ada",
+          score: 42,
+          trash_collected: 7,
+        },
+      },
+      {
+        skipOracleSummary: true,
+        traceId: "TRACE-UNIT",
+        modelRequestJson,
+      }
+    );
+
+    assert.equal(response.source, "oci-base");
+    assert.equal(response.fallback_source, "request-summary");
+    assert.equal(response.commentary, "Ada finished with 42 points after a clean evidence-backed run.");
+    assert.equal(response.trace_id, "TRACE-UNIT");
+    assert.equal(response.route_mode, "shadow");
+    assert.equal(response.primary_provider, "oci-base");
+    assert.equal(response.candidate_provider, "oci-fine-tuned");
+    assert.equal(response.model_id, "stwl-base-v1");
+    assert.equal(response.model_route.primary.model_id, "stwl-base-v1");
+    assert.equal(response.model_route.candidate.model_id, "stwl-ft-v1");
+    assert.equal(response.model_route.trace_persisted, false);
+    assert.equal(response.eval_scores.verdict, "candidate_ready");
+    assert.equal(response.promotion_verdict, "candidate_ready");
+  });
+
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].body.prompt, /Facts stay in Oracle AI Database memory|Model comparison task/);
+});
+
+test("model router config clamps invalid numeric environment values", async () => {
+  await withEnv({
+    PAF_MODEL_ROUTE_MODE: "unexpected",
+    OCI_MODEL_ENDPOINT_TIMEOUT_MS: "not-a-number",
+    OCI_MODEL_ENDPOINT_TEMPERATURE: "hot",
+    OCI_MODEL_ENDPOINT_MAX_TOKENS: "many",
+  }, async () => {
+    const config = modelRouterConfig();
+
+    assert.equal(config.routeMode, "shadow");
+    assert.equal(config.timeoutMs, 8000);
+    assert.equal(config.temperature, 0.2);
+    assert.equal(config.maxTokens, 120);
+  });
 });
 
 test("builds match intelligence context with SQL, graph, replay, and memory evidence", async () => {
@@ -621,6 +718,7 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   const profileSql = readFileSync(new URL("../../deploy/db/select_ai_profile_template.sql", import.meta.url), "utf8");
   const teamSql = readFileSync(new URL("../../deploy/db/select_ai_agent_team_template.sql", import.meta.url), "utf8");
   const matchSql = readFileSync(new URL("../../deploy/db/stwl_match_intelligence.sql", import.meta.url), "utf8");
+  const learningSql = readFileSync(new URL("../../deploy/db/stwl_model_learning.sql", import.meta.url), "utf8");
 
   assert.match(packageSql, /CREATE OR REPLACE PACKAGE\s+stwl_commentary_pkg/i);
   assert.match(packageSql, /stwl_game_events/i);
@@ -658,6 +756,12 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(matchSql, /CREATE OR REPLACE VIEW stwl_graph_edges/i);
   assert.match(matchSql, /CREATE PROPERTY GRAPH stwl_gameplay_graph/i);
 
+  assert.match(learningSql, /CREATE TABLE stwl_model_traces/i);
+  assert.match(learningSql, /CREATE TABLE stwl_model_outputs/i);
+  assert.match(learningSql, /CREATE TABLE stwl_model_evals/i);
+  assert.match(learningSql, /CREATE TABLE stwl_training_examples/i);
+  assert.match(learningSql, /CREATE TABLE stwl_model_promotions/i);
+
   const generated = selectAiInitStatements({
     selectAiProfile: "STWL_GAMEPLAY_AI",
     agentTeamName: "STWL_GAMEPLAY_COMMENTARY_TEAM",
@@ -676,4 +780,11 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   const matchInit = matchIntelligenceStatements().join("\n");
   assert.match(matchInit, /CREATE TABLE STWL_REPLAY_CLIPS/i);
   assert.match(matchInit, /CREATE TABLE STWL_AGENT_MEMORIES/i);
+
+  const learningInit = learningTraceStatements().join("\n");
+  assert.match(learningInit, /CREATE TABLE STWL_MODEL_TRACES/i);
+  assert.match(learningInit, /CREATE TABLE STWL_MODEL_OUTPUTS/i);
+  assert.match(learningInit, /CREATE TABLE STWL_MODEL_EVALS/i);
+  assert.match(learningInit, /CREATE TABLE STWL_TRAINING_EXAMPLES/i);
+  assert.match(learningInit, /CREATE TABLE STWL_MODEL_PROMOTIONS/i);
 });

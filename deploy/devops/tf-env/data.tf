@@ -24,3 +24,11 @@ data "oci_identity_users" "users" {
 data "oci_containerengine_cluster_option" "oke" {
   cluster_option_id = "all"
 }
+
+data "oci_identity_availability_domains" "ads" {
+  compartment_id = var.tenancy_ocid
+}
+
+data "oci_objectstorage_namespace" "objectstorage_namespace" {
+  compartment_id = var.compartment_ocid
+}

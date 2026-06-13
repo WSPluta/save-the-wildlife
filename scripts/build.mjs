@@ -35,6 +35,16 @@ if (action === "private-agent-factory") {
   process.exit(0);
 }
 
+if (action === "model-ai-training") {
+  await releaseStaticImage("model-ai/training", "model-ai-training", process.env.MODEL_AI_TRAINING_VERSION || "latest");
+  process.exit(0);
+}
+
+if (action === "model-ai-inference") {
+  await releaseStaticImage("model-ai/inference", "model-ai-inference", process.env.MODEL_AI_INFERENCE_VERSION || "latest");
+  process.exit(0);
+}
+
 if (a || action === "all") {
   await releaseNpm("server");
   await releaseNpm("web");
@@ -52,6 +62,8 @@ console.log("\tnpx zx scripts/build.mjs web");
 console.log("\tnpx zx scripts/build.mjs score");
 console.log("\tnpx zx scripts/build.mjs replay");
 console.log("\tnpx zx scripts/build.mjs private-agent-factory");
+console.log("\tnpx zx scripts/build.mjs model-ai-training");
+console.log("\tnpx zx scripts/build.mjs model-ai-inference");
 
 async function releaseNpm(service, versionOverride) {
   await cd(`${service}`);
@@ -67,4 +79,11 @@ async function releaseGradle(service) {
   console.log(`Releasing ${service}:${currentVersion})`);
   await buildImage(`${service}`, currentVersion);
   await cd("..");
+}
+
+async function releaseStaticImage(directory, imageName, version) {
+  await cd(directory);
+  console.log(`Releasing ${imageName}:${version})`);
+  await buildImage(imageName, version);
+  await cd("../..");
 }

@@ -141,6 +141,17 @@ async function createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService,
       TEMPLATE_PAF_CANVAS_ROOM_ID: process.env.PAF_CANVAS_ROOM_ID || "",
       TEMPLATE_PAF_CANVAS_TIMEOUT_MS: process.env.PAF_CANVAS_TIMEOUT_MS || "8000",
       TEMPLATE_PAF_CANVAS_VERIFY_TLS: process.env.PAF_CANVAS_VERIFY_TLS || "false",
+      TEMPLATE_PAF_MODEL_ROUTE_MODE: process.env.PAF_MODEL_ROUTE_MODE || "shadow",
+      TEMPLATE_PAF_PRIMARY_MODEL_PROVIDER: process.env.PAF_PRIMARY_MODEL_PROVIDER || "oci-base",
+      TEMPLATE_PAF_CANDIDATE_MODEL_PROVIDER: process.env.PAF_CANDIDATE_MODEL_PROVIDER || "oci-fine-tuned",
+      TEMPLATE_OCI_BASE_MODEL_ENDPOINT_URL: process.env.OCI_BASE_MODEL_ENDPOINT_URL || "",
+      TEMPLATE_OCI_FT_MODEL_ENDPOINT_URL: process.env.OCI_FT_MODEL_ENDPOINT_URL || "",
+      TEMPLATE_OCI_MODEL_ENDPOINT_TIMEOUT_MS: process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "8000",
+      TEMPLATE_OCI_MODEL_ENDPOINT_VERIFY_TLS: process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true",
+      TEMPLATE_PAF_TRACE_PERSIST: process.env.PAF_TRACE_PERSIST || "true",
+      TEMPLATE_PAF_EVAL_ENABLED: process.env.PAF_EVAL_ENABLED || "true",
+      TEMPLATE_PAF_EVAL_RUBRIC_VERSION: process.env.PAF_EVAL_RUBRIC_VERSION || "stwl-commentary-v1",
+      TEMPLATE_PAF_TRAINING_CAPTURE_ENABLED: process.env.PAF_TRAINING_CAPTURE_ENABLED || "true",
     };
     let content = await fs.readFile("application.env.template", "utf8");
     for (const [placeholder, value] of Object.entries(replacements)) {

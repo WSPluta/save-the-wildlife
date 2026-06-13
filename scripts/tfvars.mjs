@@ -254,6 +254,9 @@ async function devopsTFvars() {
     adb_admin_password_id: adbAdminPasswordId,
     adb_service: adbService,
     adb_id: adbId,
+    oci_model_endpoint_auth_secret_id: modelEndpointAuthSecretId,
+    model_ai_base_endpoint_url: modelAiBaseEndpointUrl,
+    model_ai_ft_endpoint_url: modelAiFtEndpointUrl,
   } = values;
 
   await cd("../../..");
@@ -280,6 +283,18 @@ async function devopsTFvars() {
   const pafCanvasRoomId = process.env.PAF_CANVAS_ROOM_ID || "";
   const pafCanvasTimeoutMs = process.env.PAF_CANVAS_TIMEOUT_MS || "8000";
   const pafCanvasVerifyTls = process.env.PAF_CANVAS_VERIFY_TLS || "false";
+  const pafModelRouteMode = process.env.PAF_MODEL_ROUTE_MODE || "shadow";
+  const pafPrimaryModelProvider = process.env.PAF_PRIMARY_MODEL_PROVIDER || "oci-base";
+  const pafCandidateModelProvider = process.env.PAF_CANDIDATE_MODEL_PROVIDER || "oci-fine-tuned";
+  const ociBaseModelEndpointUrl = process.env.OCI_BASE_MODEL_ENDPOINT_URL || modelAiBaseEndpointUrl || "";
+  const ociFtModelEndpointUrl = process.env.OCI_FT_MODEL_ENDPOINT_URL || modelAiFtEndpointUrl || "";
+  const ociModelEndpointAuthSecretId = process.env.OCI_MODEL_ENDPOINT_AUTH_SECRET_ID || modelEndpointAuthSecretId || "";
+  const ociModelEndpointTimeoutMs = process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "8000";
+  const ociModelEndpointVerifyTls = process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true";
+  const pafTracePersist = process.env.PAF_TRACE_PERSIST || "true";
+  const pafEvalEnabled = process.env.PAF_EVAL_ENABLED || "true";
+  const pafEvalRubricVersion = process.env.PAF_EVAL_RUBRIC_VERSION || "stwl-commentary-v1";
+  const pafTrainingCaptureEnabled = process.env.PAF_TRAINING_CAPTURE_ENABLED || "true";
 
   // Create the terraform.tfvars file using a safer approach
   try {
@@ -308,6 +323,18 @@ async function devopsTFvars() {
       .replace(/PAF_CANVAS_ROOM_ID/g, pafCanvasRoomId)
       .replace(/PAF_CANVAS_TIMEOUT_MS/g, pafCanvasTimeoutMs)
       .replace(/PAF_CANVAS_VERIFY_TLS/g, pafCanvasVerifyTls)
+      .replace(/PAF_MODEL_ROUTE_MODE/g, pafModelRouteMode)
+      .replace(/PAF_PRIMARY_MODEL_PROVIDER/g, pafPrimaryModelProvider)
+      .replace(/PAF_CANDIDATE_MODEL_PROVIDER/g, pafCandidateModelProvider)
+      .replace(/OCI_BASE_MODEL_ENDPOINT_URL/g, ociBaseModelEndpointUrl)
+      .replace(/OCI_FT_MODEL_ENDPOINT_URL/g, ociFtModelEndpointUrl)
+      .replace(/OCI_MODEL_ENDPOINT_AUTH_SECRET_ID/g, ociModelEndpointAuthSecretId)
+      .replace(/OCI_MODEL_ENDPOINT_TIMEOUT_MS/g, ociModelEndpointTimeoutMs)
+      .replace(/OCI_MODEL_ENDPOINT_VERIFY_TLS/g, ociModelEndpointVerifyTls)
+      .replace(/PAF_TRACE_PERSIST/g, pafTracePersist)
+      .replace(/PAF_EVAL_ENABLED/g, pafEvalEnabled)
+      .replace(/PAF_EVAL_RUBRIC_VERSION/g, pafEvalRubricVersion)
+      .replace(/PAF_TRAINING_CAPTURE_ENABLED/g, pafTrainingCaptureEnabled)
       .replace(/GITHUB_REPOSITORY_URL/g, githubURL)
       .replace(/GITHUB_USER/g, githubUser);
 

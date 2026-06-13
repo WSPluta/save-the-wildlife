@@ -4,3 +4,6 @@ tenancy_ocid          = "TENANCY_OCID"
 compartment_ocid      = "COMPARTMENT_OCID"
 subscription_email    = "SUBSCRIPTION_EMAIL"
 github_token          = "GITHUB_TOKEN"
+
+# Model AI is intentionally opt-in because GPU/Data Science resources are bill-impacting.
+model_ai_enabled      = false

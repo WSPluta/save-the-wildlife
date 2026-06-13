@@ -330,7 +330,13 @@ async function requestPafCommentary(summary) {
     });
     if (!response.ok) return null;
     const body = await response.json();
-    return body.commentary || body.script || body.text || null;
+    const text = body.commentary || body.script || body.text || null;
+    if (!text) return null;
+    return {
+      ...body,
+      commentary: enforceCommentary(text),
+      source: body.source || "oracle-private-agent-factory",
+    };
   } catch (_) {
     return null;
   }
@@ -338,11 +344,19 @@ async function requestPafCommentary(summary) {
 
 export async function buildCommentary(sessionId, playerId) {
   const summary = summarizeSession(sessionId, playerId);
-  const pafText = await requestPafCommentary(summary);
+  const paf = await requestPafCommentary(summary);
+  if (paf) {
+    return {
+      ...paf,
+      summary: paf.summary || summary,
+      commentary: enforceCommentary(paf.commentary),
+      source: paf.source || "oracle-private-agent-factory",
+    };
+  }
   return {
     summary,
-    commentary: enforceCommentary(pafText || deterministicCommentary(summary)),
-    source: pafText ? "oracle-private-agent-factory" : "deterministic-fallback",
+    commentary: enforceCommentary(deterministicCommentary(summary)),
+    source: "deterministic-fallback",
   };
 }
 

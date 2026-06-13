@@ -164,7 +164,28 @@ describe("game event telemetry", () => {
     const server = createServer((req, res) => {
       expect(req.url).toBe("/api/commentary");
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ commentary: "Oracle path commentary." }));
+      res.end(JSON.stringify({
+        commentary: "Oracle path commentary.",
+        source: "oci-base",
+        trace_id: "TRACE-SERVER",
+        route_mode: "shadow",
+        primary_provider: "oci-base",
+        candidate_provider: "oci-fine-tuned",
+        model_id: "stwl-base-v1",
+        latency_ms: 104,
+        evidence_hash: "abc123",
+        prompt_hash: "def456",
+        promotion_verdict: "candidate_ready",
+        eval_scores: {
+          verdict: "candidate_ready",
+          candidate: { uses_retrieved_evidence: true },
+        },
+        model_route: {
+          trace_id: "TRACE-SERVER",
+          primary: { provider: "oci-base", model_id: "stwl-base-v1" },
+          candidate: { provider: "oci-fine-tuned", model_id: "stwl-ft-v1" },
+        },
+      }));
     });
 
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -176,8 +197,11 @@ describe("game event telemetry", () => {
       const sessionId = `S-PAF-${Date.now()}-${Math.random()}`;
       await recordGameEvent({ type: "game_over", sessionId, roomId: "ROOM-PAF", playerId: "P-PAF", score: 44 });
       const response = await buildCommentary(sessionId, "P-PAF");
-      expect(response.source).toBe("oracle-private-agent-factory");
+      expect(response.source).toBe("oci-base");
       expect(response.commentary).toBe("Oracle path commentary.");
+      expect(response.trace_id).toBe("TRACE-SERVER");
+      expect(response.model_route.candidate.model_id).toBe("stwl-ft-v1");
+      expect(response.eval_scores.verdict).toBe("candidate_ready");
     } finally {
       await new Promise((resolve) => server.close(resolve));
       if (previousBaseUrl == null) delete process.env.PAF_AGENT_BASE_URL;

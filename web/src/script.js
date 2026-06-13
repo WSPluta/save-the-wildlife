@@ -337,7 +337,7 @@ const IS_ADMIN_VIEW = (() => {
   try {
     const url = new URL(window.location.href);
     const path = url.pathname.replace(/\/+$/, "") || "/";
-    return path === "/admin" || url.searchParams.get("admin") === "1";
+    return path === "/admin" || path === "/admin/ai-learning" || url.searchParams.get("admin") === "1";
   } catch (_) {
     return false;
   }

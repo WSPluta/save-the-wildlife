@@ -981,6 +981,316 @@ body.phase-admin #monitor-panel {
   padding: 8px 0;
 }
 
+.admin-evidence {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.045);
+  overflow: hidden;
+}
+
+.admin-evidence-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+}
+
+.admin-section-eyebrow {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.admin-evidence h3 {
+  margin: 2px 0 0;
+  color: #ffffff;
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.admin-evidence-verdict,
+.admin-status-pill,
+.admin-step-state,
+.admin-gate-pass {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.18);
+  color: #ffffff;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.admin-evidence-verdict {
+  min-height: 38px;
+  padding: 8px 12px;
+  background: rgba(32, 171, 117, 0.24);
+}
+
+.admin-evidence-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.admin-metric {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.20);
+}
+
+.admin-metric span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-metric strong {
+  color: #ffffff;
+  font-size: 20px;
+  line-height: 1.05;
+}
+
+.admin-evidence-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+  gap: 10px;
+  padding: 0 12px;
+}
+
+.admin-evidence-section {
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.18);
+  overflow: hidden;
+}
+
+.admin-timeline,
+.admin-gate-list {
+  display: grid;
+  gap: 10px;
+  margin: 10px 12px 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-timeline li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.admin-timeline strong {
+  display: block;
+  color: #ffffff;
+  line-height: 1.25;
+}
+
+.admin-timeline span:not(.admin-step-state),
+.admin-gate-list li {
+  color: #d8f3fb;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.admin-step-state {
+  min-width: 54px;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.admin-step-state.passed,
+.admin-status-pill.passed,
+.admin-gate-pass {
+  background: rgba(32, 171, 117, 0.24);
+}
+
+.admin-step-state.failed,
+.admin-status-pill.failed {
+  background: rgba(255, 91, 91, 0.26);
+}
+
+.admin-step-state.scaled {
+  background: rgba(30, 167, 253, 0.24);
+}
+
+.admin-gate-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-gate-pass {
+  min-width: 46px;
+  padding: 4px 7px;
+  font-size: 11px;
+}
+
+.admin-run-table-wrap {
+  margin: 0 12px 12px;
+  overflow-x: auto;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+}
+
+.admin-run-table {
+  min-width: 760px;
+  width: 100%;
+  color: #e7f6ff;
+  font-size: 13px;
+}
+
+.admin-run-table thead {
+  background: rgba(255,255,255,0.08);
+}
+
+.admin-run-table th,
+.admin-run-table td {
+  border: 1px solid rgba(255,255,255,0.10);
+  padding: 8px;
+  text-align: left;
+}
+
+.admin-status-pill {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.admin-learning-frame {
+  display: grid;
+  gap: 5px;
+  margin: 0 12px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.20);
+  color: #d8f3fb;
+  line-height: 1.35;
+}
+
+.admin-learning-frame strong,
+.admin-learning-note strong {
+  color: #ffffff;
+}
+
+.admin-learning-frame span,
+.admin-learning-note span {
+  color: #d8f3fb;
+  font-size: 13px;
+}
+
+.admin-learning-pipeline {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(92px, 1fr));
+  gap: 8px;
+  padding: 0 12px;
+  overflow-x: auto;
+}
+
+.admin-learning-pipeline div {
+  display: grid;
+  gap: 4px;
+  min-width: 92px;
+  padding: 9px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.18);
+}
+
+.admin-learning-pipeline span,
+.admin-provider-label,
+.admin-rubric-grid span,
+.admin-comparison dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.admin-learning-pipeline strong,
+.admin-rubric-grid strong,
+.admin-comparison dd {
+  color: #ffffff;
+  font-size: 13px;
+}
+
+.admin-learning-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.admin-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+
+.admin-comparison > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.admin-comparison p {
+  min-height: 54px;
+  color: #ffffff;
+  line-height: 1.35;
+  font-size: 14px;
+}
+
+.admin-comparison dl,
+.admin-rubric-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-comparison dl div,
+.admin-rubric-grid {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.admin-comparison dl div {
+  display: grid;
+}
+
+.admin-comparison dd,
+.admin-comparison dt {
+  margin: 0;
+}
+
+.admin-rubric-grid {
+  padding: 10px 12px 12px;
+}
+
+.admin-rubric-grid strong {
+  justify-self: end;
+}
+
+.admin-learning-note {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  line-height: 1.35;
+}
+
 @media (max-width: 720px) {
   #screen-lobby.lobby-sheet {
     width: min(430px, calc(100vw - 20px));
@@ -1053,6 +1363,24 @@ body.phase-admin #monitor-panel {
   .admin-actions {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .admin-evidence-header,
+  .admin-evidence-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-evidence-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-learning-grid,
+  .admin-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-learning-pipeline {
+    grid-template-columns: repeat(7, 112px);
   }
 }
 

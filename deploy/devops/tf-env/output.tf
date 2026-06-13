@@ -11,6 +11,18 @@ output "oke_cluster_ocid" {
   value = module.oke.cluster_id
 }
 
+output "oke_vcn_id" {
+  value = module.oke.vcn_id
+}
+
+output "oke_worker_subnet_id" {
+  value = module.oke.worker_subnet_id
+}
+
+output "oke_worker_nsg_id" {
+  value = module.oke.worker_nsg_id
+}
+
 output "github_access_token_secret_ocid" {
   value = oci_vault_secret.github_access_token_secret.id
 }
@@ -49,4 +61,40 @@ output "adb_service" {
 output "adb_id" {
   sensitive = false
   value     = oci_database_autonomous_database.adb.id
+}
+
+output "oci_model_endpoint_auth_secret_id" {
+  sensitive = true
+  value     = try(oci_vault_secret.model_endpoint_auth_secret[0].id, "")
+}
+
+output "model_ai_project_id" {
+  sensitive = false
+  value     = try(oci_datascience_project.model_ai[0].id, "")
+}
+
+output "model_ai_artifacts_bucket" {
+  sensitive = false
+  value     = try(oci_objectstorage_bucket.model_ai_artifacts[0].name, "")
+}
+
+output "model_ai_nsg_id" {
+  sensitive = false
+  value     = try(oci_core_network_security_group.model_ai[0].id, "")
+}
+
+output "model_ai_base_endpoint_url" {
+  sensitive = false
+  value = try(
+    format("http://%s:%d", oci_container_instances_container_instance.base_inference[0].vnics[0].private_ip, var.model_ai_endpoint_port),
+    try(oci_datascience_model_deployment.base_commentary[0].model_deployment_url, "")
+  )
+}
+
+output "model_ai_ft_endpoint_url" {
+  sensitive = false
+  value = try(
+    format("http://%s:%d", oci_container_instances_container_instance.ft_inference[0].vnics[0].private_ip, var.model_ai_endpoint_port),
+    try(oci_datascience_model_deployment.ft_commentary[0].model_deployment_url, "")
+  )
 }

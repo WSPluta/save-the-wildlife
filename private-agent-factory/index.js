@@ -1,4 +1,5 @@
 import express from "express";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
@@ -26,6 +27,7 @@ const DEFAULT_CANVAS_TIMEOUT_MS = 8000;
 let inDbPackageInitAttempted = false;
 let selectAiInitAttempted = false;
 let matchIntelligenceInitAttempted = false;
+let learningSchemaInitAttempted = false;
 
 function safeIdentifier(value) {
   const id = String(value || "").trim().toUpperCase();
@@ -109,6 +111,33 @@ function matchIntelligenceConfig() {
   };
 }
 
+function modelRouterConfig() {
+  const routeMode = textValue(process.env.PAF_MODEL_ROUTE_MODE || "shadow").toLowerCase();
+  const verifyTlsValue = textValue(process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true").toLowerCase();
+  return {
+    routeMode: ["off", "primary", "shadow"].includes(routeMode) ? routeMode : "shadow",
+    primaryProvider: textValue(process.env.PAF_PRIMARY_MODEL_PROVIDER || "oci-base"),
+    candidateProvider: textValue(process.env.PAF_CANDIDATE_MODEL_PROVIDER || "oci-fine-tuned"),
+    timeoutMs: Math.max(500, Math.min(60_000, numberValue(process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || 8000, 8000))),
+    authSecret: textValue(process.env.OCI_MODEL_ENDPOINT_AUTH_SECRET),
+    verifyTls: !["0", "false", "no", "off"].includes(verifyTlsValue),
+    tracePersist: boolEnv("PAF_TRACE_PERSIST", true),
+    evalEnabled: boolEnv("PAF_EVAL_ENABLED", true),
+    rubricVersion: textValue(process.env.PAF_EVAL_RUBRIC_VERSION || "stwl-commentary-v1"),
+    trainingCaptureEnabled: boolEnv("PAF_TRAINING_CAPTURE_ENABLED", true),
+    baseEndpointUrl: textValue(process.env.OCI_BASE_MODEL_ENDPOINT_URL),
+    fineTunedEndpointUrl: textValue(process.env.OCI_FT_MODEL_ENDPOINT_URL),
+    temperature: Math.max(0, Math.min(2, numberValue(process.env.OCI_MODEL_ENDPOINT_TEMPERATURE || 0.2, 0.2))),
+    maxTokens: Math.max(32, Math.min(512, numberValue(process.env.OCI_MODEL_ENDPOINT_MAX_TOKENS || 120, 120))),
+  };
+}
+
+function providerEndpoint(provider, config = modelRouterConfig()) {
+  if (provider === "oci-base") return config.baseEndpointUrl;
+  if (provider === "oci-fine-tuned") return config.fineTunedEndpointUrl;
+  return "";
+}
+
 function normalizePowerups(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(
@@ -123,6 +152,7 @@ function normalizeSummary(value = {}) {
   const lastPosition = summary.last_position || summary.lastPosition || null;
   return {
     session_id: textValue(summary.session_id || summary.sessionId),
+    room_id: textValue(summary.room_id || summary.roomId),
     player_id: textValue(summary.player_id || summary.playerId),
     player_name: textValue(summary.player_name || summary.playerName, "Player"),
     score: numberValue(summary.score, 0),
@@ -417,6 +447,286 @@ function parseJsonMaybe(text) {
   } catch (_) {
     return text;
   }
+}
+
+function stableJson(value) {
+  if (value == null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+}
+
+function sha256(value) {
+  return createHash("sha256").update(String(value ?? "")).digest("hex");
+}
+
+function compactHash(value) {
+  return sha256(value).slice(0, 16);
+}
+
+function newTraceId(summary = {}) {
+  const session = textValue(summary.session_id || "nosession").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 20) || "nosession";
+  return `stwl-${session}-${randomUUID().slice(0, 8)}`;
+}
+
+function estimateTokens(text) {
+  return Math.max(1, Math.ceil(String(text || "").trim().split(/\s+/).filter(Boolean).length * 1.25));
+}
+
+function buildModelEvidence(summary, context = {}, legacy = {}) {
+  return {
+    summary,
+    formats: legacy.formats || {},
+    legacy_source: legacy.source || "",
+    legacy_commentary: legacy.commentary || "",
+    in_db_agent: legacy.inDbAgent || null,
+    canvas: legacy.canvas || null,
+    evidence: {
+      json_events: (context.json_events || []).slice(0, 12),
+      graph_facts: (context.graph_facts || []).slice(0, 8),
+      replay_clips: (context.replay_clips || []).slice(0, 4),
+      vector_memories: (context.vector_memories || []).slice(0, 4),
+      capabilities: context.capabilities || null,
+    },
+  };
+}
+
+function buildModelPrompt(summary, context = {}, legacy = {}, outputFormatValue = "live_line", maxChars = COMMENTARY_MAX_CHARS) {
+  const requestedOutput = outputFormat(outputFormatValue);
+  const baseMessage = buildCanvasMessage(summary, {
+    inDbCommentary: legacy.inDbAgent?.commentary || legacy.commentary,
+    context,
+    outputFormat: requestedOutput,
+  });
+  return [
+    baseMessage,
+    "",
+    "Model comparison task:",
+    "Return JSON-compatible concise commentary text only. Do not store or invent changing facts in weights; use the supplied evidence.",
+    "Include evidence-aware phrasing, avoid unsupported claims, and keep confidence proportional to the evidence.",
+    `max_chars=${requestedOutput === "clip_title" ? Math.min(80, maxChars) : maxChars}`,
+  ].join("\n");
+}
+
+function normalizeModelEndpointResponse(provider, response, elapsedMs, maxChars) {
+  const payload = response?.payload;
+  const text = textFromContent(payload?.text)
+    || textFromContent(payload?.commentary)
+    || textFromContent(payload?.message)
+    || textFromContent(payload?.output)
+    || textFromContent(payload?.choices?.[0]?.message?.content)
+    || textFromContent(payload?.choices?.[0]?.text)
+    || "";
+  if (!text) throw new Error(`${provider}_empty_response`);
+  const usage = payload?.usage || {};
+  return {
+    ok: payload?.ok === false ? false : true,
+    provider: textValue(payload?.provider, provider),
+    model_id: textValue(payload?.model_id || payload?.model || payload?.id, provider),
+    text: enforceCommentary(text, maxChars || COMMENTARY_MAX_CHARS),
+    tokens: numberValue(payload?.tokens ?? usage.total_tokens ?? usage.completion_tokens, estimateTokens(text)),
+    latency_ms: numberValue(payload?.latency_ms ?? elapsedMs, elapsedMs),
+    finish_reason: textValue(payload?.finish_reason || payload?.choices?.[0]?.finish_reason, "stop"),
+    warnings: Array.isArray(payload?.warnings) ? payload.warnings.map(String) : [],
+    status: response.status,
+  };
+}
+
+async function callExternalModelProvider(provider, requestPayload, config, options = {}) {
+  const endpoint = providerEndpoint(provider, config);
+  if (!endpoint) {
+    return {
+      ok: false,
+      provider,
+      skipped: true,
+      error: `${provider}_endpoint_missing`,
+    };
+  }
+  const requestFn = options.modelRequestJson || options.requestJson || requestJson;
+  const headers = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    "User-Agent": "save-the-wildlife-model-router/1.0",
+  };
+  if (config.authSecret) headers.Authorization = `Bearer ${config.authSecret}`;
+  const response = await requestFn(endpoint, {
+    method: "POST",
+    timeoutMs: config.timeoutMs,
+    verifyTls: config.verifyTls,
+    headers,
+    body: JSON.stringify(requestPayload),
+  });
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`${provider}_http_${response.status}`);
+  }
+  return normalizeModelEndpointResponse(provider, response, response.elapsed_ms, requestPayload.max_chars || COMMENTARY_MAX_CHARS);
+}
+
+async function callModelProvider(provider, requestPayload, config, options = {}, legacy = {}) {
+  const started = Date.now();
+  try {
+    if (provider === "deterministic") {
+      const text = deterministicScript(requestPayload.route_context?.summary || {}, requestPayload.max_chars || COMMENTARY_MAX_CHARS);
+      return {
+        ok: true,
+        provider,
+        model_id: "deterministic-script",
+        text,
+        tokens: estimateTokens(text),
+        latency_ms: Date.now() - started,
+        finish_reason: "local",
+        warnings: [],
+      };
+    }
+    if (provider === "select-ai-canvas") {
+      if (!legacy.commentary) {
+        return { ok: false, provider, skipped: true, error: "select_ai_canvas_output_missing" };
+      }
+      return {
+        ok: true,
+        provider,
+        model_id: legacy.source || "select-ai-canvas",
+        text: legacy.commentary,
+        tokens: estimateTokens(legacy.commentary),
+        latency_ms: numberValue(legacy.latency_ms, Date.now() - started),
+        finish_reason: "legacy-path",
+        warnings: [],
+      };
+    }
+    if (provider === "oci-base" || provider === "oci-fine-tuned") {
+      return await callExternalModelProvider(provider, requestPayload, config, options);
+    }
+    return { ok: false, provider, skipped: true, error: `${provider}_unsupported` };
+  } catch (error) {
+    return {
+      ok: false,
+      provider,
+      error: error && error.message ? error.message : String(error),
+      latency_ms: Date.now() - started,
+    };
+  }
+}
+
+function scoreTextAgainstEvidence(text, summary = {}, maxChars = COMMENTARY_MAX_CHARS) {
+  const normalized = String(text || "").toLowerCase();
+  const powerups = compactPowerupNames(summary.powerups);
+  const mentionsScore = normalized.includes(String(summary.score));
+  const mentionsPlayer = summary.player_name && normalized.includes(String(summary.player_name).toLowerCase());
+  const mentionsPowerup = /powerup|shield|magnet|freeze|boost/.test(normalized);
+  const mentionsFreeze = /frozen|freeze/.test(normalized);
+  const mentionsTrail = /trail|cross/.test(normalized);
+  const unsupportedFreeze = mentionsFreeze && !summary.freezes && !powerups.includes("freeze");
+  const unsupportedPowerup = mentionsPowerup && powerups.length === 0 && !summary.freezes;
+  const unsupportedTrail = mentionsTrail && !summary.trail_crosses;
+  const tokenCount = estimateTokens(text);
+  return {
+    uses_retrieved_evidence: Boolean(mentionsScore || mentionsPlayer || (summary.freezes && mentionsFreeze) || (summary.trail_crosses && mentionsTrail) || (powerups.length && mentionsPowerup)),
+    no_hallucinated_game_facts: !(unsupportedFreeze || unsupportedPowerup || unsupportedTrail),
+    unique_commentary: Boolean(normalized && normalized !== normalizeSummary({}).player_name.toLowerCase()),
+    commentary_quality: Boolean(text && text.length >= 24 && text.length <= Math.max(40, Math.min(200, maxChars))),
+    confidence_calibrated: !/\b(definitely|guaranteed|certainly|undeniably)\b/i.test(text || ""),
+    token_efficiency: tokenCount <= 42,
+    safe_for_stage: !profanityPattern.test(text || ""),
+    token_count: tokenCount,
+  };
+}
+
+function booleanScore(scores = {}) {
+  return Object.entries(scores)
+    .filter(([key]) => !key.endsWith("_count") && key !== "token_count")
+    .reduce((total, [, value]) => total + (value === true ? 1 : 0), 0);
+}
+
+function evaluateModelOutputs(primary, candidate, summary, config, maxChars) {
+  if (!config.evalEnabled || !primary?.ok || !candidate?.ok) {
+    return {
+      rubric_version: config.rubricVersion,
+      verdict: "not_evaluated",
+      reason: !config.evalEnabled ? "eval_disabled" : "missing_primary_or_candidate",
+      primary: primary?.ok ? scoreTextAgainstEvidence(primary.text, summary, maxChars) : null,
+      candidate: candidate?.ok ? scoreTextAgainstEvidence(candidate.text, summary, maxChars) : null,
+    };
+  }
+  const primaryScores = scoreTextAgainstEvidence(primary.text, summary, maxChars);
+  const candidateScores = scoreTextAgainstEvidence(candidate.text, summary, maxChars);
+  const primaryTotal = booleanScore(primaryScores);
+  const candidateTotal = booleanScore(candidateScores);
+  const grounded = candidateScores.uses_retrieved_evidence && candidateScores.no_hallucinated_game_facts;
+  const calibrated = candidateScores.confidence_calibrated && candidateScores.safe_for_stage;
+  const betterEfficiency = candidateScores.token_count <= primaryScores.token_count;
+  const noRegression = candidateTotal >= primaryTotal && grounded && calibrated;
+  return {
+    rubric_version: config.rubricVersion,
+    verdict: noRegression && betterEfficiency ? "candidate_ready" : "hold",
+    reason: noRegression ? (betterEfficiency ? "candidate_met_promotion_gate" : "candidate_not_more_efficient") : "candidate_regressed_or_ungrounded",
+    primary: primaryScores,
+    candidate: candidateScores,
+    primary_total: primaryTotal,
+    candidate_total: candidateTotal,
+  };
+}
+
+async function runModelRoute({ summary, context, legacy, outputFormatValue, maxChars }, options = {}) {
+  const config = modelRouterConfig();
+  const traceId = textValue(options.traceId || options.trace_id || options.traceID) || newTraceId(summary);
+  const evidence = buildModelEvidence(summary, context || {}, legacy || {});
+  const prompt = buildModelPrompt(summary, context || {}, legacy || {}, outputFormatValue, maxChars);
+  const promptHash = compactHash(prompt);
+  const evidenceHash = compactHash(stableJson(evidence));
+  const routeContext = {
+    summary,
+    output_format: outputFormatValue,
+    max_chars: maxChars,
+    route_mode: config.routeMode,
+    primary_provider: config.primaryProvider,
+    candidate_provider: config.candidateProvider,
+    legacy_source: legacy?.source || "",
+  };
+  const requestPayload = {
+    trace_id: traceId,
+    system: "Save the Wildlife PAF model router. Facts stay in Oracle AI Database memory; model weights shape stable response behavior.",
+    prompt,
+    evidence,
+    max_tokens: config.maxTokens,
+    max_chars: maxChars,
+    temperature: config.temperature,
+    route_context: routeContext,
+  };
+
+  let primary = null;
+  let candidate = null;
+  if (config.routeMode !== "off") {
+    primary = await callModelProvider(config.primaryProvider, requestPayload, config, options, legacy);
+    if (config.routeMode === "shadow" && config.candidateProvider && config.candidateProvider !== config.primaryProvider) {
+      candidate = await callModelProvider(config.candidateProvider, requestPayload, config, options, legacy);
+    }
+  }
+
+  const evalScores = evaluateModelOutputs(primary, candidate, summary, config, maxChars);
+  const selected = primary?.ok ? primary : null;
+  const route = {
+    trace_id: traceId,
+    route_mode: config.routeMode,
+    primary_provider: config.primaryProvider,
+    candidate_provider: config.candidateProvider || null,
+    model_id: selected?.model_id || null,
+    latency_ms: selected?.latency_ms ?? null,
+    evidence_hash: evidenceHash,
+    prompt_hash: promptHash,
+    eval_scores: evalScores,
+    promotion_verdict: evalScores.verdict,
+    primary,
+    candidate,
+    request: {
+      prompt,
+      evidence,
+    },
+    trace_persisted: false,
+  };
+
+  if (config.tracePersist) {
+    route.trace_persisted = await persistModelLearningTrace(route, summary, config, options);
+  }
+  return route;
 }
 
 function requestJson(url, { method = "GET", headers = {}, body = null, timeoutMs = DEFAULT_CANVAS_TIMEOUT_MS, verifyTls = false } = {}) {
@@ -1018,6 +1328,112 @@ function matchIntelligenceStatements(config = matchIntelligenceConfig()) {
   ];
 }
 
+function learningTraceStatements() {
+  return [
+    `BEGIN
+      EXECUTE IMMEDIATE 'CREATE TABLE STWL_MODEL_TRACES (
+        trace_id VARCHAR2(128) PRIMARY KEY,
+        session_id VARCHAR2(128),
+        room_id VARCHAR2(64),
+        player_id VARCHAR2(128),
+        run_id VARCHAR2(128),
+        route_mode VARCHAR2(32),
+        primary_provider VARCHAR2(64),
+        candidate_provider VARCHAR2(64),
+        selected_provider VARCHAR2(64),
+        prompt_hash VARCHAR2(64),
+        evidence_hash VARCHAR2(64),
+        prompt_text CLOB,
+        evidence_json CLOB CHECK (evidence_json IS JSON),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
+      )';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN RAISE; END IF;
+    END;`,
+    `BEGIN
+      EXECUTE IMMEDIATE 'CREATE INDEX STWL_MODEL_TRACES_SESSION_IX ON STWL_MODEL_TRACES (session_id, player_id, created_at)';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN RAISE; END IF;
+    END;`,
+    `BEGIN
+      EXECUTE IMMEDIATE 'CREATE TABLE STWL_MODEL_OUTPUTS (
+        output_id VARCHAR2(180) PRIMARY KEY,
+        trace_id VARCHAR2(128) NOT NULL,
+        provider VARCHAR2(64) NOT NULL,
+        model_id VARCHAR2(256),
+        is_primary NUMBER(1,0) DEFAULT 0 NOT NULL,
+        is_candidate NUMBER(1,0) DEFAULT 0 NOT NULL,
+        status VARCHAR2(32),
+        latency_ms NUMBER,
+        tokens NUMBER,
+        finish_reason VARCHAR2(128),
+        output_text CLOB,
+        error_message VARCHAR2(1000),
+        warnings_json CLOB CHECK (warnings_json IS JSON),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+        CONSTRAINT stwl_model_outputs_trace_fk FOREIGN KEY (trace_id) REFERENCES STWL_MODEL_TRACES(trace_id)
+      )';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN RAISE; END IF;
+    END;`,
+    `BEGIN
+      EXECUTE IMMEDIATE 'CREATE INDEX STWL_MODEL_OUTPUTS_TRACE_IX ON STWL_MODEL_OUTPUTS (trace_id, provider)';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN RAISE; END IF;
+    END;`,
+    `BEGIN
+      EXECUTE IMMEDIATE 'CREATE TABLE STWL_MODEL_EVALS (
+        eval_id VARCHAR2(180) PRIMARY KEY,
+        trace_id VARCHAR2(128) NOT NULL,
+        rubric_version VARCHAR2(80),
+        verdict VARCHAR2(40),
+        scorer_notes VARCHAR2(1000),
+        scores_json CLOB CHECK (scores_json IS JSON),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+        CONSTRAINT stwl_model_evals_trace_fk FOREIGN KEY (trace_id) REFERENCES STWL_MODEL_TRACES(trace_id)
+      )';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN RAISE; END IF;
+    END;`,
+    `BEGIN
+      EXECUTE IMMEDIATE 'CREATE TABLE STWL_TRAINING_EXAMPLES (
+        example_id VARCHAR2(180) PRIMARY KEY,
+        trace_id VARCHAR2(128) NOT NULL,
+        dataset_version VARCHAR2(80),
+        split VARCHAR2(32),
+        redaction_status VARCHAR2(40),
+        accepted NUMBER(1,0) DEFAULT 0 NOT NULL,
+        example_json CLOB CHECK (example_json IS JSON),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+        CONSTRAINT stwl_training_examples_trace_fk FOREIGN KEY (trace_id) REFERENCES STWL_MODEL_TRACES(trace_id)
+      )';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN RAISE; END IF;
+    END;`,
+    `BEGIN
+      EXECUTE IMMEDIATE 'CREATE TABLE STWL_MODEL_PROMOTIONS (
+        promotion_id VARCHAR2(180) PRIMARY KEY,
+        trace_id VARCHAR2(128),
+        candidate_model_id VARCHAR2(256),
+        adapter_uri VARCHAR2(1024),
+        eval_run_id VARCHAR2(128),
+        approval_state VARCHAR2(40),
+        promotion_reason VARCHAR2(1000),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
+      )';
+    EXCEPTION
+      WHEN OTHERS THEN
+        IF SQLCODE != -955 THEN RAISE; END IF;
+    END;`,
+  ];
+}
+
 async function ensureInDbPackage(connection) {
   const config = inDbAgentConfig();
   if (!config.enabled || !config.autoInit) return;
@@ -1051,6 +1467,260 @@ async function ensureMatchIntelligenceSchema(connection) {
     } catch (_) {
       // Match intelligence is additive; commentary must still work from STWL_GAME_EVENTS.
     }
+  }
+}
+
+async function ensureLearningSchema(connection) {
+  if (learningSchemaInitAttempted) return;
+  learningSchemaInitAttempted = true;
+  for (const statement of learningTraceStatements()) {
+    try {
+      await connection.execute(statement);
+    } catch (_) {
+      // Trace capture is additive; commentary must keep flowing if DDL is unavailable.
+    }
+  }
+}
+
+function modelOutputRows(route) {
+  return [
+    { role: "primary", output: route.primary },
+    { role: "candidate", output: route.candidate },
+  ].filter((item) => item.output && item.output.provider);
+}
+
+async function persistModelLearningTrace(route, summary, config, options = {}) {
+  const oracle = await getOracleConnection(options);
+  if (!oracle) return false;
+  const { connection, close } = oracle;
+  try {
+    await ensureLearningSchema(connection);
+    const selectedProvider = route.primary?.ok ? route.primary.provider : null;
+    await connection.execute(
+      `MERGE INTO STWL_MODEL_TRACES t
+       USING (
+         SELECT :trace_id AS trace_id,
+                :session_id AS session_id,
+                :room_id AS room_id,
+                :player_id AS player_id,
+                :run_id AS run_id,
+                :route_mode AS route_mode,
+                :primary_provider AS primary_provider,
+                :candidate_provider AS candidate_provider,
+                :selected_provider AS selected_provider,
+                :prompt_hash AS prompt_hash,
+                :evidence_hash AS evidence_hash,
+                :prompt_text AS prompt_text,
+                :evidence_json AS evidence_json
+         FROM dual
+       ) s
+       ON (t.trace_id = s.trace_id)
+       WHEN MATCHED THEN UPDATE SET
+         t.selected_provider = s.selected_provider,
+         t.prompt_hash = s.prompt_hash,
+         t.evidence_hash = s.evidence_hash,
+         t.prompt_text = s.prompt_text,
+         t.evidence_json = s.evidence_json
+       WHEN NOT MATCHED THEN INSERT (
+         trace_id, session_id, room_id, player_id, run_id, route_mode,
+         primary_provider, candidate_provider, selected_provider,
+         prompt_hash, evidence_hash, prompt_text, evidence_json
+       ) VALUES (
+         s.trace_id, s.session_id, s.room_id, s.player_id, s.run_id, s.route_mode,
+         s.primary_provider, s.candidate_provider, s.selected_provider,
+         s.prompt_hash, s.evidence_hash, s.prompt_text, s.evidence_json
+       )`,
+      {
+        trace_id: route.trace_id,
+        session_id: summary.session_id || null,
+        room_id: summary.room_id || null,
+        player_id: summary.player_id || null,
+        run_id: process.env.STWL_LOAD_RUN_ID || process.env.PAF_TRACE_RUN_ID || null,
+        route_mode: route.route_mode,
+        primary_provider: route.primary_provider,
+        candidate_provider: route.candidate_provider,
+        selected_provider: selectedProvider,
+        prompt_hash: route.prompt_hash,
+        evidence_hash: route.evidence_hash,
+        prompt_text: route.request?.prompt || "",
+        evidence_json: JSON.stringify(route.request?.evidence || {}),
+      },
+      { autoCommit: true }
+    );
+
+    for (const item of modelOutputRows(route)) {
+      const output = item.output;
+      await connection.execute(
+        `MERGE INTO STWL_MODEL_OUTPUTS o
+         USING (
+           SELECT :output_id AS output_id,
+                  :trace_id AS trace_id,
+                  :provider AS provider,
+                  :model_id AS model_id,
+                  :is_primary AS is_primary,
+                  :is_candidate AS is_candidate,
+                  :status AS status,
+                  :latency_ms AS latency_ms,
+                  :tokens AS tokens,
+                  :finish_reason AS finish_reason,
+                  :output_text AS output_text,
+                  :error_message AS error_message,
+                  :warnings_json AS warnings_json
+           FROM dual
+         ) s
+         ON (o.output_id = s.output_id)
+         WHEN MATCHED THEN UPDATE SET
+           o.status = s.status,
+           o.latency_ms = s.latency_ms,
+           o.tokens = s.tokens,
+           o.finish_reason = s.finish_reason,
+           o.output_text = s.output_text,
+           o.error_message = s.error_message,
+           o.warnings_json = s.warnings_json
+         WHEN NOT MATCHED THEN INSERT (
+           output_id, trace_id, provider, model_id, is_primary, is_candidate,
+           status, latency_ms, tokens, finish_reason, output_text, error_message, warnings_json
+         ) VALUES (
+           s.output_id, s.trace_id, s.provider, s.model_id, s.is_primary, s.is_candidate,
+           s.status, s.latency_ms, s.tokens, s.finish_reason, s.output_text, s.error_message, s.warnings_json
+         )`,
+        {
+          output_id: `${route.trace_id}:${item.role}:${output.provider}`,
+          trace_id: route.trace_id,
+          provider: output.provider,
+          model_id: output.model_id || null,
+          is_primary: item.role === "primary" ? 1 : 0,
+          is_candidate: item.role === "candidate" ? 1 : 0,
+          status: output.ok ? "ok" : (output.skipped ? "skipped" : "failed"),
+          latency_ms: output.latency_ms ?? null,
+          tokens: output.tokens ?? null,
+          finish_reason: output.finish_reason || null,
+          output_text: output.text || null,
+          error_message: output.error || null,
+          warnings_json: JSON.stringify(output.warnings || []),
+        },
+        { autoCommit: true }
+      );
+    }
+
+    await connection.execute(
+      `MERGE INTO STWL_MODEL_EVALS e
+       USING (
+         SELECT :eval_id AS eval_id,
+                :trace_id AS trace_id,
+                :rubric_version AS rubric_version,
+                :verdict AS verdict,
+                :scorer_notes AS scorer_notes,
+                :scores_json AS scores_json
+         FROM dual
+       ) s
+       ON (e.eval_id = s.eval_id)
+       WHEN MATCHED THEN UPDATE SET
+         e.verdict = s.verdict,
+         e.scorer_notes = s.scorer_notes,
+         e.scores_json = s.scores_json
+       WHEN NOT MATCHED THEN INSERT (
+         eval_id, trace_id, rubric_version, verdict, scorer_notes, scores_json
+       ) VALUES (
+         s.eval_id, s.trace_id, s.rubric_version, s.verdict, s.scorer_notes, s.scores_json
+       )`,
+      {
+        eval_id: `${route.trace_id}:${config.rubricVersion}`,
+        trace_id: route.trace_id,
+        rubric_version: config.rubricVersion,
+        verdict: route.eval_scores?.verdict || "not_evaluated",
+        scorer_notes: route.eval_scores?.reason || null,
+        scores_json: JSON.stringify(route.eval_scores || {}),
+      },
+      { autoCommit: true }
+    );
+
+    if (config.trainingCaptureEnabled && route.candidate?.ok) {
+      const accepted = route.eval_scores?.verdict === "candidate_ready" ? 1 : 0;
+      await connection.execute(
+        `MERGE INTO STWL_TRAINING_EXAMPLES x
+         USING (
+           SELECT :example_id AS example_id,
+                  :trace_id AS trace_id,
+                  :dataset_version AS dataset_version,
+                  :split AS split,
+                  :redaction_status AS redaction_status,
+                  :accepted AS accepted,
+                  :example_json AS example_json
+           FROM dual
+         ) s
+         ON (x.example_id = s.example_id)
+         WHEN MATCHED THEN UPDATE SET
+           x.accepted = s.accepted,
+           x.example_json = s.example_json,
+           x.redaction_status = s.redaction_status
+         WHEN NOT MATCHED THEN INSERT (
+           example_id, trace_id, dataset_version, split, redaction_status, accepted, example_json
+         ) VALUES (
+           s.example_id, s.trace_id, s.dataset_version, s.split, s.redaction_status, s.accepted, s.example_json
+         )`,
+        {
+          example_id: `${route.trace_id}:candidate`,
+          trace_id: route.trace_id,
+          dataset_version: process.env.PAF_TRAINING_DATASET_VERSION || config.rubricVersion,
+          split: accepted ? "candidate" : "rejected",
+          redaction_status: "metadata-only",
+          accepted,
+          example_json: JSON.stringify({
+            prompt_hash: route.prompt_hash,
+            evidence_hash: route.evidence_hash,
+            provider: route.candidate.provider,
+            model_id: route.candidate.model_id,
+            text: route.candidate.text,
+            eval: route.eval_scores,
+          }),
+        },
+        { autoCommit: true }
+      );
+    }
+
+    if (route.candidate?.model_id) {
+      await connection.execute(
+        `MERGE INTO STWL_MODEL_PROMOTIONS p
+         USING (
+           SELECT :promotion_id AS promotion_id,
+                  :trace_id AS trace_id,
+                  :candidate_model_id AS candidate_model_id,
+                  :adapter_uri AS adapter_uri,
+                  :eval_run_id AS eval_run_id,
+                  :approval_state AS approval_state,
+                  :promotion_reason AS promotion_reason
+           FROM dual
+         ) s
+         ON (p.promotion_id = s.promotion_id)
+         WHEN MATCHED THEN UPDATE SET
+           p.approval_state = s.approval_state,
+           p.promotion_reason = s.promotion_reason
+         WHEN NOT MATCHED THEN INSERT (
+           promotion_id, trace_id, candidate_model_id, adapter_uri,
+           eval_run_id, approval_state, promotion_reason
+         ) VALUES (
+           s.promotion_id, s.trace_id, s.candidate_model_id, s.adapter_uri,
+           s.eval_run_id, s.approval_state, s.promotion_reason
+         )`,
+        {
+          promotion_id: `${route.trace_id}:${route.candidate.model_id}`,
+          trace_id: route.trace_id,
+          candidate_model_id: route.candidate.model_id,
+          adapter_uri: process.env.OCI_FT_MODEL_ADAPTER_URI || null,
+          eval_run_id: config.rubricVersion,
+          approval_state: route.eval_scores?.verdict || "not_evaluated",
+          promotion_reason: route.eval_scores?.reason || null,
+        },
+        { autoCommit: true }
+      );
+    }
+
+    return true;
+  } catch (_) {
+    return false;
+  } finally {
+    if (close) await connection.close();
   }
 }
 
@@ -1561,17 +2231,95 @@ async function buildCommentary(body = {}, options = {}) {
 
   const formats = buildEvidenceFormats(summary, matchContext || {}, maxChars);
   const baseCommentary = canvas?.commentary || inDbAgent?.commentary || formats.live_line || deterministicScript(summary, maxChars);
-  const selectedCommentary = requestedOutput === "live_line"
-    ? baseCommentary
-    : formats[requestedOutput] || baseCommentary;
+  const legacySource = canvas ? "paf-canvas" : inDbAgent?.source || source;
+  const legacy = {
+    commentary: baseCommentary,
+    source: legacySource,
+    inDbAgent,
+    canvas,
+    formats,
+    latency_ms: canvas?.elapsed_ms ?? null,
+  };
+  const modelRoute = await runModelRoute(
+    {
+      summary,
+      context: matchContext || {},
+      legacy,
+      outputFormatValue: requestedOutput,
+      maxChars,
+    },
+    options
+  );
+  const modelCommentary = ["live_line", "post_match_recap"].includes(requestedOutput) && modelRoute.primary?.ok
+    ? modelRoute.primary.text
+    : null;
+  const selectedCommentary = modelCommentary || (
+    requestedOutput === "live_line"
+      ? baseCommentary
+      : formats[requestedOutput] || baseCommentary
+  );
+  const selectedSource = modelRoute.primary?.ok ? modelRoute.primary.provider : legacySource;
+  const modelWarnings = [modelRoute.primary, modelRoute.candidate]
+    .filter((item) => item && item.ok === false && !item.skipped)
+    .map((item) => `${item.provider}:${item.error || "failed"}`);
+  if (modelWarnings.length) {
+    warning = [warning, ...modelWarnings].filter(Boolean).join("; ");
+  }
 
   return {
     ok: true,
     commentary: enforceCommentary(selectedCommentary, requestedOutput === "clip_title" ? 80 : maxChars),
     output_format: requestedOutput,
-    source: canvas ? "paf-canvas" : inDbAgent?.source || source,
-    fallback_source: canvas ? inDbAgent?.source || source : null,
+    source: selectedSource,
+    fallback_source: modelRoute.primary?.ok ? legacySource : (canvas ? inDbAgent?.source || source : null),
     warning,
+    trace_id: modelRoute.trace_id,
+    route_mode: modelRoute.route_mode,
+    primary_provider: modelRoute.primary_provider,
+    candidate_provider: modelRoute.candidate_provider,
+    model_id: modelRoute.model_id,
+    latency_ms: modelRoute.latency_ms,
+    evidence_hash: modelRoute.evidence_hash,
+    prompt_hash: modelRoute.prompt_hash,
+    eval_scores: modelRoute.eval_scores,
+    promotion_verdict: modelRoute.promotion_verdict,
+    model_route: {
+      trace_id: modelRoute.trace_id,
+      route_mode: modelRoute.route_mode,
+      primary_provider: modelRoute.primary_provider,
+      candidate_provider: modelRoute.candidate_provider,
+      model_id: modelRoute.model_id,
+      latency_ms: modelRoute.latency_ms,
+      evidence_hash: modelRoute.evidence_hash,
+      prompt_hash: modelRoute.prompt_hash,
+      eval_scores: modelRoute.eval_scores,
+      promotion_verdict: modelRoute.promotion_verdict,
+      trace_persisted: modelRoute.trace_persisted,
+      primary: modelRoute.primary ? {
+        ok: modelRoute.primary.ok,
+        provider: modelRoute.primary.provider,
+        model_id: modelRoute.primary.model_id || null,
+        text: modelRoute.primary.text || null,
+        latency_ms: modelRoute.primary.latency_ms ?? null,
+        tokens: modelRoute.primary.tokens ?? null,
+        finish_reason: modelRoute.primary.finish_reason || null,
+        warnings: Array.isArray(modelRoute.primary.warnings) ? modelRoute.primary.warnings : [],
+        error: modelRoute.primary.error || null,
+        skipped: Boolean(modelRoute.primary.skipped),
+      } : null,
+      candidate: modelRoute.candidate ? {
+        ok: modelRoute.candidate.ok,
+        provider: modelRoute.candidate.provider,
+        model_id: modelRoute.candidate.model_id || null,
+        text: modelRoute.candidate.text || null,
+        latency_ms: modelRoute.candidate.latency_ms ?? null,
+        tokens: modelRoute.candidate.tokens ?? null,
+        finish_reason: modelRoute.candidate.finish_reason || null,
+        warnings: Array.isArray(modelRoute.candidate.warnings) ? modelRoute.candidate.warnings : [],
+        error: modelRoute.candidate.error || null,
+        skipped: Boolean(modelRoute.candidate.skipped),
+      } : null,
+    },
     in_db_agent: inDbAgent ? {
       source: inDbAgent.source,
       configured: true,
@@ -1607,6 +2355,7 @@ app.get("/healthz", (_req, res) => {
   const config = canvasConfig();
   const inDbConfig = inDbAgentConfig();
   const matchConfig = matchIntelligenceConfig();
+  const modelConfig = modelRouterConfig();
   res.json({
     ok: true,
     service: "private-agent-factory",
@@ -1631,6 +2380,17 @@ app.get("/healthz", (_req, res) => {
     vector_top_k: matchConfig.vectorTopK,
     replay_clips_table: matchConfig.replayClipsTable,
     agent_memories_table: matchConfig.agentMemoriesTable,
+    model_router: {
+      route_mode: modelConfig.routeMode,
+      primary_provider: modelConfig.primaryProvider,
+      candidate_provider: modelConfig.candidateProvider,
+      base_endpoint_configured: Boolean(modelConfig.baseEndpointUrl),
+      fine_tuned_endpoint_configured: Boolean(modelConfig.fineTunedEndpointUrl),
+      trace_persist: modelConfig.tracePersist,
+      eval_enabled: modelConfig.evalEnabled,
+      rubric_version: modelConfig.rubricVersion,
+      training_capture_enabled: modelConfig.trainingCaptureEnabled,
+    },
   });
 });
 
@@ -1685,14 +2445,19 @@ export {
   buildCanvasMessage,
   buildCommentary,
   buildMatchContext,
+  buildModelPrompt,
   callPafCanvas,
   callInDbAgent,
+  callModelProvider,
   canvasConfig,
   deterministicScript,
+  evaluateModelOutputs,
   inDbAgentConfig,
   inDbPackageStatements,
+  learningTraceStatements,
   matchIntelligenceConfig,
   matchIntelligenceStatements,
+  modelRouterConfig,
   selectAiInitStatements,
   enforceCommentary,
   extractCanvasText,

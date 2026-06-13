@@ -11,6 +11,8 @@ env:
     - SCORE_VERSION
     - REPLAY_VERSION
     - PAF_VERSION
+    - MODEL_AI_TRAINING_VERSION
+    - MODEL_AI_INFERENCE_VERSION
 
 steps:
   - type: Command
@@ -74,6 +76,11 @@ steps:
       echo "PAF_VERSION: $PAF_VERSION"
       echo "PAF_PACKAGE_VERSION: $PAF_PACKAGE_VERSION"
 
+      export MODEL_AI_TRAINING_VERSION="${MODEL_AI_TRAINING_VERSION:-latest}"
+      export MODEL_AI_INFERENCE_VERSION="${MODEL_AI_INFERENCE_VERSION:-latest}"
+      echo "MODEL_AI_TRAINING_VERSION: $MODEL_AI_TRAINING_VERSION"
+      echo "MODEL_AI_INFERENCE_VERSION: $MODEL_AI_INFERENCE_VERSION"
+
   - type: Command
     name: "Build ws-server"
     command: |
@@ -109,6 +116,20 @@ steps:
       trap 'echo "[FATAL] Build private-agent-factory failed at line $LINENO" >&2' ERR
       npx zx scripts/build.mjs private-agent-factory
 
+  - type: Command
+    name: "Build model-ai training image"
+    command: |
+      set -Eeuo pipefail
+      trap 'echo "[FATAL] Build model-ai training failed at line $LINENO" >&2' ERR
+      npx zx scripts/build.mjs model-ai-training
+
+  - type: Command
+    name: "Build model-ai inference image"
+    command: |
+      set -Eeuo pipefail
+      trap 'echo "[FATAL] Build model-ai inference failed at line $LINENO" >&2' ERR
+      npx zx scripts/build.mjs model-ai-inference
+
 outputArtifacts:
   - name: server
     type: DOCKER_IMAGE
@@ -125,3 +146,9 @@ outputArtifacts:
   - name: private-agent-factory
     type: DOCKER_IMAGE
     location: private-agent-factory:${PAF_VERSION}
+  - name: model-ai-training
+    type: DOCKER_IMAGE
+    location: model-ai-training:${MODEL_AI_TRAINING_VERSION}
+  - name: model-ai-inference
+    type: DOCKER_IMAGE
+    location: model-ai-inference:${MODEL_AI_INFERENCE_VERSION}

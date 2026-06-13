@@ -15,7 +15,14 @@ const DEFAULT_JOIN_EMIT_DELAY_MS = 250;
 const DEFAULT_NAMESPACE = "default";
 const DEFAULT_SOCKET_PATH = "/socket.io";
 const DEFAULT_LOCAL_TARGET = "http://localhost:3000";
-const DEFAULT_DISALLOWED_SOURCES = ["deterministic-fallback"];
+const DEFAULT_DISALLOWED_SOURCES = [
+  "deterministic",
+  "deterministic-fallback",
+  "deterministic-script",
+  "oracle-ai-database-deterministic",
+  "oracle-sql",
+  "request-summary",
+];
 const COMMENTARY_SAMPLE_LIMIT = 8;
 
 function nowIso() {
@@ -303,6 +310,8 @@ export function loadConfig(env = process.env, argv = process.argv.slice(2)) {
     captureK8s: boolValue(env.STWL_LOAD_CAPTURE_K8S, true),
     requireFullPath: boolValue(env.STWL_LOAD_REQUIRE_FULL_PATH, true),
     requireScoreRows: boolValue(env.STWL_LOAD_REQUIRE_SCORE_ROWS, true),
+    requireModelMetadata: boolValue(env.STWL_LOAD_REQUIRE_MODEL_METADATA, true),
+    requireValidPromotionGate: boolValue(env.STWL_LOAD_REQUIRE_VALID_PROMOTION_GATE, true),
     disallowedSources,
   };
 }
@@ -562,6 +571,8 @@ export function buildTelemetryEvents(player) {
 
 function extractCommentary(body = {}) {
   const source = body.source || body.commentary?.source || "";
+  const route = body.model_route || body.commentary?.model_route || {};
+  const evalScores = body.eval_scores || body.commentary?.eval_scores || route.eval_scores || null;
   const text =
     body.commentary?.commentary ||
     body.commentary?.text ||
@@ -571,7 +582,22 @@ function extractCommentary(body = {}) {
     body.script ||
     "";
   const summary = body.summary || body.commentary?.summary || null;
-  return { text: String(text || "").trim(), source, summary };
+  return {
+    text: String(text || "").trim(),
+    source,
+    summary,
+    traceId: body.trace_id || body.commentary?.trace_id || route.trace_id || "",
+    routeMode: body.route_mode || body.commentary?.route_mode || route.route_mode || "",
+    primaryProvider: body.primary_provider || body.commentary?.primary_provider || route.primary_provider || route.primary?.provider || "",
+    candidateProvider: body.candidate_provider || body.commentary?.candidate_provider || route.candidate_provider || route.candidate?.provider || "",
+    modelId: body.model_id || body.commentary?.model_id || route.model_id || route.primary?.model_id || "",
+    evidenceHash: body.evidence_hash || body.commentary?.evidence_hash || route.evidence_hash || "",
+    promptHash: body.prompt_hash || body.commentary?.prompt_hash || route.prompt_hash || "",
+    modelLatencyMs: body.latency_ms ?? body.commentary?.latency_ms ?? route.latency_ms ?? route.primary?.latency_ms ?? null,
+    promotionVerdict: body.promotion_verdict || body.commentary?.promotion_verdict || route.promotion_verdict || evalScores?.verdict || "",
+    evalScores,
+    modelRoute: route,
+  };
 }
 
 async function fetchJson(url, { method = "GET", body, timeoutMs = DEFAULT_SCORE_TIMEOUT_MS } = {}) {
@@ -758,6 +784,33 @@ export function evaluateTierGates(tierReport, config = {}) {
   const duplicates = findDuplicateCommentary(commentaryPlayers);
   const latencies = commentaryPlayers.map((player) => player.commentary.latencyMs);
   const p95 = percentile(latencies, 95);
+  const modelRequired = commentaryRequired && config.requireModelMetadata !== false;
+  const missingModelMetadata = modelRequired
+    ? commentaryPlayers.filter((player) => {
+        const commentary = player.commentary || {};
+        return !commentary.traceId ||
+          !commentary.routeMode ||
+          !commentary.primaryProvider ||
+          !commentary.evidenceHash ||
+          !commentary.promptHash;
+      })
+    : [];
+  const invalidPromotions = modelRequired && config.requireValidPromotionGate !== false
+    ? commentaryPlayers.filter((player) => {
+        const commentary = player.commentary || {};
+        if (commentary.promotionVerdict !== "candidate_ready") return false;
+        const candidate = commentary.evalScores?.candidate || {};
+        return !candidate.uses_retrieved_evidence ||
+          !candidate.no_hallucinated_game_facts ||
+          !candidate.confidence_calibrated ||
+          !candidate.safe_for_stage;
+      })
+    : [];
+  const modelFallbacks = modelRequired
+    ? commentaryPlayers
+        .map((player) => ({ id: player.id, warnings: modelFallbackWarnings(player.commentary) }))
+        .filter((item) => item.warnings.length)
+    : [];
   const disallowedSources = new Set(
     (config.disallowedSources || DEFAULT_DISALLOWED_SOURCES).map((item) => String(item).trim())
   );
@@ -785,6 +838,15 @@ export function evaluateTierGates(tierReport, config = {}) {
   if (commentaryRequired && sourceFailures.length) {
     reasons.push(`commentary_source_not_full_path:${sourceFailures.length}`);
   }
+  if (missingModelMetadata.length) {
+    reasons.push(`missing_model_metadata:${missingModelMetadata.length}`);
+  }
+  if (invalidPromotions.length) {
+    reasons.push(`invalid_ft_promotion:${invalidPromotions.length}`);
+  }
+  if (modelFallbacks.length) {
+    reasons.push(`model_endpoint_fallback:${modelFallbacks.length}`);
+  }
 
   return {
     verdict: reasons.length ? "failed" : "passed",
@@ -807,6 +869,18 @@ export function evaluateTierGates(tierReport, config = {}) {
       id: player.id,
       source: player.commentary?.source || "",
     })),
+    modelMetadata: {
+      required: modelRequired,
+      missing: missingModelMetadata.map((player) => player.id),
+      routeCounts: modelRouteCounts(commentaryPlayers),
+      promotionCounts: promotionCounts(commentaryPlayers),
+      latencyByProvider: modelLatencyByProvider(commentaryPlayers),
+      invalidPromotions: invalidPromotions.map((player) => ({
+        id: player.id,
+        promotionVerdict: player.commentary?.promotionVerdict || "",
+      })),
+      fallbackWarnings: modelFallbacks,
+    },
     latency: {
       p50: percentile(latencies, 50),
       p95,
@@ -823,6 +897,71 @@ function sourceCounts(players = []) {
     counts[source] = (counts[source] || 0) + 1;
   }
   return counts;
+}
+
+function modelRouteCounts(players = []) {
+  const counts = {};
+  for (const player of players) {
+    const primary = player.commentary?.primaryProvider || "missing";
+    const candidate = player.commentary?.candidateProvider || "none";
+    const key = `${primary}->${candidate}`;
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return counts;
+}
+
+function promotionCounts(players = []) {
+  const counts = {};
+  for (const player of players) {
+    const verdict = player.commentary?.promotionVerdict || "missing";
+    counts[verdict] = (counts[verdict] || 0) + 1;
+  }
+  return counts;
+}
+
+function modelLatencyByProvider(players = []) {
+  const grouped = {};
+  for (const player of players) {
+    for (const role of ["primary", "candidate"]) {
+      const route = player.commentary?.modelRoute?.[role];
+      const provider = route?.provider;
+      const latency = Number(route?.latency_ms);
+      if (!provider || !Number.isFinite(latency)) continue;
+      if (!grouped[provider]) grouped[provider] = [];
+      grouped[provider].push(latency);
+    }
+  }
+  return Object.fromEntries(
+    Object.entries(grouped).map(([provider, values]) => [
+      provider,
+      {
+        count: values.length,
+        p50: percentile(values, 50),
+        p95: percentile(values, 95),
+        max: percentile(values, 100),
+      },
+    ])
+  );
+}
+
+function modelFallbackWarnings(commentary = {}) {
+  const warnings = [];
+  for (const role of ["primary", "candidate"]) {
+    const output = commentary?.modelRoute?.[role];
+    const roleWarnings = Array.isArray(output?.warnings) ? output.warnings : [];
+    const finishReason = output?.finish_reason || "";
+    const provider = output?.provider || "";
+    if (provider === "deterministic" || finishReason === "local") {
+      warnings.push(`${role}:local_model_output`);
+    }
+    for (const warning of roleWarnings) {
+      const value = String(warning || "");
+      if (/fallback|no_upstream|deterministic|local/i.test(value)) {
+        warnings.push(`${role}:${value}`);
+      }
+    }
+  }
+  return warnings;
 }
 
 function closeSocket(socket) {
@@ -899,8 +1038,8 @@ function renderMarkdownSummary(runReport) {
     `- Score API: ${runReport.target.scoreBaseUrl}/api/score`,
     `- Verdict: ${runReport.verdict || "running"}`,
     "",
-    "| Tier | Room | Verdict | Joined | Join failures | High-score rows | Commentary | p95 commentary | Duplicates | Sources |",
-    "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+    "| Tier | Room | Verdict | Joined | Join failures | High-score rows | Commentary | p95 commentary | Duplicates | Sources | Model routes | Promotions |",
+    "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
   ];
 
   for (const tier of runReport.tiers) {
@@ -908,8 +1047,14 @@ function renderMarkdownSummary(runReport) {
     const sources = Object.entries(gates.sourceCounts || {})
       .map(([source, count]) => `${source}:${count}`)
       .join(", ");
+    const routes = Object.entries(gates.modelMetadata?.routeCounts || {})
+      .map(([route, count]) => `${route}:${count}`)
+      .join(", ");
+    const promotions = Object.entries(gates.modelMetadata?.promotionCounts || {})
+      .map(([verdict, count]) => `${verdict}:${count}`)
+      .join(", ");
     lines.push(
-      `| ${tier.tier} | ${tier.room} | ${gates.verdict || "running"} | ${gates.joined ?? 0}/${tier.attempted} | ${gates.joinFailures ?? 0} | ${gates.scoreRows?.verified ?? 0} | ${gates.commentaryReceived ?? 0} | ${gates.latency?.p95 ?? ""} | ${gates.duplicateTexts?.length ?? 0} | ${sources || ""} |`
+      `| ${tier.tier} | ${tier.room} | ${gates.verdict || "running"} | ${gates.joined ?? 0}/${tier.attempted} | ${gates.joinFailures ?? 0} | ${gates.scoreRows?.verified ?? 0} | ${gates.commentaryReceived ?? 0} | ${gates.latency?.p95 ?? ""} | ${gates.duplicateTexts?.length ?? 0} | ${sources || ""} | ${routes || ""} | ${promotions || ""} |`
     );
   }
 

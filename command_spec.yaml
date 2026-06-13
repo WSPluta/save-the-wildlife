@@ -58,6 +58,17 @@ steps:
       export PAF_CANVAS_ROOM_ID="${paf_canvas_room_id}"
       export PAF_CANVAS_TIMEOUT_MS="${paf_canvas_timeout_ms}"
       export PAF_CANVAS_VERIFY_TLS="${paf_canvas_verify_tls}"
+      export PAF_MODEL_ROUTE_MODE="${paf_model_route_mode}"
+      export PAF_PRIMARY_MODEL_PROVIDER="${paf_primary_model_provider}"
+      export PAF_CANDIDATE_MODEL_PROVIDER="${paf_candidate_model_provider}"
+      export OCI_BASE_MODEL_ENDPOINT_URL="${oci_base_model_endpoint_url}"
+      export OCI_FT_MODEL_ENDPOINT_URL="${oci_ft_model_endpoint_url}"
+      export OCI_MODEL_ENDPOINT_TIMEOUT_MS="${oci_model_endpoint_timeout_ms}"
+      export OCI_MODEL_ENDPOINT_VERIFY_TLS="${oci_model_endpoint_verify_tls}"
+      export PAF_TRACE_PERSIST="${paf_trace_persist}"
+      export PAF_EVAL_ENABLED="${paf_eval_enabled}"
+      export PAF_EVAL_RUBRIC_VERSION="${paf_eval_rubric_version}"
+      export PAF_TRAINING_CAPTURE_ENABLED="${paf_training_capture_enabled}"
       npx zx scripts/kustom.mjs ${region_key} $adb_admin_password ${adb_service} "$adb_wallet_password"
       rm -f .adb_wallet_password
       echo "Wallet and config files generated successfully"
@@ -73,6 +84,20 @@ steps:
         --docker-username="${oci_namespace}/${ocir_user}" \
         --docker-password="$user_auth_token" \
         --docker-email=${ocir_user}
+  - type: Command
+    name: "Create model endpoint auth secret"
+    shell: bash
+    timeoutInSeconds: 180
+    command: |
+      if [ -z "${oci_model_endpoint_auth_secret_id}" ]; then
+        echo "No model endpoint auth Vault secret configured; skipping private-agent-factory-model-auth"
+        kubectl delete secret private-agent-factory-model-auth --ignore-not-found
+        exit 0
+      fi
+      model_endpoint_auth_secret=$(oci secrets secret-bundle get --secret-id ${oci_model_endpoint_auth_secret_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
+      kubectl delete secret private-agent-factory-model-auth --ignore-not-found
+      kubectl create secret generic private-agent-factory-model-auth \
+        --from-literal=OCI_MODEL_ENDPOINT_AUTH_SECRET="$model_endpoint_auth_secret"
   - type: Command
     name: "Apply kustomization"
     shell: bash

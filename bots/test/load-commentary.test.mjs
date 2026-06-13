@@ -15,6 +15,43 @@ import {
   stringifyRunReport,
 } from "../load-commentary.mjs";
 
+function modelCommentary(text, overrides = {}) {
+  return {
+    text,
+    source: "oci-base",
+    latencyMs: 900,
+    traceId: "TRACE-UNIT",
+    routeMode: "shadow",
+    primaryProvider: "oci-base",
+    candidateProvider: "oci-fine-tuned",
+    modelId: "stwl-base-v1",
+    evidenceHash: "evidence123",
+    promptHash: "prompt123",
+    promotionVerdict: "candidate_ready",
+    modelRoute: {
+      primary: {
+        provider: "oci-base",
+        latency_ms: 900,
+        warnings: [],
+      },
+      candidate: {
+        provider: "oci-fine-tuned",
+        latency_ms: 720,
+        warnings: [],
+      },
+    },
+    evalScores: {
+      candidate: {
+        uses_retrieved_evidence: true,
+        no_hallucinated_game_facts: true,
+        confidence_calibrated: true,
+        safe_for_stage: true,
+      },
+    },
+    ...overrides,
+  };
+}
+
 test("parses tier lists and falls back to the production sequence", () => {
   assert.deepEqual(parseTiers(""), [5, 10, 50, 100, 500, 1000]);
   assert.deepEqual(parseTiers("5,10,10,50"), [5, 10, 50]);
@@ -96,13 +133,13 @@ test("fails strict gates for duplicates, missing commentary, fallback source, an
         id: "p1",
         joined: true,
         scoreRow: { ok: true },
-        commentary: { text: "Same line", source: "oracle-private-agent-factory", latencyMs: 100 },
+        commentary: modelCommentary("Same line", { latencyMs: 100 }),
       },
       {
         id: "p2",
         joined: true,
         scoreRow: { ok: true },
-        commentary: { text: "Same line", source: "deterministic-fallback", latencyMs: 12_001 },
+        commentary: modelCommentary("Same line", { source: "deterministic-fallback", latencyMs: 12_001 }),
       },
       { id: "p3", joined: true, scoreRow: { ok: true }, commentary: null },
     ],
@@ -130,13 +167,13 @@ test("passes strict gates for unique full-path commentary", () => {
         id: "p1",
         joined: true,
         scoreRow: { ok: true },
-        commentary: { text: "Ada finished on 42.", source: "oracle-private-agent-factory", latencyMs: 900 },
+        commentary: modelCommentary("Ada finished on 42.", { latencyMs: 900 }),
       },
       {
         id: "p2",
         joined: true,
         scoreRow: { ok: true },
-        commentary: { text: "Grace closed at 43.", source: "oracle-private-agent-factory", latencyMs: 1100 },
+        commentary: modelCommentary("Grace closed at 43.", { traceId: "TRACE-UNIT-2", latencyMs: 1100 }),
       },
     ],
   };
@@ -152,6 +189,10 @@ test("passes strict gates for unique full-path commentary", () => {
   assert.equal(gates.commentaryReceived, 2);
   assert.equal(gates.scoreRows.verified, 2);
   assert.equal(gates.latency.p95, 1100);
+  assert.equal(gates.modelMetadata.routeCounts["oci-base->oci-fine-tuned"], 2);
+  assert.equal(gates.modelMetadata.promotionCounts.candidate_ready, 2);
+  assert.equal(gates.modelMetadata.latencyByProvider["oci-base"].p95, 900);
+  assert.equal(gates.modelMetadata.latencyByProvider["oci-fine-tuned"].p95, 720);
 });
 
 test("fails strict gates when joined players do not have verified high-score rows", () => {
@@ -162,13 +203,13 @@ test("fails strict gates when joined players do not have verified high-score row
         id: "p1",
         joined: true,
         scoreRow: { ok: true },
-        commentary: { text: "Ada finished on 42.", source: "oracle-private-agent-factory", latencyMs: 900 },
+        commentary: modelCommentary("Ada finished on 42.", { latencyMs: 900 }),
       },
       {
         id: "p2",
         joined: true,
         scoreRow: { ok: false, error: "http_404" },
-        commentary: { text: "Grace closed at 43.", source: "oracle-private-agent-factory", latencyMs: 1100 },
+        commentary: modelCommentary("Grace closed at 43.", { traceId: "TRACE-UNIT-2", latencyMs: 1100 }),
       },
     ],
   };
@@ -184,6 +225,91 @@ test("fails strict gates when joined players do not have verified high-score row
   assert.equal(gates.verdict, "failed");
   assert.deepEqual(gates.scoreRows.missing, ["p2"]);
   assert.ok(gates.reasons.includes("missing_high_score_rows:1"));
+});
+
+test("fails model gates for missing metadata and invalid promotion verdicts", () => {
+  const report = {
+    attempted: 2,
+    players: [
+      {
+        id: "p1",
+        joined: true,
+        scoreRow: { ok: true },
+        commentary: { text: "Ada finished on 42.", source: "oci-base", latencyMs: 900 },
+      },
+      {
+        id: "p2",
+        joined: true,
+        scoreRow: { ok: true },
+        commentary: modelCommentary("Grace closed at 43.", {
+          traceId: "TRACE-BAD-PROMOTION",
+          evalScores: {
+            candidate: {
+              uses_retrieved_evidence: false,
+              no_hallucinated_game_facts: true,
+              confidence_calibrated: true,
+              safe_for_stage: true,
+            },
+          },
+        }),
+      },
+    ],
+  };
+
+  const gates = evaluateTierGates(report, {
+    commentaryTimeoutMs: 10_000,
+    joinFailureThreshold: 0.01,
+    requireFullPath: true,
+    requireModelMetadata: true,
+    requireValidPromotionGate: true,
+    disallowedSources: ["deterministic-fallback"],
+  });
+
+  assert.equal(gates.verdict, "failed");
+  assert.ok(gates.reasons.includes("missing_model_metadata:1"));
+  assert.ok(gates.reasons.includes("invalid_ft_promotion:1"));
+  assert.deepEqual(gates.modelMetadata.missing, ["p1"]);
+  assert.equal(gates.modelMetadata.invalidPromotions[0].id, "p2");
+});
+
+test("fails model gate when OCI endpoint reports adapter fallback", () => {
+  const report = {
+    attempted: 1,
+    players: [
+      {
+        id: "p1",
+        joined: true,
+        scoreRow: { ok: true },
+        commentary: modelCommentary("Ada closed on 42 points from DB evidence.", {
+          modelRoute: {
+            primary: {
+              provider: "oci-base",
+              latency_ms: 900,
+              warnings: ["adapter_fallback_no_upstream"],
+            },
+            candidate: {
+              provider: "oci-fine-tuned",
+              latency_ms: 720,
+              warnings: [],
+            },
+          },
+        }),
+      },
+    ],
+  };
+
+  const gates = evaluateTierGates(report, {
+    commentaryTimeoutMs: 10_000,
+    requireFullPath: true,
+    requireScoreRows: true,
+    requireModelMetadata: true,
+  });
+
+  assert.equal(gates.verdict, "failed");
+  assert.ok(gates.reasons.includes("model_endpoint_fallback:1"));
+  assert.deepEqual(gates.modelMetadata.fallbackWarnings, [
+    { id: "p1", warnings: ["primary:adapter_fallback_no_upstream"] },
+  ]);
 });
 
 test("join-failure aborts do not also require commentary", () => {

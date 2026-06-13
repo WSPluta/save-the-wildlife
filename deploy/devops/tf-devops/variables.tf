@@ -103,3 +103,76 @@ variable "paf_canvas_verify_tls" {
   default     = "false"
   description = "Whether the commentary adapter should verify TLS for the Private Agent Factory Canvas endpoint."
 }
+
+variable "paf_model_route_mode" {
+  type        = string
+  default     = "shadow"
+  description = "PAF model router mode: off, primary, or shadow."
+}
+
+variable "paf_primary_model_provider" {
+  type        = string
+  default     = "oci-base"
+  description = "Primary PAF model provider."
+}
+
+variable "paf_candidate_model_provider" {
+  type        = string
+  default     = "oci-fine-tuned"
+  description = "Candidate PAF model provider used in shadow mode."
+}
+
+variable "oci_base_model_endpoint_url" {
+  type        = string
+  default     = ""
+  description = "Private OCI base model endpoint URL consumed by PAF."
+}
+
+variable "oci_ft_model_endpoint_url" {
+  type        = string
+  default     = ""
+  description = "Private OCI fine-tuned model endpoint URL consumed by PAF."
+}
+
+variable "oci_model_endpoint_auth_secret_id" {
+  type        = string
+  default     = ""
+  description = "Vault secret OCID containing the bearer token for private model endpoints."
+  sensitive   = true
+}
+
+variable "oci_model_endpoint_timeout_ms" {
+  type        = string
+  default     = "8000"
+  description = "Timeout in milliseconds for private model endpoint calls."
+}
+
+variable "oci_model_endpoint_verify_tls" {
+  type        = string
+  default     = "true"
+  description = "Whether PAF should verify TLS for private model endpoint calls."
+}
+
+variable "paf_trace_persist" {
+  type        = string
+  default     = "true"
+  description = "Whether PAF persists model learning traces to Oracle AI Database."
+}
+
+variable "paf_eval_enabled" {
+  type        = string
+  default     = "true"
+  description = "Whether PAF evaluates base vs fine-tuned outputs."
+}
+
+variable "paf_eval_rubric_version" {
+  type        = string
+  default     = "stwl-commentary-v1"
+  description = "Rubric version persisted with PAF model evaluations."
+}
+
+variable "paf_training_capture_enabled" {
+  type        = string
+  default     = "true"
+  description = "Whether PAF captures accepted behavior traces as training examples."
+}
