@@ -94,8 +94,26 @@ variable "paf_canvas_room_id" {
 
 variable "paf_canvas_timeout_ms" {
   type        = string
-  default     = "8000"
+  default     = "3000"
   description = "Timeout in milliseconds for calls to the published Private Agent Factory Canvas run endpoint."
+}
+
+variable "paf_commentary_deadline_ms" {
+  type        = string
+  default     = "9000"
+  description = "End-to-end commentary budget in milliseconds before optional PAF polish is skipped."
+}
+
+variable "paf_canvas_return_reserve_ms" {
+  type        = string
+  default     = "1000"
+  description = "Milliseconds reserved for returning a DB-grounded commentary response after Canvas polish."
+}
+
+variable "paf_canvas_min_timeout_ms" {
+  type        = string
+  default     = "250"
+  description = "Minimum useful Canvas polish timeout before the adapter skips Canvas for the request."
 }
 
 variable "paf_canvas_verify_tls" {

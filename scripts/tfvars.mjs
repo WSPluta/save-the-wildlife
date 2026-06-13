@@ -281,7 +281,10 @@ async function devopsTFvars() {
   const genaiModelId = process.env.OCI_GENAI_MODEL_ID || "cohere.command-r-08-2024";
   const pafCanvasRunEndpointUrl = process.env.PAF_CANVAS_RUN_ENDPOINT_URL || "";
   const pafCanvasRoomId = process.env.PAF_CANVAS_ROOM_ID || "";
-  const pafCanvasTimeoutMs = process.env.PAF_CANVAS_TIMEOUT_MS || "8000";
+  const pafCanvasTimeoutMs = process.env.PAF_CANVAS_TIMEOUT_MS || "3000";
+  const pafCommentaryDeadlineMs = process.env.PAF_COMMENTARY_DEADLINE_MS || "9000";
+  const pafCanvasReturnReserveMs = process.env.PAF_CANVAS_RETURN_RESERVE_MS || "1000";
+  const pafCanvasMinTimeoutMs = process.env.PAF_CANVAS_MIN_TIMEOUT_MS || "250";
   const pafCanvasVerifyTls = process.env.PAF_CANVAS_VERIFY_TLS || "false";
   const pafModelRouteMode = process.env.PAF_MODEL_ROUTE_MODE || "shadow";
   const pafPrimaryModelProvider = process.env.PAF_PRIMARY_MODEL_PROVIDER || "oci-base";
@@ -322,6 +325,9 @@ async function devopsTFvars() {
       .replace(/PAF_CANVAS_RUN_ENDPOINT_URL/g, pafCanvasRunEndpointUrl)
       .replace(/PAF_CANVAS_ROOM_ID/g, pafCanvasRoomId)
       .replace(/PAF_CANVAS_TIMEOUT_MS/g, pafCanvasTimeoutMs)
+      .replace(/PAF_COMMENTARY_DEADLINE_MS/g, pafCommentaryDeadlineMs)
+      .replace(/PAF_CANVAS_RETURN_RESERVE_MS/g, pafCanvasReturnReserveMs)
+      .replace(/PAF_CANVAS_MIN_TIMEOUT_MS/g, pafCanvasMinTimeoutMs)
       .replace(/PAF_CANVAS_VERIFY_TLS/g, pafCanvasVerifyTls)
       .replace(/PAF_MODEL_ROUTE_MODE/g, pafModelRouteMode)
       .replace(/PAF_PRIMARY_MODEL_PROVIDER/g, pafPrimaryModelProvider)

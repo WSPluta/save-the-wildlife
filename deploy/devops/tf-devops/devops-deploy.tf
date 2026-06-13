@@ -61,6 +61,9 @@ resource "oci_devops_deploy_artifact" "command_spec_deploy" {
       paf_canvas_run_endpoint_url       = var.paf_canvas_run_endpoint_url
       paf_canvas_room_id                = var.paf_canvas_room_id
       paf_canvas_timeout_ms             = var.paf_canvas_timeout_ms
+      paf_commentary_deadline_ms        = var.paf_commentary_deadline_ms
+      paf_canvas_return_reserve_ms      = var.paf_canvas_return_reserve_ms
+      paf_canvas_min_timeout_ms         = var.paf_canvas_min_timeout_ms
       paf_canvas_verify_tls             = var.paf_canvas_verify_tls
       paf_model_route_mode              = var.paf_model_route_mode
       paf_primary_model_provider        = var.paf_primary_model_provider
