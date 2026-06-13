@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: stwl-base-commentary
+    component: model-ai-inference
+  name: stwl-base-commentary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stwl-base-commentary
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: stwl-base-commentary
+        component: model-ai-inference
+        model-route: oci-base
+    spec:
+      containers:
+        - image: model-ai-inference
+          imagePullPolicy: Always
+          name: model-ai-inference
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: STWL_PROVIDER
+              value: oci-base
+            - name: STWL_MODEL_ID
+              value: stwl-base-commentary-oke-adapter
+            - name: STWL_FACTS_POLICY
+              value: facts-in-memory-behavior-in-weights
+            - name: STWL_ADAPTER_RUNTIME_MODE
+              value: behavior-adapter
+            - name: STWL_STRICT_UPSTREAM_WARNINGS
+              value: "false"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      imagePullSecrets:
+        - name: ocir-secret

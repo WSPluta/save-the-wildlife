@@ -5,6 +5,7 @@ bases:
   - "../../base/score"
   - "../../base/replay"
   - "../../base/private-agent-factory"
+  - "../../base/model-ai-inference"
 
 resources:
   - "hpa_commentary_load.yaml"
@@ -29,3 +30,6 @@ images:
 - name: private-agent-factory
   newName: PAF_IMAGE_REPOSITORY
   newTag: PAF_VERSION
+- name: model-ai-inference
+  newName: MODEL_AI_INFERENCE_IMAGE_REPOSITORY
+  newTag: MODEL_AI_INFERENCE_VERSION

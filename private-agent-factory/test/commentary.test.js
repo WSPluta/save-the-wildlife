@@ -390,6 +390,9 @@ test("routes base and fine-tuned OCI model endpoints in shadow mode", async () =
           : "Ada finished with 42 points after a clean evidence-backed run.",
         tokens: isFineTuned ? 9 : 12,
         finish_reason: "stop",
+        runtime_mode: "upstream-llm",
+        upstream_configured: true,
+        facts_policy: "facts-in-memory-behavior-in-weights",
       },
     };
   };
@@ -436,6 +439,10 @@ test("routes base and fine-tuned OCI model endpoints in shadow mode", async () =
     assert.equal(response.model_id, "stwl-base-v1");
     assert.equal(response.model_route.primary.model_id, "stwl-base-v1");
     assert.equal(response.model_route.candidate.model_id, "stwl-ft-v1");
+    assert.equal(response.model_route.primary.runtime_mode, "upstream-llm");
+    assert.equal(response.model_route.candidate.runtime_mode, "upstream-llm");
+    assert.equal(response.model_route.primary.upstream_configured, true);
+    assert.equal(response.model_route.candidate.facts_policy, "facts-in-memory-behavior-in-weights");
     assert.equal(response.model_route.trace_persisted, false);
     assert.equal(response.eval_scores.verdict, "candidate_ready");
     assert.equal(response.promotion_verdict, "candidate_ready");

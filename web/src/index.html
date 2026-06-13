@@ -273,25 +273,25 @@
               <div class="admin-section-eyebrow">Production Canary</div>
               <h3>Player Join and Commentary Evaluation</h3>
             </div>
-            <div class="admin-evidence-verdict">Passed to 1000</div>
+            <div class="admin-evidence-verdict">Tier 50 pass; 100 held</div>
           </div>
 
           <div class="admin-evidence-metrics" aria-label="Load canary summary">
             <div class="admin-metric">
-              <span>Largest tier</span>
-              <strong>1000</strong>
+              <span>Strict pass</span>
+              <strong>50</strong>
             </div>
             <div class="admin-metric">
-              <span>Score rows</span>
-              <strong>1000/1000</strong>
+              <span>Score proof</span>
+              <strong>100/100</strong>
             </div>
             <div class="admin-metric">
-              <span>Commentary</span>
-              <strong>1000/1000</strong>
+              <span>Tier 100 commentary</span>
+              <strong>100/100</strong>
             </div>
             <div class="admin-metric">
-              <span>p95 latency</span>
-              <strong>9232 ms</strong>
+              <span>Tier 100 p95</span>
+              <strong>8153 ms</strong>
             </div>
           </div>
 
@@ -302,29 +302,29 @@
                 <li>
                   <span class="admin-step-state passed">Pass</span>
                   <div>
-                    <strong>Tier 100 confirmed the new websocket path.</strong>
-                    <span>100 joins, 100 score rows, 100 Oracle/PAF commentary events, 0 duplicates.</span>
+                    <strong>Tiers 5 and 10 proved the end-to-end path.</strong>
+                    <span>Every joined player wrote a high-score row and received unique Oracle/PAF commentary.</span>
                   </div>
                 </li>
                 <li>
                   <span class="admin-step-state failed">Gate</span>
                   <div>
-                    <strong>First tier 500 found the bottleneck.</strong>
-                    <span>All 500 players joined and wrote score rows, but 4 commentary events missed the 10s gate.</span>
+                    <strong>Tier 50 exposed commentary timeouts.</strong>
+                    <span>50 players joined and wrote score rows, but 16 commentary events missed the gate before the PAF budget fix.</span>
                   </div>
                 </li>
                 <li>
                   <span class="admin-step-state scaled">Scale</span>
                   <div>
-                    <strong>PAF floor raised from 2 to 4 replicas.</strong>
-                    <span>The commentary-heavy service needed ready capacity before the burst rather than waiting on CPU autoscale.</span>
+                    <strong>PAF budget and replica floor were tuned.</strong>
+                    <span>Tier 50 then passed with 50/50 Select AI commentary, 0 duplicates, and 4513 ms p95 latency.</span>
                   </div>
                 </li>
                 <li>
                   <span class="admin-step-state passed">Pass</span>
                   <div>
-                    <strong>Tiers 500 and 1000 passed after scaling.</strong>
-                    <span>Every joined player received unique Oracle/PAF commentary and DB-backed score verification.</span>
+                    <strong>Tier 100 is the next strict gate.</strong>
+                    <span>100/100 joined, score rows, and commentary are proven; source capacity still falls back to Oracle SQL for 41 players.</span>
                   </div>
                 </li>
               </ol>
@@ -335,7 +335,7 @@
               <ul class="admin-gate-list">
                 <li><span class="admin-gate-pass">Pass</span> Join failures stayed at 0%</li>
                 <li><span class="admin-gate-pass">Pass</span> High-score test rows matched joined players</li>
-                <li><span class="admin-gate-pass">Pass</span> Commentary source stayed Oracle private-agent-factory</li>
+                <li><span class="admin-gate-pass">Hold</span> Tier 100 commentary source must stay on the full Oracle/PAF path</li>
                 <li><span class="admin-gate-pass">Pass</span> Duplicate commentary count stayed 0</li>
                 <li><span class="admin-gate-pass">Pass</span> p95 commentary latency stayed below 10s</li>
                 <li><span class="admin-gate-pass">Pass</span> No deterministic fallback commentary accepted</li>
@@ -359,54 +359,54 @@
               </thead>
               <tbody>
                 <tr>
-                  <td>202606122102</td>
-                  <td>100</td>
+                  <td>202606131033</td>
+                  <td>5</td>
                   <td><span class="admin-status-pill passed">Passed</span></td>
-                  <td>100/100</td>
-                  <td>100</td>
-                  <td>100</td>
-                  <td>8814 ms</td>
-                  <td>Baseline after ws-server 0.0.21</td>
+                  <td>5/5</td>
+                  <td>5</td>
+                  <td>5</td>
+                  <td>9726 ms</td>
+                  <td>Canvas and Select AI smoke</td>
                 </tr>
                 <tr>
-                  <td>202606122103</td>
-                  <td>500</td>
+                  <td>202606131034</td>
+                  <td>10</td>
+                  <td><span class="admin-status-pill passed">Passed</span></td>
+                  <td>10/10</td>
+                  <td>10</td>
+                  <td>10</td>
+                  <td>9477 ms</td>
+                  <td>Unique commentary and score rows</td>
+                </tr>
+                <tr>
+                  <td>202606131035</td>
+                  <td>50</td>
                   <td><span class="admin-status-pill failed">Failed</span></td>
-                  <td>500/500</td>
-                  <td>500</td>
-                  <td>496</td>
-                  <td>9598 ms</td>
-                  <td>4 commentary timeouts at 10s</td>
+                  <td>50/50</td>
+                  <td>50</td>
+                  <td>34</td>
+                  <td>9412 ms</td>
+                  <td>16 commentary timeouts</td>
                 </tr>
                 <tr>
-                  <td>202606122139</td>
-                  <td>500</td>
+                  <td>202606131128</td>
+                  <td>50</td>
                   <td><span class="admin-status-pill passed">Passed</span></td>
-                  <td>500/500</td>
-                  <td>500</td>
-                  <td>500</td>
-                  <td>9114 ms</td>
-                  <td>PAF floor raised to 4</td>
+                  <td>50/50</td>
+                  <td>50</td>
+                  <td>50</td>
+                  <td>4513 ms</td>
+                  <td>PAF budget tuning held</td>
                 </tr>
                 <tr>
-                  <td>202606122141</td>
-                  <td>1000</td>
-                  <td><span class="admin-status-pill passed">Passed</span></td>
-                  <td>1000/1000</td>
-                  <td>1000</td>
-                  <td>1000</td>
-                  <td>9232 ms</td>
-                  <td>ws-server autoscaled during run</td>
-                </tr>
-                <tr>
-                  <td>202606122215</td>
+                  <td>202606131128</td>
                   <td>100</td>
-                  <td><span class="admin-status-pill passed">Passed</span></td>
+                  <td><span class="admin-status-pill failed">Held</span></td>
                   <td>100/100</td>
                   <td>100</td>
                   <td>100</td>
-                  <td>8913 ms</td>
-                  <td>Post-pipeline smoke</td>
+                  <td>8153 ms</td>
+                  <td>41 source fallbacks to Oracle SQL</td>
                 </tr>
               </tbody>
             </table>
@@ -429,20 +429,20 @@
 
           <div class="admin-evidence-metrics" aria-label="Model learning summary">
             <div class="admin-metric">
-              <span>Trace rows</span>
-              <strong>1100</strong>
+              <span>Route mode</span>
+              <strong>Shadow</strong>
             </div>
             <div class="admin-metric">
-              <span>Base p95</span>
-              <strong>1040 ms</strong>
+              <span>Primary</span>
+              <strong>oci-base</strong>
             </div>
             <div class="admin-metric">
-              <span>FT p95</span>
-              <strong>742 ms</strong>
+              <span>Candidate</span>
+              <strong>oci-fine-tuned</strong>
             </div>
             <div class="admin-metric">
-              <span>Promotion</span>
-              <strong>Hold</strong>
+              <span>Runtime</span>
+              <strong>Adapter</strong>
             </div>
           </div>
 
@@ -450,8 +450,8 @@
             <div><span>Trace harvest</span><strong>STWL_MODEL_TRACES</strong></div>
             <div><span>Eval</span><strong>stwl-commentary-v1</strong></div>
             <div><span>Dataset</span><strong>behavior-only</strong></div>
-            <div><span>Train</span><strong>A10 LoRA job</strong></div>
-            <div><span>Deploy</span><strong>base vs FT</strong></div>
+            <div><span>Train</span><strong>A10 LoRA job pending</strong></div>
+            <div><span>Deploy</span><strong>private OKE endpoints</strong></div>
             <div><span>Canary gate</span><strong>strict</strong></div>
             <div><span>Promote</span><strong>manual approval</strong></div>
           </div>
@@ -464,8 +464,8 @@
                   <span class="admin-provider-label">oci-base</span>
                   <p>Ada finished with 42 points after a clean evidence-backed run.</p>
                   <dl>
-                    <div><dt>Model</dt><dd>stwl-base-v1</dd></div>
-                    <div><dt>Latency</dt><dd>104 ms</dd></div>
+                    <div><dt>Model</dt><dd>stwl-base-commentary-oke-adapter</dd></div>
+                    <div><dt>Runtime</dt><dd>behavior-adapter</dd></div>
                     <div><dt>Tokens</dt><dd>12</dd></div>
                   </dl>
                 </div>
@@ -473,8 +473,8 @@
                   <span class="admin-provider-label">oci-fine-tuned</span>
                   <p>Ada closed on 42 points, grounded in SQL evidence.</p>
                   <dl>
-                    <div><dt>Model</dt><dd>stwl-ft-v1</dd></div>
-                    <div><dt>Latency</dt><dd>88 ms</dd></div>
+                    <div><dt>Model</dt><dd>stwl-ft-commentary-oke-adapter</dd></div>
+                    <div><dt>Runtime</dt><dd>behavior-adapter</dd></div>
                     <div><dt>Tokens</dt><dd>9</dd></div>
                   </dl>
                 </div>
@@ -485,7 +485,7 @@
               <div class="admin-section-title">DB Evidence and Score Proof</div>
               <ul class="admin-gate-list">
                 <li><span class="admin-gate-pass">Pass</span> STWL_GAME_EVENTS had game_over rows for joined players</li>
-                <li><span class="admin-gate-pass">Pass</span> High-score test table verified 1000/1000 rows</li>
+                <li><span class="admin-gate-pass">Pass</span> High-score test table verified 100/100 rows at the held tier</li>
                 <li><span class="admin-gate-pass">Pass</span> Evidence hash matched the PAF prompt hash lineage</li>
                 <li><span class="admin-gate-pass">Pass</span> Training examples captured redacted behavior traces only</li>
               </ul>
@@ -507,8 +507,8 @@
             <section class="admin-evidence-section">
               <div class="admin-section-title">Gate Explanation</div>
               <div class="admin-learning-note">
-                <strong>Promotion held until groundedness is stable across high tiers.</strong>
-                <span>The fine-tuned adapter beat base on tokens and latency in the sample trace, but promotion still requires no groundedness or confidence regression across canary tiers 5, 10, 50, 100, 500, and 1000.</span>
+                <strong>Promotion held until the private upstream LLM endpoints are active.</strong>
+                <span>The router, traces, evals, and base-vs-fine-tuned metadata are wired now; the true GPU-backed promotion gate waits for upstream model runtime plus no groundedness or confidence regression across high tiers.</span>
               </div>
             </section>
           </div>

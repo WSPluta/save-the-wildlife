@@ -32,9 +32,11 @@ async function createKustomizationYaml(regionKey, namespace) {
   const replayVersion = await getVersionGradle();
   await cd(pwdOutput);
   const pafVersion = process.env.PAF_VERSION || "latest";
+  const modelAiInferenceVersion = process.env.MODEL_AI_INFERENCE_VERSION || "latest";
   const pafImageRepository = process.env.PAF_IMAGE_REPOSITORY && process.env.PAF_IMAGE_REPOSITORY !== "AUTO"
     ? process.env.PAF_IMAGE_REPOSITORY
     : `${regionKey}.ocir.io/${namespace}/save-the-wildlife/private-agent-factory`;
+  const modelAiInferenceImageRepository = process.env.MODEL_AI_INFERENCE_IMAGE_REPOSITORY || `${regionKey}.ocir.io/${namespace}/save-the-wildlife/model-ai-inference`;
 
   console.log(`ws-server v${wsServerVersion}`);
   console.log(`web v${webVersion}`);
@@ -42,6 +44,8 @@ async function createKustomizationYaml(regionKey, namespace) {
   console.log(`replay v${replayVersion}`);
   console.log(`private-agent-factory v${pafVersion}`);
   console.log(`private-agent-factory image ${pafImageRepository}`);
+  console.log(`model-ai-inference v${modelAiInferenceVersion}`);
+  console.log(`model-ai-inference image ${modelAiInferenceImageRepository}`);
 
   await cd("./deploy/k8s/overlays/devops");
   try {
@@ -53,6 +57,8 @@ async function createKustomizationYaml(regionKey, namespace) {
     | sed 's/REPLAY_VERSION/${replayVersion}/' \
     | sed 's|PAF_IMAGE_REPOSITORY|${pafImageRepository}|' \
     | sed 's/PAF_VERSION/${pafVersion}/' \
+    | sed 's|MODEL_AI_INFERENCE_IMAGE_REPOSITORY|${modelAiInferenceImageRepository}|' \
+    | sed 's/MODEL_AI_INFERENCE_VERSION/${modelAiInferenceVersion}/' \
     | sed 's/NAMESPACE/${namespace}/' > kustomization.yaml`;
     if (exitCode !== 0) {
       exitWithError(`Error creating kustomization.yaml: ${stderr}`);
@@ -147,8 +153,8 @@ async function createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService,
       TEMPLATE_PAF_MODEL_ROUTE_MODE: process.env.PAF_MODEL_ROUTE_MODE || "shadow",
       TEMPLATE_PAF_PRIMARY_MODEL_PROVIDER: process.env.PAF_PRIMARY_MODEL_PROVIDER || "oci-base",
       TEMPLATE_PAF_CANDIDATE_MODEL_PROVIDER: process.env.PAF_CANDIDATE_MODEL_PROVIDER || "oci-fine-tuned",
-      TEMPLATE_OCI_BASE_MODEL_ENDPOINT_URL: process.env.OCI_BASE_MODEL_ENDPOINT_URL || "",
-      TEMPLATE_OCI_FT_MODEL_ENDPOINT_URL: process.env.OCI_FT_MODEL_ENDPOINT_URL || "",
+      TEMPLATE_OCI_BASE_MODEL_ENDPOINT_URL: process.env.OCI_BASE_MODEL_ENDPOINT_URL || "http://stwl-base-commentary:8080",
+      TEMPLATE_OCI_FT_MODEL_ENDPOINT_URL: process.env.OCI_FT_MODEL_ENDPOINT_URL || "http://stwl-ft-commentary:8080",
       TEMPLATE_OCI_MODEL_ENDPOINT_TIMEOUT_MS: process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "8000",
       TEMPLATE_OCI_MODEL_ENDPOINT_VERIFY_TLS: process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true",
       TEMPLATE_PAF_TRACE_PERSIST: process.env.PAF_TRACE_PERSIST || "true",

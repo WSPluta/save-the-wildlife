@@ -13,6 +13,13 @@ UPSTREAM_URL = os.environ.get("STWL_UPSTREAM_URL", "")
 REQUIRED_BEARER = os.environ.get("STWL_REQUIRED_BEARER", "")
 FACTS_POLICY = os.environ.get("STWL_FACTS_POLICY", "facts-in-memory-behavior-in-weights")
 TIMEOUT_SECONDS = float(os.environ.get("STWL_UPSTREAM_TIMEOUT_SECONDS", "7.5"))
+RUNTIME_MODE = os.environ.get("STWL_ADAPTER_RUNTIME_MODE") or ("upstream-llm" if UPSTREAM_URL else "behavior-adapter")
+STRICT_UPSTREAM_WARNINGS = os.environ.get("STWL_STRICT_UPSTREAM_WARNINGS", "true").lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
 
 
 def _json_response(handler, status, payload):
@@ -44,8 +51,9 @@ def _fallback_commentary(request):
     summary = (evidence.get("summary") or request.get("route_context", {}).get("summary") or {})
     name = summary.get("player_name") or summary.get("player_id") or "Player"
     score = summary.get("score", 0)
-    provider_label = "fine-tuned" if PROVIDER == "oci-fine-tuned" else "base"
-    return f"{name} closed on {score} points; {provider_label} behavior stayed grounded in DB evidence."
+    if PROVIDER == "oci-fine-tuned":
+        return f"{name} closed on {score} points, citing DB evidence with concise calibrated commentary."
+    return f"{name} finished on {score} points with DB evidence in view; the base model stayed cautious."
 
 
 def _call_upstream(request):
@@ -91,6 +99,8 @@ class Handler(BaseHTTPRequestHandler):
                 "model_id": MODEL_ID,
                 "upstream_configured": bool(UPSTREAM_URL),
                 "facts_policy": FACTS_POLICY,
+                "runtime_mode": "upstream-llm" if UPSTREAM_URL else RUNTIME_MODE,
+                "strict_upstream_warnings": STRICT_UPSTREAM_WARNINGS,
             })
             return
         _json_response(self, 404, {"ok": False, "error": "not_found"})
@@ -108,6 +118,10 @@ class Handler(BaseHTTPRequestHandler):
             text = _extract_openai_text(upstream) if upstream else _fallback_commentary(request)
             usage = (upstream or {}).get("usage") or {}
             latency_ms = int((time.time() - started) * 1000)
+            runtime_mode = "upstream-llm" if upstream else RUNTIME_MODE
+            warnings = []
+            if not upstream:
+                warnings = ["adapter_fallback_no_upstream"] if STRICT_UPSTREAM_WARNINGS else ["behavior_adapter_mode"]
             _json_response(self, 200, {
                 "ok": True,
                 "text": text,
@@ -116,7 +130,10 @@ class Handler(BaseHTTPRequestHandler):
                 "tokens": usage.get("total_tokens") or max(1, len(text.split())),
                 "latency_ms": latency_ms,
                 "finish_reason": "stop",
-                "warnings": [] if upstream else ["adapter_fallback_no_upstream"],
+                "warnings": warnings,
+                "runtime_mode": runtime_mode,
+                "upstream_configured": bool(UPSTREAM_URL),
+                "facts_policy": FACTS_POLICY,
             })
         except (urllib.error.URLError, TimeoutError) as exc:
             _json_response(self, 502, {

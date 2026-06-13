@@ -1,0 +1,5 @@
+resources:
+  - stwl-base-commentary.yaml
+  - stwl-base-commentary-svc.yaml
+  - stwl-ft-commentary.yaml
+  - stwl-ft-commentary-svc.yaml

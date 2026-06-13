@@ -9,24 +9,23 @@ describe("admin load evaluation view", () => {
   it("adds canary evidence to the presenter admin UI", () => {
     expect(html).toContain('id="admin-load-evaluation"');
     expect(html).toContain("Player Join and Commentary Evaluation");
-    expect(html).toContain("Passed to 1000");
+    expect(html).toContain("Tier 50 pass; 100 held");
     expect(script).toMatch(/path === "\/admin" \|\| path === "\/admin\/ai-learning"/);
   });
 
   it("shows the tracked gates for score rows, commentary source, duplicates, and fallback", () => {
     expect(html).toContain("High-score test rows matched joined players");
-    expect(html).toContain("Commentary source stayed Oracle private-agent-factory");
+    expect(html).toContain("Tier 100 commentary source must stay on the full Oracle/PAF path");
     expect(html).toContain("Duplicate commentary count stayed 0");
     expect(html).toContain("No deterministic fallback commentary accepted");
   });
 
-  it("preserves the tier 500 failure and passing reruns for demo storytelling", () => {
-    expect(html).toContain("202606122103");
-    expect(html).toContain("4 commentary timeouts at 10s");
-    expect(html).toContain("202606122139");
-    expect(html).toContain("PAF floor raised to 4");
-    expect(html).toContain("202606122141");
-    expect(html).toContain("1000/1000");
+  it("preserves the tier 50 pass and tier 100 hold for demo storytelling", () => {
+    expect(html).toContain("202606131035");
+    expect(html).toContain("16 commentary timeouts");
+    expect(html).toContain("202606131128");
+    expect(html).toContain("PAF budget tuning held");
+    expect(html).toContain("41 source fallbacks to Oracle SQL");
   });
 
   it("styles the evidence panel, timeline, gates, and run table", () => {
@@ -44,8 +43,10 @@ describe("admin load evaluation view", () => {
     expect(html).toContain("STWL_MODEL_TRACES");
     expect(html).toContain("oci-base");
     expect(html).toContain("oci-fine-tuned");
+    expect(html).toContain("private OKE endpoints");
+    expect(html).toContain("behavior-adapter");
     expect(html).toContain("uses_retrieved_evidence");
-    expect(html).toContain("High-score test table verified 1000/1000 rows");
+    expect(html).toContain("High-score test table verified 100/100 rows");
   });
 
   it("styles the AI learning pipeline, comparison, and rubric panels", () => {

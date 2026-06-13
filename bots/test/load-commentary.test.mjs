@@ -32,11 +32,13 @@ function modelCommentary(text, overrides = {}) {
       primary: {
         provider: "oci-base",
         latency_ms: 900,
+        runtime_mode: "upstream-llm",
         warnings: [],
       },
       candidate: {
         provider: "oci-fine-tuned",
         latency_ms: 720,
+        runtime_mode: "upstream-llm",
         warnings: [],
       },
     },
@@ -190,6 +192,8 @@ test("passes strict gates for unique full-path commentary", () => {
   assert.equal(gates.scoreRows.verified, 2);
   assert.equal(gates.latency.p95, 1100);
   assert.equal(gates.modelMetadata.routeCounts["oci-base->oci-fine-tuned"], 2);
+  assert.equal(gates.modelMetadata.runtimeCounts["oci-base:upstream-llm"], 2);
+  assert.equal(gates.modelMetadata.runtimeCounts["oci-fine-tuned:upstream-llm"], 2);
   assert.equal(gates.modelMetadata.promotionCounts.candidate_ready, 2);
   assert.equal(gates.modelMetadata.latencyByProvider["oci-base"].p95, 900);
   assert.equal(gates.modelMetadata.latencyByProvider["oci-fine-tuned"].p95, 720);

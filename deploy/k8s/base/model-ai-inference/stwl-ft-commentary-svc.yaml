@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: stwl-ft-commentary
+    component: model-ai-inference
+  name: stwl-ft-commentary
+spec:
+  type: ClusterIP
+  selector:
+    app: stwl-ft-commentary
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

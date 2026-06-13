@@ -873,6 +873,7 @@ export function evaluateTierGates(tierReport, config = {}) {
       required: modelRequired,
       missing: missingModelMetadata.map((player) => player.id),
       routeCounts: modelRouteCounts(commentaryPlayers),
+      runtimeCounts: modelRuntimeCounts(commentaryPlayers),
       promotionCounts: promotionCounts(commentaryPlayers),
       latencyByProvider: modelLatencyByProvider(commentaryPlayers),
       invalidPromotions: invalidPromotions.map((player) => ({
@@ -906,6 +907,20 @@ function modelRouteCounts(players = []) {
     const candidate = player.commentary?.candidateProvider || "none";
     const key = `${primary}->${candidate}`;
     counts[key] = (counts[key] || 0) + 1;
+  }
+  return counts;
+}
+
+function modelRuntimeCounts(players = []) {
+  const counts = {};
+  for (const player of players) {
+    for (const role of ["primary", "candidate"]) {
+      const output = player.commentary?.modelRoute?.[role];
+      if (!output?.provider) continue;
+      const runtime = output.runtime_mode || "unspecified";
+      const key = `${output.provider}:${runtime}`;
+      counts[key] = (counts[key] || 0) + 1;
+    }
   }
   return counts;
 }
@@ -1038,8 +1053,8 @@ function renderMarkdownSummary(runReport) {
     `- Score API: ${runReport.target.scoreBaseUrl}/api/score`,
     `- Verdict: ${runReport.verdict || "running"}`,
     "",
-    "| Tier | Room | Verdict | Joined | Join failures | High-score rows | Commentary | p95 commentary | Duplicates | Sources | Model routes | Promotions |",
-    "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
+    "| Tier | Room | Verdict | Joined | Join failures | High-score rows | Commentary | p95 commentary | Duplicates | Sources | Model routes | Model runtimes | Promotions |",
+    "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- |",
   ];
 
   for (const tier of runReport.tiers) {
@@ -1050,11 +1065,14 @@ function renderMarkdownSummary(runReport) {
     const routes = Object.entries(gates.modelMetadata?.routeCounts || {})
       .map(([route, count]) => `${route}:${count}`)
       .join(", ");
+    const runtimes = Object.entries(gates.modelMetadata?.runtimeCounts || {})
+      .map(([runtime, count]) => `${runtime}:${count}`)
+      .join(", ");
     const promotions = Object.entries(gates.modelMetadata?.promotionCounts || {})
       .map(([verdict, count]) => `${verdict}:${count}`)
       .join(", ");
     lines.push(
-      `| ${tier.tier} | ${tier.room} | ${gates.verdict || "running"} | ${gates.joined ?? 0}/${tier.attempted} | ${gates.joinFailures ?? 0} | ${gates.scoreRows?.verified ?? 0} | ${gates.commentaryReceived ?? 0} | ${gates.latency?.p95 ?? ""} | ${gates.duplicateTexts?.length ?? 0} | ${sources || ""} | ${routes || ""} | ${promotions || ""} |`
+      `| ${tier.tier} | ${tier.room} | ${gates.verdict || "running"} | ${gates.joined ?? 0}/${tier.attempted} | ${gates.joinFailures ?? 0} | ${gates.scoreRows?.verified ?? 0} | ${gates.commentaryReceived ?? 0} | ${gates.latency?.p95 ?? ""} | ${gates.duplicateTexts?.length ?? 0} | ${sources || ""} | ${routes || ""} | ${runtimes || ""} | ${promotions || ""} |`
     );
   }
 
