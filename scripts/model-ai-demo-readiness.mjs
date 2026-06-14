@@ -19,6 +19,28 @@ const REQUIRED_REPORTS = [
   "output/prod-load/202606132052-fastpath-full/summary.md",
   "output/prod-load/202606140238-upstream-gate-refresh/summary.md",
 ];
+const CANARY_EXPECTATIONS = {
+  "202606132052-fastpath-full": {
+    tier: 1000,
+    verdict: "passed",
+    joined: 1000,
+    scoreRows: 1000,
+    commentary: 1000,
+    duplicateTexts: 0,
+    maxP95Ms: 10000,
+    route: "oci-base->oci-fine-tuned",
+  },
+  "202606140238-upstream-gate-refresh": {
+    tier: 5,
+    verdict: "failed",
+    joined: 5,
+    scoreRows: 5,
+    commentary: 5,
+    duplicateTexts: 0,
+    requiredReason: "model_runtime_not_upstream_llm:5",
+    upstreamRuntimeRequired: true,
+  },
+};
 const REQUIRED_DEPLOYS = [
   "stwl-base-commentary",
   "stwl-ft-commentary",
@@ -130,12 +152,73 @@ async function checkAdminProof(config) {
 
 async function checkLocalReports() {
   const missing = [];
+  const reportSummaries = [];
+  const failures = [];
   for (const reportPath of REQUIRED_REPORTS) {
-    if (!(await pathExists(reportPath))) missing.push(reportPath);
+    if (!(await pathExists(reportPath))) {
+      missing.push(reportPath);
+      continue;
+    }
+    const runJsonPath = path.join(path.dirname(reportPath), "run.json");
+    if (!(await pathExists(runJsonPath))) {
+      failures.push(`missing ${runJsonPath}`);
+      continue;
+    }
+    try {
+      const run = JSON.parse(await fs.readFile(repoPath(runJsonPath), "utf8"));
+      const expectation = CANARY_EXPECTATIONS[run.runId];
+      const expectedTier = expectation?.tier || Math.max(...(run.tiers || []).map((tier) => tier.tier || 0));
+      const tier = (run.tiers || []).find((item) => item.tier === expectedTier);
+      if (!tier) {
+        failures.push(`${run.runId} missing tier ${expectedTier}`);
+        continue;
+      }
+      const gates = tier.gates || {};
+      const routeCounts = gates.modelMetadata?.routeCounts || {};
+      const runtimeCounts = gates.modelMetadata?.runtimeCounts || {};
+      const summary = {
+        runId: run.runId,
+        reportPath,
+        tier: tier.tier,
+        verdict: gates.verdict || run.verdict,
+        joined: gates.joined || 0,
+        attempted: tier.attempted || 0,
+        scoreRows: gates.scoreRows?.verified || 0,
+        commentary: gates.commentaryReceived || 0,
+        p95Ms: gates.latency?.p95 ?? null,
+        duplicates: gates.duplicateTexts?.length || 0,
+        reasons: gates.reasons || [],
+        routeCounts,
+        runtimeCounts,
+        upstreamRuntimeRequired: gates.modelMetadata?.upstreamRuntimeRequired || false,
+      };
+      reportSummaries.push(summary);
+      if (expectation) {
+        if (summary.verdict !== expectation.verdict) failures.push(`${run.runId} tier ${summary.tier} verdict=${summary.verdict}`);
+        if (summary.joined !== expectation.joined) failures.push(`${run.runId} tier ${summary.tier} joined=${summary.joined}`);
+        if (summary.scoreRows !== expectation.scoreRows) failures.push(`${run.runId} tier ${summary.tier} scoreRows=${summary.scoreRows}`);
+        if (summary.commentary !== expectation.commentary) failures.push(`${run.runId} tier ${summary.tier} commentary=${summary.commentary}`);
+        if (summary.duplicates !== expectation.duplicateTexts) failures.push(`${run.runId} tier ${summary.tier} duplicates=${summary.duplicates}`);
+        if (expectation.maxP95Ms && !(summary.p95Ms < expectation.maxP95Ms)) failures.push(`${run.runId} tier ${summary.tier} p95=${summary.p95Ms}`);
+        if (expectation.route && routeCounts[expectation.route] !== expectation.joined) {
+          failures.push(`${run.runId} tier ${summary.tier} route ${expectation.route}=${routeCounts[expectation.route] || 0}`);
+        }
+        if (expectation.requiredReason && !summary.reasons.includes(expectation.requiredReason)) {
+          failures.push(`${run.runId} tier ${summary.tier} missing reason ${expectation.requiredReason}`);
+        }
+        if (expectation.upstreamRuntimeRequired && !summary.upstreamRuntimeRequired) {
+          failures.push(`${run.runId} tier ${summary.tier} missing upstreamRuntimeRequired`);
+        }
+      }
+    } catch (error) {
+      failures.push(`${runJsonPath} parse failed: ${compactError(error).split("\n")[0]}`);
+    }
   }
-  return makeCheck("local-canary-reports", missing.length ? "warn" : "pass", {
+  return makeCheck("local-canary-reports", failures.length ? "fail" : (missing.length ? "warn" : "pass"), {
     reports: REQUIRED_REPORTS,
     missing,
+    reportSummaries,
+    failures,
   });
 }
 
@@ -143,9 +226,11 @@ async function checkTrainingExport() {
   const exportPath = ".codex_tmp/stwl-behavior-v1-live.jsonl";
   try {
     const raw = await fs.readFile(repoPath(exportPath), "utf8");
-    const first = raw.trim().split("\n").filter(Boolean)[0];
+    const lines = raw.trim().split("\n").filter(Boolean);
+    const first = lines[0];
     const sample = JSON.parse(first);
     const failures = [];
+    if (lines.length < 25) failures.push(`expected at least 25 examples, found ${lines.length}`);
     if (sample.prompt_text_redacted !== true) failures.push("prompt_text_redacted is not true");
     if (!sample.prompt_hash) failures.push("missing prompt_hash");
     if (!sample.evidence_hash) failures.push("missing evidence_hash");
@@ -153,6 +238,7 @@ async function checkTrainingExport() {
     if (!String(sample.provider || "").includes("oci-fine-tuned")) failures.push(`unexpected provider=${sample.provider}`);
     return makeCheck("training-export-sample", failures.length ? "fail" : "pass", {
       file: exportPath,
+      example_count: lines.length,
       trace_id: sample.trace_id,
       provider: sample.provider,
       model_id: sample.model_id,
@@ -330,6 +416,21 @@ function renderMarkdown(report) {
     if (check.upstreamFormatCounts) {
       notes.push(`upstream formats ${Object.entries(check.upstreamFormatCounts).map(([k, v]) => `${k}:${v}`).join(", ")}`);
     }
+    if (check.reportSummaries?.length) {
+      notes.push(check.reportSummaries.map((summary) => {
+        const parts = [
+          `${summary.runId} tier${summary.tier} ${summary.verdict}`,
+          `joined ${summary.joined}/${summary.attempted}`,
+          `scoreRows ${summary.scoreRows}`,
+          `commentary ${summary.commentary}`,
+          `duplicates ${summary.duplicates}`,
+        ];
+        if (summary.p95Ms != null) parts.push(`p95 ${summary.p95Ms}ms`);
+        if (summary.reasons?.length) parts.push(`reasons ${summary.reasons.join(",")}`);
+        return parts.join(" ");
+      }).join("; "));
+    }
+    if (check.example_count != null) notes.push(`examples ${check.example_count}`);
     if (check.skipped) notes.push(check.reason || "skipped");
     lines.push(`| ${check.name} | ${check.status} | ${notes.join(" ") || "ok"} |`);
   }
