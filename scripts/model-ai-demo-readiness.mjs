@@ -11,6 +11,8 @@ const REQUIRED_ADMIN_TEXT = [
   "25 live examples",
   "Trainer dry-run",
   "202606140238-upstream-gate-refresh",
+  "upstream formats openai:2",
+  "OpenAI upstream handoff contract",
   "blocked only on behavior-adapter runtime",
 ];
 const REQUIRED_REPORTS = [

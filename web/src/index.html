@@ -482,6 +482,10 @@
               <strong>Adapter</strong>
             </div>
             <div class="admin-metric">
+              <span>Handoff</span>
+              <strong>OpenAI</strong>
+            </div>
+            <div class="admin-metric">
               <span>LLM proof gate</span>
               <strong>Pending</strong>
             </div>
@@ -514,6 +518,11 @@
               <em>LoRA dataset conversion validated without moving durable facts into model weights.</em>
             </div>
             <div>
+              <span>Adapter handoff</span>
+              <strong>upstream formats openai:2</strong>
+              <em>Both private routes can carry trace ID, route context, and Oracle AI Database evidence refs into upstream model calls.</em>
+            </div>
+            <div>
               <span>Upstream gate</span>
               <strong>202606140238-upstream-gate-refresh</strong>
               <em>5/5 gameplay proof passed; blocked only on behavior-adapter runtime.</em>
@@ -530,6 +539,7 @@
                   <dl>
                     <div><dt>Model</dt><dd>stwl-base-commentary-oke-adapter</dd></div>
                     <div><dt>Runtime</dt><dd>behavior-adapter</dd></div>
+                    <div><dt>Handoff</dt><dd>openai evidence packet</dd></div>
                     <div><dt>Tokens</dt><dd>12</dd></div>
                   </dl>
                 </div>
@@ -539,6 +549,7 @@
                   <dl>
                     <div><dt>Model</dt><dd>stwl-ft-commentary-oke-adapter</dd></div>
                     <div><dt>Runtime</dt><dd>behavior-adapter</dd></div>
+                    <div><dt>Handoff</dt><dd>openai evidence packet</dd></div>
                     <div><dt>Tokens</dt><dd>9</dd></div>
                   </dl>
                 </div>
@@ -552,6 +563,7 @@
                 <li><span class="admin-gate-pass">Pass</span> High-score test table verified 1000/1000 rows at tier 1000</li>
                 <li><span class="admin-gate-pass">Pass</span> Evidence hash matched the PAF prompt hash lineage</li>
                 <li><span class="admin-gate-pass">Pass</span> Training examples captured redacted behavior traces only</li>
+                <li><span class="admin-gate-pass">Pass</span> Both private adapters expose the OpenAI upstream handoff contract</li>
                 <li><span class="admin-gate-pending">Pending</span> Upstream LLM runtime gate waits for both route outputs to report upstream-llm</li>
               </ul>
             </section>
@@ -573,7 +585,7 @@
               <div class="admin-section-title">Gate Explanation</div>
               <div class="admin-learning-note">
                 <strong>Promotion held for upstream GPU LLM runtime, not for the load gate.</strong>
-                <span>The router, traces, evals, and base-vs-fine-tuned metadata are stable through tier 1000; the true fine-tuned promotion gate still waits for private upstream model runtime instead of behavior-adapter mode. The production load harness now has an explicit upstream LLM gate so adapter-mode canary success cannot be mistaken for two live LLMs.</span>
+                <span>The router, traces, evals, and base-vs-fine-tuned metadata are stable through tier 1000; both private adapters now expose an OpenAI-compatible evidence handoff for upstream model calls. The true fine-tuned promotion gate still waits for private upstream model runtime instead of behavior-adapter mode. The production load harness now has an explicit upstream LLM gate so adapter-mode canary success cannot be mistaken for two live LLMs.</span>
               </div>
             </section>
           </div>

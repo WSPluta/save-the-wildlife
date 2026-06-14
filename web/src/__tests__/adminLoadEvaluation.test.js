@@ -49,6 +49,9 @@ describe("admin load evaluation view", () => {
     expect(html).toContain("oci-fine-tuned");
     expect(html).toContain("private OKE endpoints");
     expect(html).toContain("behavior-adapter");
+    expect(html).toContain("upstream formats openai:2");
+    expect(html).toContain("OpenAI upstream handoff contract");
+    expect(html).toContain("openai evidence packet");
     expect(html).toContain("LLM proof gate");
     expect(html).toContain("202606132052-fastpath-full");
     expect(html).toContain("25 live examples");
@@ -60,6 +63,7 @@ describe("admin load evaluation view", () => {
     expect(html).toContain("uses_retrieved_evidence");
     expect(html).toContain("High-score test table verified 1000/1000 rows");
     expect(html).toContain("Promotion held for upstream GPU LLM runtime");
+    expect(html).toContain("OpenAI-compatible evidence handoff");
     expect(html).toContain("adapter-mode canary success cannot be mistaken for two live LLMs");
   });
 
