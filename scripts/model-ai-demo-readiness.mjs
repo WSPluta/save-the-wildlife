@@ -299,12 +299,17 @@ function verdictFor(checks, config) {
   return "ready";
 }
 
+function receiptModeFor(config) {
+  return config.requireUpstreamLlm ? "strict-upstream" : "adapter-mode";
+}
+
 function renderMarkdown(report) {
   const lines = [
     `# Save the Wildlife Model AI Readiness`,
     "",
     `- Generated: ${report.generatedAt}`,
     `- Base URL: ${report.baseUrl}`,
+    `- Receipt mode: ${report.receiptMode}`,
     `- Verdict: ${report.verdict}`,
     `- Require upstream LLM: ${report.requireUpstreamLlm ? "yes" : "no"}`,
     "",
@@ -367,6 +372,7 @@ async function main() {
     generatedAt: new Date().toISOString(),
     baseUrl: config.baseUrl,
     namespace: config.namespace,
+    receiptMode: receiptModeFor(config),
     requireUpstreamLlm: config.requireUpstreamLlm,
     verdict: verdictFor(checks, config),
     checks,
@@ -375,12 +381,19 @@ async function main() {
   await fs.mkdir(repoPath(config.outputDir), { recursive: true });
   const jsonPath = path.join(repoPath(config.outputDir), "latest.json");
   const mdPath = path.join(repoPath(config.outputDir), "summary.md");
+  const modeJsonPath = path.join(repoPath(config.outputDir), `${report.receiptMode}.json`);
+  const modeMdPath = path.join(repoPath(config.outputDir), `${report.receiptMode}.md`);
+  const renderedMarkdown = renderMarkdown(report);
   await fs.writeFile(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  await fs.writeFile(mdPath, renderMarkdown(report), "utf8");
+  await fs.writeFile(mdPath, renderedMarkdown, "utf8");
+  await fs.writeFile(modeJsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  await fs.writeFile(modeMdPath, renderedMarkdown, "utf8");
 
   console.log(`verdict=${report.verdict}`);
   console.log(`json=${path.relative(REPO_ROOT, jsonPath)}`);
   console.log(`summary=${path.relative(REPO_ROOT, mdPath)}`);
+  console.log(`mode_json=${path.relative(REPO_ROOT, modeJsonPath)}`);
+  console.log(`mode_summary=${path.relative(REPO_ROOT, modeMdPath)}`);
 
   const hasFailure = checks.some((check) => check.status === "fail");
   if (hasFailure || (config.requireUpstreamLlm && report.verdict !== "ready")) {

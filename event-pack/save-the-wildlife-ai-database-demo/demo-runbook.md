@@ -108,6 +108,7 @@ npm run check:model-ai-demo
 Expected:
 
 - `verdict=ready_with_upstream_llm_blocker`
+- stable receipt: `.codex_tmp/model-ai-readiness/adapter-mode.md`
 - private adapter health shows `providers oci-base:1, oci-fine-tuned:1`
 - private adapter health shows `upstream formats openai:2`
 
@@ -129,13 +130,16 @@ Point to these receipts:
 Run the strict gate only to show the honest blocker:
 
 ```bash
-npm run check:model-ai-demo -- --require-upstream-llm
+npm run check:model-ai-demo:strict
 ```
 
 Expected today:
 
 - `verdict=failed`
+- stable receipt: `.codex_tmp/model-ai-readiness/strict-upstream.md`
 - failure reason includes `runtime_mode=behavior-adapter`
+
+After strict mode, rerun `npm run check:model-ai-demo` so `.codex_tmp/model-ai-readiness/latest.*` returns to the presenter-friendly adapter-mode receipt.
 
 Talk track:
 

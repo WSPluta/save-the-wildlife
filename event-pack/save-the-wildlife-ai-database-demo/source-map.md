@@ -82,19 +82,21 @@ Use this section when an AI engineer asks what is proven live versus what is sti
 | Both private routes expose an OpenAI-compatible handoff | Proven | `npm run check:model-ai-demo`; private adapter health note `upstream formats openai:2`; admin proof `OpenAI upstream handoff contract` |
 | Behavior-only training examples can be exported | Proven | `.codex_tmp/stwl-behavior-v1-live.jsonl`; admin proof `25 live examples` |
 | QLoRA trainer accepts the behavior-only dataset shape | Proven by dry-run | `model-ai/training/train_behavior_lora.py --dry-run`; admin proof `Trainer dry-run ok=true` |
-| Two live private LLM runtimes are serving responses | Blocked | `npm run check:model-ai-demo -- --require-upstream-llm` must pass before this claim is allowed |
+| Two live private LLM runtimes are serving responses | Blocked | `npm run check:model-ai-demo:strict` must pass before this claim is allowed |
 | Fine-tuned model is promotion-ready | Blocked | Promotion requires both routes to report `runtime_mode=upstream-llm` plus strict canary and eval gates |
 
 Strict upstream proof command:
 
 ```bash
-npm run check:model-ai-demo -- --require-upstream-llm
+npm run check:model-ai-demo:strict
 ```
 
 Expected until upstream LLM runtimes are attached:
 
 - `verdict=failed`
 - failure reason includes `runtime_mode=behavior-adapter`
+- strict receipt is preserved at `.codex_tmp/model-ai-readiness/strict-upstream.md`
+- adapter-mode receipt is preserved at `.codex_tmp/model-ai-readiness/adapter-mode.md`
 
 Safe presenter sentence:
 
