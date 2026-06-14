@@ -26,6 +26,8 @@ const REQUIRED_DEPLOYS = [
   "score",
   "replay",
 ];
+const REQUIRED_ADAPTER_PROVIDERS = ["oci-base", "oci-fine-tuned"];
+const SUPPORTED_UPSTREAM_FORMATS = new Set(["openai", "internal"]);
 
 function argValue(name, fallback) {
   const flag = `--${name}`;
@@ -245,19 +247,39 @@ for (const url of urls) {
       .filter((line) => line.trim().startsWith("{"))
       .map((line) => JSON.parse(line));
     const failures = [];
+    const providerCounts = {};
     const runtimeCounts = {};
+    const upstreamFormatCounts = {};
     for (const adapter of adapters) {
       const body = adapter.body || {};
+      const provider = body.provider || "unknown";
+      const upstreamFormat = body.upstream_format || "missing";
+      providerCounts[provider] = (providerCounts[provider] || 0) + 1;
       const key = `${body.provider || "unknown"}:${body.runtime_mode || "missing"}`;
       runtimeCounts[key] = (runtimeCounts[key] || 0) + 1;
+      upstreamFormatCounts[upstreamFormat] = (upstreamFormatCounts[upstreamFormat] || 0) + 1;
       if (!body.ok) failures.push(`${adapter.url} not ok`);
+      if (!body.provider) failures.push(`${adapter.url} missing provider`);
       if (!body.runtime_mode) failures.push(`${adapter.url} missing runtime_mode`);
+      if (!body.upstream_format) failures.push(`${provider} missing upstream_format`);
+      if (body.upstream_format && !SUPPORTED_UPSTREAM_FORMATS.has(body.upstream_format)) {
+        failures.push(`${provider} unsupported upstream_format=${body.upstream_format}`);
+      }
       if (config.requireUpstreamLlm && body.runtime_mode !== "upstream-llm") {
         failures.push(`${body.provider || adapter.url} runtime_mode=${body.runtime_mode}`);
       }
     }
-    const status = failures.length ? (config.requireUpstreamLlm ? "fail" : "warn") : "pass";
-    return makeCheck("private-adapter-health", status, { adapters, runtimeCounts, failures });
+    for (const provider of REQUIRED_ADAPTER_PROVIDERS) {
+      if (!providerCounts[provider]) failures.push(`missing adapter provider ${provider}`);
+    }
+    const status = failures.length ? "fail" : "pass";
+    return makeCheck("private-adapter-health", status, {
+      adapters,
+      providerCounts,
+      runtimeCounts,
+      upstreamFormatCounts,
+      failures,
+    });
   } catch (error) {
     return makeCheck("private-adapter-health", "warn", { error: compactError(error) });
   }
@@ -292,7 +314,15 @@ function renderMarkdown(report) {
     if (check.failures?.length) notes.push(check.failures.join("; "));
     if (check.missing?.length) notes.push(`missing ${check.missing.join(", ")}`);
     if (check.error) notes.push(check.error.split("\n")[0]);
-    if (check.runtimeCounts) notes.push(Object.entries(check.runtimeCounts).map(([k, v]) => `${k}:${v}`).join(", "));
+    if (check.providerCounts) {
+      notes.push(`providers ${Object.entries(check.providerCounts).map(([k, v]) => `${k}:${v}`).join(", ")}`);
+    }
+    if (check.runtimeCounts) {
+      notes.push(`runtimes ${Object.entries(check.runtimeCounts).map(([k, v]) => `${k}:${v}`).join(", ")}`);
+    }
+    if (check.upstreamFormatCounts) {
+      notes.push(`upstream formats ${Object.entries(check.upstreamFormatCounts).map(([k, v]) => `${k}:${v}`).join(", ")}`);
+    }
     if (check.skipped) notes.push(check.reason || "skipped");
     lines.push(`| ${check.name} | ${check.status} | ${notes.join(" ") || "ok"} |`);
   }
@@ -301,6 +331,7 @@ function renderMarkdown(report) {
   lines.push("");
   if (report.verdict === "ready_with_upstream_llm_blocker") {
     lines.push("- The harness, PAF route, admin proof, and DB-backed evidence checks are ready.");
+    lines.push("- The private adapters expose a supported upstream handoff contract for evidence-bearing model calls.");
     lines.push("- The two-live-LLM claim is still blocked until both private routes report `runtime_mode=upstream-llm`.");
   } else if (report.verdict === "ready") {
     lines.push("- The demo readiness checks are fully green.");
