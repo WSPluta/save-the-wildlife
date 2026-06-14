@@ -97,6 +97,50 @@ Talk track:
 
 > A production gaming system would pair this with object-storage video clips. In the demo, the browser sends JSON replay clips around key moments. The replay caption should only mention clip evidence when that manifest exists.
 
+## Model AI Proof Path
+
+Run the presenter-friendly readiness receipt:
+
+```bash
+npm run check:model-ai-demo
+```
+
+Expected:
+
+- `verdict=ready_with_upstream_llm_blocker`
+- private adapter health shows `providers oci-base:1, oci-fine-tuned:1`
+- private adapter health shows `upstream formats openai:2`
+
+Then prove the public admin UI:
+
+```bash
+curl -sS http://130.162.174.167/admin/ai-learning | \
+  rg "Tier 1000 pass|upstream formats openai:2|OpenAI upstream handoff contract|LLM proof gate"
+```
+
+Point to these receipts:
+
+- `Tier 1000 pass`: 1000 joins, 1000 score rows, 1000 commentary responses, zero duplicates.
+- `upstream formats openai:2`: both private routes expose the OpenAI-compatible evidence handoff.
+- `25 live examples`: behavior-only traces are exportable for training.
+- `Trainer dry-run`: the QLoRA trainer accepts the redacted dataset shape.
+- `Promotion held for upstream GPU LLM runtime`: the system refuses to claim a fine-tuned winner before runtime proof.
+
+Run the strict gate only to show the honest blocker:
+
+```bash
+npm run check:model-ai-demo -- --require-upstream-llm
+```
+
+Expected today:
+
+- `verdict=failed`
+- failure reason includes `runtime_mode=behavior-adapter`
+
+Talk track:
+
+> The tier-1000 canary proves the harness, Oracle AI Database evidence path, PAF route, eval metadata, and score-row proof. The OpenAI-compatible adapter handoff proves both private routes can carry trace IDs and evidence references to upstream model calls. It does not yet prove two live LLMs. That claim only becomes valid when both routes report `runtime_mode=upstream-llm` and the strict canary passes.
+
 ## What The Runtime Actually Does
 
 1. Reads `STWL_GAME_EVENTS`.
@@ -151,3 +195,4 @@ Use the architecture and API proof:
 - Do not imply Canvas replaces the harness. Canvas is where the agent experience is assembled; the harness keeps it connected and governed.
 - Do not describe generic score commentary. The differentiator is mechanics-aware commentary grounded in SQL events.
 - Do not say the model watched raw footage. The production pattern is event-aligned clip manifests plus governed telemetry.
+- Do not say two live LLMs are running until the strict upstream readiness gate passes.
