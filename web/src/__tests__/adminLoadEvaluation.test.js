@@ -50,6 +50,12 @@ describe("admin load evaluation view", () => {
     expect(html).toContain("private OKE endpoints");
     expect(html).toContain("behavior-adapter");
     expect(html).toContain("LLM proof gate");
+    expect(html).toContain("202606132052-fastpath-full");
+    expect(html).toContain("25 live examples");
+    expect(html).toContain("Redacted behavior-only JSONL");
+    expect(html).toContain("Trainer dry-run");
+    expect(html).toContain("202606140238-upstream-gate-refresh");
+    expect(html).toContain("blocked only on behavior-adapter runtime");
     expect(html).toContain("Upstream LLM runtime gate waits for both route outputs to report upstream-llm");
     expect(html).toContain("uses_retrieved_evidence");
     expect(html).toContain("High-score test table verified 1000/1000 rows");
@@ -59,6 +65,7 @@ describe("admin load evaluation view", () => {
 
   it("styles the AI learning pipeline, comparison, and rubric panels", () => {
     expect(styles).toMatch(/\.admin-learning-pipeline\s*{/);
+    expect(styles).toMatch(/\.admin-proof-receipts\s*{/);
     expect(styles).toMatch(/\.admin-comparison\s*{/);
     expect(styles).toMatch(/\.admin-rubric-grid\s*{/);
     expect(styles).toMatch(/\.admin-learning-note\s*{/);

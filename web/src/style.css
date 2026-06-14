@@ -1234,6 +1234,43 @@ body.phase-admin #monitor-panel {
   font-size: 13px;
 }
 
+.admin-proof-receipts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.admin-proof-receipts div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.22);
+}
+
+.admin-proof-receipts span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.admin-proof-receipts strong {
+  color: #ffffff;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.admin-proof-receipts em {
+  color: #d8f3fb;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
 .admin-learning-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1382,6 +1419,10 @@ body.phase-admin #monitor-panel {
 
   .admin-learning-grid,
   .admin-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-proof-receipts {
     grid-template-columns: 1fr;
   }
 
