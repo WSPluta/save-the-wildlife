@@ -24,6 +24,23 @@ Once the event stream is in Oracle AI Database, the question changes. We are no 
 
 The agent is not the model. The model emits tokens. Canvas shapes the agent experience. The harness decides what context exists, what tools are callable, what memory is retrieved, what identity applies, when the loop must stop, and what gets broadcast back into the app.
 
+## Model AI Proof Cards
+
+**15-second version**
+Tier 1000 proves the harness. `upstream formats openai:2` proves both private routes are ready to carry evidence-bearing calls to upstream LLMs. The strict upstream gate proves the actual two-LLM claim, and that gate is still intentionally blocked until both routes report `runtime_mode=upstream-llm`.
+
+**45-second version**
+The live system now has a shadow route from `oci-base` to `oci-fine-tuned`, Oracle AI Database trace and evidence tables, redacted behavior-only training export, trainer dry-run proof, and a public admin page showing `upstream formats openai:2`. That means the agent harness and adapter handoff are live. It does not mean the GPU-backed vanilla and fine-tuned LLMs are live yet. The clean line is: facts stay in Oracle AI Database memory, behavior moves into weights only after the strict upstream runtime gate passes.
+
+**What the handoff proves**
+It proves the private adapters can pass trace ID, route context, prompt hash, evidence hash, and Oracle AI Database evidence references into an OpenAI-compatible upstream call. It does not prove an upstream model served the response.
+
+**What the strict gate proves**
+It fails if either route still reports `behavior-adapter`, misses model metadata, or marks `upstream_configured=false`. When it passes, the demo can claim two live private LLM runtimes.
+
+**What to say if challenged**
+Not yet live as two LLMs. Live today: PAF route, admin proof, tier-1000 canary, governed DB evidence, training export, trainer dry-run, and OpenAI-compatible adapter handoff. Pending: private upstream base and fine-tuned model runtimes.
+
 ## Objection Handling
 
 **Is this just a game demo?**
@@ -47,6 +64,12 @@ Select AI is the natural-language-over-data layer. In the runtime path we keep S
 **What makes this enterprise-ready?**
 The harness pattern: scoped memory, deterministic tools, output limits, traceable context, fallback paths, and database-enforced governance.
 
+**Is this really fine-tuned yet?**
+Not in the live runtime. The behavior-only training path and dry-run are ready, and the private adapters expose the OpenAI-compatible handoff. The live claim remains adapter-mode until the strict upstream gate passes.
+
+**What should the fine-tune learn?**
+Stable behavior: concise commentary shape, evidence citation, confidence discipline, safe phrasing, and token efficiency. Changing game facts stay in Oracle AI Database.
+
 ## Phrases Worth Reusing
 
 - The game is the wrapper; the event stream is the product.
@@ -59,6 +82,9 @@ The harness pattern: scoped memory, deterministic tools, output limits, traceabl
 - Scoped retrieval is not safe until you prove it does not leak.
 - If an event is not in the database, the commentator should not invent it.
 - The modern agent stack is not one giant prompt. It is a small loop around governed data.
+- Facts in memory, behavior in weights.
+- Tier 1000 proves the harness; upstream runtime proves the two LLMs.
+- OpenAI-compatible handoff is live; upstream LLM runtime is still pending.
 
 ## Final Close
 
