@@ -33,6 +33,35 @@ Check:
 - [ ] Commentary has `"warning": null`.
 - [ ] Commentary summary includes at least one powerup, one trail crossing, one freeze, and coordinates.
 
+## Model AI Phase Preflight
+
+Run:
+
+```bash
+npm run check:model-ai-demo
+npm run check:model-ai-demo -- --require-upstream-llm
+curl -sS http://130.162.174.167/admin/ai-learning | \
+  rg "upstream formats openai:2|OpenAI upstream handoff contract|behavior-adapter|LLM proof gate"
+```
+
+Check:
+
+- [ ] Default readiness returns `verdict=ready_with_upstream_llm_blocker`.
+- [ ] Strict readiness fails until both private routes report `runtime_mode=upstream-llm`.
+- [ ] Admin UI shows `upstream formats openai:2`.
+- [ ] Admin UI shows `behavior-adapter`.
+- [ ] Admin UI shows `LLM proof gate`.
+- [ ] You can say this cleanly: **tier-1000 canary proves the harness; upstream runtime gate proves the two LLMs.**
+
+Point to:
+
+- [ ] `Tier 1000 pass`.
+- [ ] `High-score test table verified 1000/1000 rows`.
+- [ ] `upstream formats openai:2`.
+- [ ] `25 live examples`.
+- [ ] `Trainer dry-run`.
+- [ ] `Promotion held for upstream GPU LLM runtime`.
+
 ## Rehearsal Goals
 
 - [ ] Opening is under 45 seconds before asking people to play.
@@ -49,7 +78,9 @@ Check:
 3. The model: **Agent = Model + Harness**.
 4. The proof: `source=paf-canvas`, `fallback_source=select-ai`, `warning=null`.
 5. The Canvas message: **Business users shape the agent; engineers own the harness.**
-6. The CTA: game demo is the front door; notebooks are the developer path.
+6. The Model AI proof: **facts in memory, behavior in weights.**
+7. The boundary: **OpenAI-compatible handoff is live; upstream LLM runtime is still pending.**
+8. The CTA: game demo is the front door; notebooks are the developer path.
 
 ## Backup Talk Track
 
@@ -66,3 +97,5 @@ Then run the smoke commentary command.
 - Do not over-explain OCI deployment.
 - Do not let PAF Canvas become the whole story. The broader story is Canvas plus the harness around governed data and live systems.
 - Do not call this "just a chatbot." It is an agent workflow grounded in database events.
+- Do not say two live LLMs are running until strict upstream readiness passes.
+- Do not start GPU/Data Science spend during rehearsal unless that has been explicitly approved.
