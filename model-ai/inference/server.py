@@ -10,6 +10,7 @@ PORT = int(os.environ.get("PORT", "8080"))
 PROVIDER = os.environ.get("STWL_PROVIDER", "oci-base")
 MODEL_ID = os.environ.get("STWL_MODEL_ID") or PROVIDER
 UPSTREAM_URL = os.environ.get("STWL_UPSTREAM_URL", "")
+UPSTREAM_FORMAT = os.environ.get("STWL_UPSTREAM_FORMAT", "openai").strip().lower()
 REQUIRED_BEARER = os.environ.get("STWL_REQUIRED_BEARER", "")
 FACTS_POLICY = os.environ.get("STWL_FACTS_POLICY", "facts-in-memory-behavior-in-weights")
 TIMEOUT_SECONDS = float(os.environ.get("STWL_UPSTREAM_TIMEOUT_SECONDS", "7.5"))
@@ -46,6 +47,52 @@ def _extract_openai_text(payload):
     return payload.get("text") or payload.get("output") or payload.get("message") or ""
 
 
+def _runtime_evidence_packet(request):
+    return {
+        "trace_id": request.get("trace_id"),
+        "evidence": request.get("evidence") or {},
+        "route_context": request.get("route_context") or {},
+        "facts_policy": FACTS_POLICY,
+    }
+
+
+def _openai_user_message(request):
+    packet = json.dumps(_runtime_evidence_packet(request), sort_keys=True)
+    return "\n\n".join([
+        request.get("prompt", ""),
+        "Runtime evidence packet. Use it for this response only; do not treat changing facts as model knowledge.",
+        packet,
+    ]).strip()
+
+
+def _upstream_payload(request):
+    if UPSTREAM_FORMAT in {"internal", "paf", "paf-internal"}:
+        return {
+            "trace_id": request.get("trace_id"),
+            "system": request.get("system", "Save the Wildlife commentary model."),
+            "prompt": request.get("prompt", ""),
+            "evidence": request.get("evidence") or {},
+            "max_tokens": request.get("max_tokens", 120),
+            "temperature": request.get("temperature", 0.2),
+            "route_context": request.get("route_context") or {},
+        }
+    return {
+        "model": MODEL_ID,
+        "messages": [
+            {
+                "role": "system",
+                "content": request.get("system", "Save the Wildlife commentary model."),
+            },
+            {
+                "role": "user",
+                "content": _openai_user_message(request),
+            },
+        ],
+        "max_tokens": request.get("max_tokens", 120),
+        "temperature": request.get("temperature", 0.2),
+    }
+
+
 def _fallback_commentary(request):
     evidence = request.get("evidence") or {}
     summary = (evidence.get("summary") or request.get("route_context", {}).get("summary") or {})
@@ -59,22 +106,7 @@ def _fallback_commentary(request):
 def _call_upstream(request):
     if not UPSTREAM_URL:
         return None
-    prompt = request.get("prompt", "")
-    payload = {
-        "model": MODEL_ID,
-        "messages": [
-            {
-                "role": "system",
-                "content": request.get("system", "Save the Wildlife commentary model."),
-            },
-            {
-                "role": "user",
-                "content": prompt,
-            },
-        ],
-        "max_tokens": request.get("max_tokens", 120),
-        "temperature": request.get("temperature", 0.2),
-    }
+    payload = _upstream_payload(request)
     body = json.dumps(payload).encode("utf-8")
     headers = {
         "Content-Type": "application/json",
@@ -98,6 +130,7 @@ class Handler(BaseHTTPRequestHandler):
                 "provider": PROVIDER,
                 "model_id": MODEL_ID,
                 "upstream_configured": bool(UPSTREAM_URL),
+                "upstream_format": UPSTREAM_FORMAT,
                 "facts_policy": FACTS_POLICY,
                 "runtime_mode": "upstream-llm" if UPSTREAM_URL else RUNTIME_MODE,
                 "strict_upstream_warnings": STRICT_UPSTREAM_WARNINGS,
@@ -133,6 +166,7 @@ class Handler(BaseHTTPRequestHandler):
                 "warnings": warnings,
                 "runtime_mode": runtime_mode,
                 "upstream_configured": bool(UPSTREAM_URL),
+                "upstream_format": UPSTREAM_FORMAT,
                 "facts_policy": FACTS_POLICY,
             })
         except (urllib.error.URLError, TimeoutError) as exc:

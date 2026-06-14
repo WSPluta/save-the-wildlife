@@ -24,7 +24,23 @@ The demo rule is deliberate:
 }
 ```
 
-Set `STWL_UPSTREAM_URL` to an OpenAI-compatible `/v1/chat/completions` endpoint to make the adapter report `runtime_mode=upstream-llm`.
+Set `STWL_UPSTREAM_URL` to make the adapter report `runtime_mode=upstream-llm`.
+
+By default, the adapter treats the upstream as OpenAI-compatible chat completions:
+
+```bash
+STWL_UPSTREAM_FORMAT=openai
+STWL_UPSTREAM_URL=https://<private-endpoint>/v1/chat/completions
+```
+
+The OpenAI-compatible payload includes the prompt plus a runtime evidence packet containing the trace ID, Oracle AI Database evidence references, route context, and facts policy. That packet is inference context only; it is not training data and it does not move durable facts into model weights.
+
+If the upstream model service already exposes the same internal PAF contract, use:
+
+```bash
+STWL_UPSTREAM_FORMAT=internal
+STWL_UPSTREAM_URL=http://<private-endpoint>/commentary
+```
 
 Without `STWL_UPSTREAM_URL`, the adapter stays in `behavior-adapter` mode and the strict canary proof gate fails by design:
 
