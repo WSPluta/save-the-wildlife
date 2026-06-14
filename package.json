@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "check:model-ai-demo": "node scripts/model-ai-demo-readiness.mjs"
+  },
   "devDependencies": {
     "chalk": "^5.6.2"
   }
