@@ -68,6 +68,38 @@ Use this to answer technical follow-up questions.
 | Event validation and persistence shape are tested | `server/test/gameEvents.test.js` |
 | Mobile joystick behavior is tested | `web/src/__tests__/mobileControls.test.js` |
 
+## Model AI Proof Matrix
+
+Use this section when an AI engineer asks what is proven live versus what is still intentionally gated.
+
+| Claim | Current verdict | Proof receipt |
+|---|---|---|
+| PAF/Oracle AI Database harness is live | Proven | `npm run check:model-ai-demo`; `/admin/ai-learning`; `private-agent-factory/index.js` |
+| Tier-1000 adapter-mode canary passed | Proven | `output/prod-load/202606132052-fastpath-full/summary.md`; admin proof `Tier 1000 pass` |
+| Every tier-1000 player wrote a high-score test row | Proven | Admin proof `Score proof 1000/1000`; load report high-score row verification |
+| Commentary remained unique at tier 1000 | Proven | Load report duplicate check `0`; admin proof `0 duplicates` |
+| Base versus fine-tuned shadow route metadata exists | Proven | `PAF_PRIMARY_MODEL_PROVIDER=oci-base`; `PAF_CANDIDATE_MODEL_PROVIDER=oci-fine-tuned`; admin comparison panel |
+| Both private routes expose an OpenAI-compatible handoff | Proven | `npm run check:model-ai-demo`; private adapter health note `upstream formats openai:2`; admin proof `OpenAI upstream handoff contract` |
+| Behavior-only training examples can be exported | Proven | `.codex_tmp/stwl-behavior-v1-live.jsonl`; admin proof `25 live examples` |
+| QLoRA trainer accepts the behavior-only dataset shape | Proven by dry-run | `model-ai/training/train_behavior_lora.py --dry-run`; admin proof `Trainer dry-run ok=true` |
+| Two live private LLM runtimes are serving responses | Blocked | `npm run check:model-ai-demo -- --require-upstream-llm` must pass before this claim is allowed |
+| Fine-tuned model is promotion-ready | Blocked | Promotion requires both routes to report `runtime_mode=upstream-llm` plus strict canary and eval gates |
+
+Strict upstream proof command:
+
+```bash
+npm run check:model-ai-demo -- --require-upstream-llm
+```
+
+Expected until upstream LLM runtimes are attached:
+
+- `verdict=failed`
+- failure reason includes `runtime_mode=behavior-adapter`
+
+Safe presenter sentence:
+
+> Tier 1000 proves the harness; `upstream formats openai:2` proves the private handoff; strict upstream mode is the gate that will prove two live LLMs.
+
 ## Notebook Story Sources
 
 | Talk point | Notebook |
