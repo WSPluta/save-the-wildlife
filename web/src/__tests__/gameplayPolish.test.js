@@ -29,6 +29,14 @@ describe("gameplay polish regressions", () => {
     expect(worker).toMatch(/socket\.timeout\(1200\)\.emit\("items\.collision"/);
   });
 
+  it("replaces stale room items when authoritative items arrive", () => {
+    expect(script).toMatch(/function syncAuthoritativeItems\(nextItems = \{\}\)/);
+    expect(script).toMatch(/const nextIds = new Set\(Object\.keys\(scopedItems\)\);/);
+    expect(script).toMatch(/for \(const itemId of Object\.keys\(items \|\| \{\}\)\)/);
+    expect(script).toMatch(/removeItemFromScene\(itemId\);/);
+    expect(script).toMatch(/case "items\.all":[\s\S]{0,80}syncAuthoritativeItems\(body\);/);
+  });
+
   it("drives replay and telemetry from confirmed collision evidence", () => {
     expect(script).toMatch(/function applyConfirmedCollisionOutcome\(rawPayload\)/);
     expect(script).toMatch(/emitGameplayEvent\("trash_collected"/);

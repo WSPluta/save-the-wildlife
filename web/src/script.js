@@ -1100,6 +1100,33 @@ function removeItemFromScene(itemId) {
   delete itemMeshes[itemId];
 }
 
+function syncAuthoritativeItems(nextItems = {}) {
+  const scopedItems = nextItems && typeof nextItems === "object" ? nextItems : {};
+  const nextIds = new Set(Object.keys(scopedItems));
+
+  for (const itemId of Object.keys(items || {})) {
+    if (nextIds.has(itemId)) continue;
+    pendingItemCollisions.delete(itemId);
+    scoredItemCollisions.delete(itemId);
+    removeItemFromScene(itemId);
+  }
+
+  for (const [itemId, item] of Object.entries(scopedItems)) {
+    if (!item) continue;
+    pendingItemCollisions.delete(itemId);
+    scoredItemCollisions.delete(itemId);
+    if (!items[itemId]) {
+      createItemMesh(
+        itemId,
+        item.type,
+        item.position,
+        item.size
+      );
+    }
+    items[itemId] = item;
+  }
+}
+
 function applyConfirmedCollisionOutcome(rawPayload) {
   const payload = normalizeItemDestroyPayload(rawPayload);
   const itemId = payload.itemId || payload.id;
@@ -2340,17 +2367,7 @@ async function init() {
         endGame();
         break;
       case "items.all":
-        Object.keys(body).forEach((key) => {
-          if (!items[key]) {
-            createItemMesh(
-              key,
-              body[key].type,
-              body[key].position,
-              body[key].size
-            );
-          }
-          items[key] = body[key];
-        });
+        syncAuthoritativeItems(body);
         break;
       case "item.new":
         {
