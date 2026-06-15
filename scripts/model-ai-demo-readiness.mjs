@@ -176,6 +176,7 @@ async function checkLocalReports() {
       const gates = tier.gates || {};
       const routeCounts = gates.modelMetadata?.routeCounts || {};
       const runtimeCounts = gates.modelMetadata?.runtimeCounts || {};
+      const promotionCounts = gates.modelMetadata?.promotionCounts || {};
       const summary = {
         runId: run.runId,
         reportPath,
@@ -190,6 +191,7 @@ async function checkLocalReports() {
         reasons: gates.reasons || [],
         routeCounts,
         runtimeCounts,
+        promotionCounts,
         upstreamRuntimeRequired: gates.modelMetadata?.upstreamRuntimeRequired || false,
       };
       reportSummaries.push(summary);
@@ -426,6 +428,9 @@ function renderMarkdown(report) {
           `duplicates ${summary.duplicates}`,
         ];
         if (summary.p95Ms != null) parts.push(`p95 ${summary.p95Ms}ms`);
+        if (Object.keys(summary.promotionCounts || {}).length) {
+          parts.push(`promotions ${Object.entries(summary.promotionCounts).map(([k, v]) => `${k}:${v}`).join(",")}`);
+        }
         if (summary.reasons?.length) parts.push(`reasons ${summary.reasons.join(",")}`);
         return parts.join(" ");
       }).join("; "));

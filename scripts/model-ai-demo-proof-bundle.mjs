@@ -56,6 +56,10 @@ function renderCanaryRows(report) {
   ].join(""));
 }
 
+function canarySummaries(report) {
+  return checkNamed(report, "local-canary-reports").reportSummaries || [];
+}
+
 function renderRequiredTextList(admin = {}) {
   const missing = new Set(admin.missing || []);
   return (admin.requiredText || []).map((text) => `- ${missing.has(text) ? "Missing" : "Present"}: \`${text}\``);
@@ -84,6 +88,9 @@ function renderBundle({ adapterReport, strictReport, commands }) {
   const strictHealth = checkNamed(strictReport, "private-adapter-health");
   const training = checkNamed(adapterReport, "training-export-sample");
   const canaryRows = renderCanaryRows(adapterReport);
+  const summaries = canarySummaries(adapterReport);
+  const adapterCanary = summaries.find((summary) => summary.runId === "202606132052-fastpath-full") || {};
+  const strictCanary = summaries.find((summary) => summary.upstreamRuntimeRequired) || {};
   const deploymentRows = renderDeploymentRows(adapterReport);
   const router = pafHealth.router || {};
   const strictExpected = strictFailureIsExpected(strictReport);
@@ -143,6 +150,15 @@ function renderBundle({ adapterReport, strictReport, commands }) {
     `- Adapter runtimes: ${renderCounts(adapterHealth.runtimeCounts)}`,
     `- Upstream handoff formats: ${renderCounts(adapterHealth.upstreamFormatCounts)}`,
     `- Strict failure details: ${(strictHealth.failures || []).join("; ") || "none"}`,
+    "",
+    "## Promotion Gate Evidence",
+    "",
+    `- Adapter eval verdict counts: ${renderCounts(adapterCanary.promotionCounts)}`,
+    "- Adapter `candidate_ready` means the candidate met the behavior rubric in adapter-mode shadow evaluation.",
+    "- Adapter `candidate_ready` does not mean the fine-tuned model is promoted or serving as a live upstream LLM.",
+    `- Strict upstream gate reasons: ${strictCanary.reasons?.join(", ") || "none"}`,
+    `- Promotion allowed now: ${strictExpected ? "no" : "review required"}`,
+    "- Promotion requires both private routes to report `runtime_mode=upstream-llm` and strict upstream canary to pass.",
     "",
     "## Training Evidence",
     "",
