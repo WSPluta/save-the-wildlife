@@ -1,10 +1,18 @@
 import { describe, it, expect } from "vitest";
 import {
   clampNum,
+  DEFAULT_COLLISION_VALIDATE_RADIUS,
+  DEFAULT_SERVER_AUTH_SPEED_LIMIT,
+  MAX_PLAYER_SESSION_HISTORY,
+  buildPlayerSessionProfile,
   fib,
   normalizeRoom,
+  normalizePlayerName,
   computeTargets,
   recomputeWorldSize,
+  resolveAuthoritativeBoatTypes,
+  resolveCollisionValidateRadius,
+  resolveServerAuthSpeedLimit,
 } from "../lib/gameLogic.js";
 
 describe("clampNum", () => {
@@ -124,5 +132,85 @@ describe("recomputeWorldSize", () => {
     s = recomputeWorldSize(10000, cfg);
     expect(s.x).toBeLessThanOrEqual(cfg.maxX);
     expect(s.z).toBeLessThanOrEqual(cfg.maxZ);
+  });
+});
+
+describe("resolveCollisionValidateRadius", () => {
+  it("defaults to an arcade pickup radius that matches the visible client hitbox", () => {
+    expect(DEFAULT_COLLISION_VALIDATE_RADIUS).toBe(1.6);
+    expect(resolveCollisionValidateRadius()).toBe(1.6);
+  });
+
+  it("accepts explicit positive overrides and ignores invalid values", () => {
+    expect(resolveCollisionValidateRadius("2.25")).toBe(2.25);
+    expect(resolveCollisionValidateRadius("0")).toBe(1.6);
+    expect(resolveCollisionValidateRadius("bad")).toBe(1.6);
+  });
+});
+
+describe("authoritative boat physics", () => {
+  it("uses arcade-scale speed presets instead of runaway production defaults", () => {
+    const boatTypes = resolveAuthoritativeBoatTypes();
+    expect(boatTypes.speed.maxSpeed).toBeLessThanOrEqual(3);
+    expect(boatTypes.fishing.maxSpeed).toBeLessThanOrEqual(2.5);
+    expect(boatTypes.rescue.maxSpeed).toBeLessThanOrEqual(3);
+    expect(boatTypes.speed.drag).toBeGreaterThanOrEqual(1);
+  });
+
+  it("caps oversized env overrides and falls back when overrides are invalid", () => {
+    const boatTypes = resolveAuthoritativeBoatTypes({
+      BOAT_SPEED_MAX_SPEED: "100",
+      BOAT_FISHING_MAX_SPEED: "bad",
+      BOAT_RESCUE_MAX_SPEED: "0",
+    });
+    expect(boatTypes.speed.maxSpeed).toBe(DEFAULT_SERVER_AUTH_SPEED_LIMIT);
+    expect(boatTypes.fishing.maxSpeed).toBe(2.35);
+    expect(boatTypes.rescue.maxSpeed).toBe(2.75);
+    expect(resolveServerAuthSpeedLimit("")).toBe(DEFAULT_SERVER_AUTH_SPEED_LIMIT);
+    expect(resolveServerAuthSpeedLimit("3.75")).toBe(3.75);
+  });
+});
+
+describe("player session name profiles", () => {
+  it("normalizes display names for server-owned roster state", () => {
+    expect(normalizePlayerName("  Ada   Lovelace  ")).toBe("Ada Lovelace");
+    expect(normalizePlayerName("")).toBe("Player");
+  });
+
+  it("updates the current display name without changing the durable player id", () => {
+    const first = buildPlayerSessionProfile({}, {
+      id: "P1",
+      name: "Old URL Name",
+      room: "ROOM-1",
+      clientSessionId: "CLIENT-1",
+    }, "2026-06-15T00:00:00.000Z");
+    const updated = buildPlayerSessionProfile(first, {
+      id: "P1",
+      name: "New Typed Name",
+      room: "ROOM-1",
+      clientSessionId: "CLIENT-1",
+    }, "2026-06-15T00:01:00.000Z");
+
+    expect(updated.id).toBe("P1");
+    expect(updated.name).toBe("New Typed Name");
+    expect(updated.sessions).toHaveLength(1);
+    expect(updated.sessions[0].name).toBe("New Typed Name");
+    expect(updated.sessions[0].firstSeenAt).toBe("2026-06-15T00:00:00.000Z");
+  });
+
+  it("keeps bounded per-player session history across rooms and gameplay sessions", () => {
+    let profile = {};
+    for (let i = 0; i < MAX_PLAYER_SESSION_HISTORY + 3; i += 1) {
+      profile = buildPlayerSessionProfile(profile, {
+        id: "P2",
+        name: `Player ${i}`,
+        room: `ROOM-${i}`,
+        clientSessionId: "CLIENT-2",
+        gameplaySessionId: `GAME-${i}`,
+      }, `2026-06-15T00:${String(i).padStart(2, "0")}:00.000Z`);
+    }
+    expect(profile.sessions).toHaveLength(MAX_PLAYER_SESSION_HISTORY);
+    expect(profile.sessions[0].room).toBe("ROOM-3");
+    expect(profile.sessions.at(-1).name).toBe(`Player ${MAX_PLAYER_SESSION_HISTORY + 2}`);
   });
 });

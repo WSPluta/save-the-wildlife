@@ -8,6 +8,7 @@ import {
   deterministicCommentary,
   normalizeGameEvent,
   recordGameEvent,
+  recordPlayerSessionProfile,
   summarizeSession,
 } from "../lib/gameEvents.js";
 
@@ -123,6 +124,39 @@ describe("game event telemetry", () => {
     });
   });
 
+  it("persists canonical player session profiles for name/session source of truth", async () => {
+    const calls = [];
+    __setOracleConnectionForTests({
+      async execute(sql, binds, options) {
+        calls.push({ sql, binds, options });
+        return {};
+      },
+    });
+
+    const result = await recordPlayerSessionProfile({
+      id: "P-NAME",
+      name: "Fresh Name",
+      room: "ROOM-NAME",
+      clientSessionId: "CLIENT-1",
+      gameplaySessionId: "GAME-1",
+      updatedAt: "2026-06-15T00:00:00.000Z",
+      sessions: [{ sessionKey: "CLIENT-1:GAME-1:ROOM-NAME", name: "Fresh Name" }],
+    });
+
+    expect(result.persisted).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toMatch(/MERGE INTO stwl_player_sessions/i);
+    expect(calls[0].options).toEqual({ autoCommit: true });
+    expect(calls[0].binds).toMatchObject({
+      player_id: "P-NAME",
+      player_name: "Fresh Name",
+      room_id: "ROOM-NAME",
+      client_session_id: "CLIENT-1",
+      gameplay_session_id: "GAME-1",
+    });
+    expect(JSON.parse(calls[0].binds.sessions_json)).toHaveLength(1);
+  });
+
   it("ships a sequence-backed Oracle telemetry schema for live ADB compatibility", () => {
     const ddl = readFileSync(new URL("../../deploy/db/stwl_game_events.sql", import.meta.url), "utf8");
 
@@ -132,6 +166,8 @@ describe("game event telemetry", () => {
     expect(ddl).toMatch(/trail_crossed/i);
     expect(ddl).toMatch(/player_frozen/i);
     expect(ddl).toMatch(/metadata_json\s+CLOB\s+CHECK\s*\(\s*metadata_json\s+IS\s+JSON\s*\)/i);
+    expect(ddl).toMatch(/CREATE\s+TABLE\s+stwl_player_sessions/i);
+    expect(ddl).toMatch(/sessions_json\s+CLOB\s+CHECK\s*\(\s*sessions_json\s+IS\s+JSON\s*\)/i);
   });
 
   it("summarizes powerups, freezes, and game over events for commentary", async () => {

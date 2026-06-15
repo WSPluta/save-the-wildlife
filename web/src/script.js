@@ -10,6 +10,13 @@ import { createEmitters } from "./particles";
 import { ObjectPool } from "./objectPool";
 import { SpatialOctree } from "./spatialOctree";
 import { applyTilt, getHeightAndNormal } from "./buoyancy";
+import {
+  createBoatFeelState,
+  getBoatFeelDebug,
+  installBoatFeelPivot,
+  resetBoatFeel,
+  updateBoatFeel,
+} from "./boatFeel";
 import "./style.css";
 import * as lobby from "./lobby";
 import { normalizeRoomId } from "./util";
@@ -53,6 +60,19 @@ if (!localStorage.getItem("yourId")) {
   localStorage.setItem("yourId", generatePlayerId());
 }
 const yourId = localStorage.getItem("yourId");
+const CLIENT_SESSION_STORAGE_KEY = "stwlClientSessionId";
+function getOrCreateClientSessionId() {
+  try {
+    const existing = localStorage.getItem(CLIENT_SESSION_STORAGE_KEY);
+    if (existing) return existing;
+    const next = generatePlayerId();
+    localStorage.setItem(CLIENT_SESSION_STORAGE_KEY, next);
+    return next;
+  } catch (_) {
+    return generatePlayerId();
+  }
+}
+const clientSessionId = getOrCreateClientSessionId();
 let playerName;
 
 let renderer, scene, camera, sun, water;
@@ -75,6 +95,17 @@ let timerId;
 let gameDuration;
 let serverVersion;
 let worker;
+function postWorkerMessage(message) {
+  const activeWorker = worker;
+  if (!activeWorker || typeof activeWorker.postMessage !== "function") return false;
+  try {
+    activeWorker.postMessage(message);
+    return true;
+  } catch (error) {
+    console.warn("Unable to post worker message", error);
+    return false;
+  }
+}
 let remainingTime;
 let timerDivRef = null;
 let lastServerTimeSyncAtMs = 0;
@@ -114,6 +145,10 @@ let trashInstances = null;
 let powerupInstances = null;
 let environmentPropGroup = null;
 let environmentPropStats = { total: 0, buoys: 0, rocks: 0, markers: 0 };
+let localBoatFeelState = null;
+let latestBoatFeelDebug = { y: 0, pitch: 0, roll: 0, wake: 0 };
+let latestEffectiveSpeed = 0;
+let latestAuthLagMs = 0;
 let latestPoolMetrics = null;
 let clearTrashInstances = () => {};
 let clearPowerupInstances = () => {};
@@ -128,6 +163,10 @@ const COLLISION_PENDING_TIMEOUT_MS = 1500;
 const trashTmpMatrix = new THREE.Matrix4();
 const trashTmpPos = new THREE.Vector3();
 const trashTmpScale = new THREE.Vector3();
+const playerCollisionBox = new THREE.Box3();
+const playerCollisionWorldBox = new THREE.Box3();
+const playerCollisionMatrix = new THREE.Matrix4();
+const playerCollisionPadding = new THREE.Vector3(0.35, 0.25, 0.35);
 const turtleTmpVec3 = new THREE.Vector3();
 const turtleTmpVec2 = new THREE.Vector2();
 const TURTLE_WATERLINE_OFFSET = -0.045;
@@ -280,6 +319,23 @@ function createArcadeEnvironmentProps(isMobileViewport) {
   }
   return { group, stats };
 }
+
+function captureGameplayCollisionBox(object3d) {
+  if (!object3d || !object3d.userData) return;
+  object3d.updateMatrixWorld(true);
+  playerCollisionWorldBox.setFromObject(object3d);
+  if (playerCollisionWorldBox.isEmpty()) return;
+  playerCollisionMatrix.copy(object3d.matrixWorld).invert();
+  object3d.userData.gameplayCollisionBoxLocal = playerCollisionWorldBox.clone().applyMatrix4(playerCollisionMatrix);
+}
+
+function getPlayerCollisionBox() {
+  if (!player) return playerCollisionBox.makeEmpty();
+  const localBox = player.userData && player.userData.gameplayCollisionBoxLocal;
+  if (!localBox) return playerCollisionBox.setFromObject(player).expandByVector(playerCollisionPadding);
+  player.updateMatrixWorld(true);
+  return playerCollisionBox.copy(localBox).applyMatrix4(player.matrixWorld).expandByVector(playerCollisionPadding);
+}
 const LOD_DISTANCES = {
   high: 50,
   medium: 100,
@@ -342,12 +398,21 @@ const IS_ADMIN_VIEW = (() => {
     return false;
   }
 })();
+const IS_AI_LEARNING_VIEW = (() => {
+  try {
+    const url = new URL(window.location.href);
+    return (url.pathname.replace(/\/+$/, "") || "/") === "/admin/ai-learning";
+  } catch (_) {
+    return false;
+  }
+})();
 
 function setPhase(phase) {
   currentPhase = phase;
   try {
     document.body.classList.toggle("phase-gameplay", phase === PHASES.GAMEPLAY);
     document.body.classList.toggle("admin-view", IS_ADMIN_VIEW);
+    document.body.classList.toggle("ai-learning-view", IS_AI_LEARNING_VIEW);
   } catch (_) {}
   renderUI();
   try { if (typeof updateControls === "function") updateControls(); } catch (_) {}
@@ -361,6 +426,7 @@ function renderUI() {
     });
     document.body.classList.add(`phase-${String(currentPhase).toLowerCase()}`);
     document.body.classList.toggle("admin-view", IS_ADMIN_VIEW);
+    document.body.classList.toggle("ai-learning-view", IS_AI_LEARNING_VIEW);
   }
   const screens = {
     ACCESS: document.getElementById("screen-access"),
@@ -582,6 +648,53 @@ let roomJoinedAck = false;       // true after server confirms room.joined
 let pendingStartRequested = false; // start requested before room ack
 let autoStartMatch = false;      // autostart match when URL flag present
 
+function normalizeDisplayName(value, fallback = "Default") {
+  const raw = value == null ? "" : String(value).trim();
+  const normalized = raw.replace(/\s+/g, " ").slice(0, 80);
+  return normalized || fallback;
+}
+
+function currentDisplayName() {
+  return normalizeDisplayName(playerName || localStorage.getItem("yourName") || "Default");
+}
+
+function stripNameParamFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("name")) return;
+    url.searchParams.delete("name");
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState(window.history.state, "", next || url.pathname);
+  } catch (_) {}
+}
+
+function playerIdentityPayload(overrides = {}) {
+  return {
+    id: yourId,
+    name: currentDisplayName(),
+    room: roomId || null,
+    clientSessionId,
+    gameplaySessionId: currentSessionId || null,
+    ...overrides,
+  };
+}
+
+function setCanonicalPlayerName(value, options = {}) {
+  const name = normalizeDisplayName(value);
+  playerName = name;
+  if (options.persist !== false) {
+    try { localStorage.setItem("yourName", name); } catch (_) {}
+  }
+  const input = document.getElementById("name-input");
+  if (input && input.value !== name) input.value = name;
+  stripNameParamFromUrl();
+  updateRoomHud();
+  if (options.sync && !IS_ADMIN_VIEW) {
+    postWorkerMessage({ type: "player.info.joining", body: playerIdentityPayload() });
+  }
+  return name;
+}
+
 function updateRoomHud() {
   const roomText = "Room: " + (roomId ? roomId : "-");
   const roomEl = document.getElementById("hud-room");
@@ -593,10 +706,9 @@ function updateRoomHud() {
   const inviteInput = document.getElementById("invite-link");
   if (inviteInput) {
     try {
-      const nm = playerName || localStorage.getItem("yourName") || "";
       const link =
         (lobby && typeof lobby.buildInviteLink === "function")
-          ? lobby.buildInviteLink(roomId, nm)
+          ? lobby.buildInviteLink(roomId)
           : window.location.href;
       inviteInput.value = link;
     } catch (_) {}
@@ -656,7 +768,7 @@ async function enterWaitingLobby() {
   if (!gameInitialized) await init();
   try {
     const wanted = normalizeRoomId(roomId) || normalizeRoomId(roomsDirectory && roomsDirectory.default) || null;
-    if (worker) worker.postMessage({ type: "room.join", body: wanted ? { id: wanted } : {} });
+    if (worker) postWorkerMessage({ type: "room.join", body: wanted ? { id: wanted } : {} });
   } catch (_) {}
   setPhase("LOBBY");
 }
@@ -668,7 +780,7 @@ async function enterAdminConsole() {
   setPhase("ADMIN");
   if (!gameInitialized) await init();
   try {
-    if (worker) worker.postMessage({ type: "room.join", body: { id: room } });
+    if (worker) postWorkerMessage({ type: "room.join", body: { id: room } });
   } catch (_) {}
   setAdminStatus("Connected to " + room + ".", "Waiting");
 }
@@ -677,9 +789,9 @@ async function requestPresenterStart() {
   const room = syncAdminRoomUi(getConfiguredAdminRoom());
   if (!gameInitialized) await init();
   try {
-    if (worker) worker.postMessage({ type: "room.join", body: { id: room } });
+    if (worker) postWorkerMessage({ type: "room.join", body: { id: room } });
     setAdminStatus("Starting " + room + "...", "Starting");
-    worker.postMessage({
+    postWorkerMessage({
       type: "admin.presenter.start",
       body: { room, token: getConfiguredAdminToken() },
     });
@@ -692,9 +804,9 @@ async function requestPresenterEnd() {
   const room = syncAdminRoomUi(getConfiguredAdminRoom());
   if (!gameInitialized) await init();
   try {
-    if (worker) worker.postMessage({ type: "room.join", body: { id: room } });
+    if (worker) postWorkerMessage({ type: "room.join", body: { id: room } });
     setAdminStatus("Ending " + room + "...", "Ending");
-    worker.postMessage({
+    postWorkerMessage({
       type: "admin.presenter.end",
       body: { room, token: getConfiguredAdminToken() },
     });
@@ -707,7 +819,7 @@ function requestAutoStartMatch() {
   try {
     if (!worker) return;
     const room = normalizeRoomId(roomId) || DEFAULT_ADMIN_ROOM_ID;
-    worker.postMessage({
+    postWorkerMessage({
       type: "admin.presenter.start",
       body: { room },
     });
@@ -769,7 +881,7 @@ function renderRoomsDirectory() {
         if (!wanted) return;
         // If worker is live, request join. Otherwise queue and init.
         if (worker) {
-          try { worker.postMessage({ type: "room.join", body: { id: wanted } }); } catch (_) {}
+          try { postWorkerMessage({ type: "room.join", body: { id: wanted } }); } catch (_) {}
         } else {
           pendingRoomJoinId = wanted;
           if (!gameInitialized) {
@@ -794,13 +906,13 @@ function setRoomAndBroadcast(newRoom, owner = false) {
   updateRoomHud();
   // If comms worker already running, request join and update name
   try {
-    const name = playerName || localStorage.getItem("yourName") || "Default";
+    const name = currentDisplayName();
     if (worker) {
       // Primary: explicit room.join (omit id when leaving/default)
       const body = normalized ? { id: normalized } : {};
-      worker.postMessage({ type: "room.join", body });
+      postWorkerMessage({ type: "room.join", body });
       // Back-compat: persist latest name; room param is optional now
-      worker.postMessage({ type: "player.info.joining", body: { id: yourId, name } });
+      postWorkerMessage({ type: "player.info.joining", body: playerIdentityPayload({ name }) });
     } else {
       // Queue desired room to be joined right after init()
       pendingRoomJoinId = normalized || null;
@@ -856,6 +968,8 @@ const powerUpState = {
 };
 const POWERUP_MAGNET_RADIUS = 3.6;
 const POWERUP_FREEZE_OTHER_MULT = 0.45;
+const TRAIL_SLOW_DURATION_MS = 2500;
+const TRAIL_SLOW_SPEED_MULT = 0.45;
 
 lobby.getLeaderBoard();
 
@@ -903,7 +1017,7 @@ function emitGameplayEvent(type, metadata = {}) {
       session_id: currentSessionId || `${roomId || "ROOM"}:${yourId}:pending`,
       room_id: roomId || null,
       player_id: yourId,
-      player_name: playerName || localStorage.getItem("yourName") || "Default",
+      player_name: currentDisplayName(),
       score: Number(localScore || 0),
       position: metadata.position || currentPlayerPosition(),
       occurred_at: new Date().toISOString(),
@@ -912,7 +1026,7 @@ function emitGameplayEvent(type, metadata = {}) {
       powerup_type: metadata.powerup_type || metadata.powerupType || null,
       metadata,
     };
-    worker.postMessage({ type: "game.event", body: payload });
+    postWorkerMessage({ type: "game.event", body: payload });
   } catch (_) {}
 }
 
@@ -1065,6 +1179,80 @@ function applyConfirmedCollisionOutcome(rawPayload) {
   updateLocalScoreDisplays();
 }
 
+function clearPowerUpRuntime() {
+  try {
+    Object.values(powerUpState.timers || {}).forEach((timer) => {
+      try { clearTimeout(timer); } catch (_) {}
+    });
+  } catch (_) {}
+  powerUpState.speedMultiplier = 1;
+  powerUpState.shield = false;
+  powerUpState.magnetUntil = 0;
+  powerUpState.freezeUntil = 0;
+  powerUpState.timers = {};
+  if (powerUpState.uiDiv) powerUpState.uiDiv.innerHTML = "Power-ups: none";
+  try {
+    if (powerupBadge) {
+      setSpriteText(powerupBadge, "");
+      powerupBadge.visible = false;
+    }
+    if (statusBadge) {
+      setSpriteText(statusBadge, "");
+      statusBadge.visible = false;
+    }
+  } catch (_) {}
+}
+
+function clearMatchVisualState({ removeItems = false } = {}) {
+  pendingItemCollisions.clear();
+  scoredItemCollisions.clear();
+  clearCullingDebugHelpers(scene);
+  if (removeItems) {
+    for (const [, mesh] of Object.entries(itemMeshes || {})) {
+      if (mesh && mesh.isObject3D) {
+        try { scene.remove(mesh); } catch (_) {}
+      }
+    }
+    clearTrashInstances();
+    clearPowerupInstances();
+    items = {};
+    itemMeshes = {};
+  }
+  for (const t of Object.values(trails || {})) {
+    try {
+      if (t && t.line && scene) scene.remove(t.line);
+    } catch (_) {}
+  }
+  trails = {};
+  freezeUntilMs = 0;
+  if (freezeDiv) {
+    try { freezeDiv.remove(); } catch (_) {}
+    freezeDiv = null;
+  }
+  clearPowerUpRuntime();
+}
+
+function prepareExistingSceneForMatch(nextStartPosition = null) {
+  gameOverFlag = false;
+  keyboard = {};
+  mobileInput = { throttle: 0, steer: 0, active: false };
+  clearCountdown();
+  clearMatchVisualState({ removeItems: false });
+  localScore = 0;
+  updateLocalScoreDisplays();
+  if (Number.isFinite(gameDuration)) {
+    remainingTime = Number(gameDuration);
+    renderTimeValue(remainingTime);
+  }
+  latestBoatFeelDebug = { y: 0, pitch: 0, roll: 0, wake: 0 };
+  try { if (localBoatFeelState) resetBoatFeel(localBoatFeelState); } catch (_) {}
+  if (player) {
+    const p = nextStartPosition || startPosition || { x: 0, y: 0, z: 0 };
+    player.position.set(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
+    player.rotation.set(0, 0, 0);
+  }
+}
+
 // Helper: request a match start on the current room with retries if server ack is slow
 function requestMatchStart() {
   try {
@@ -1073,32 +1261,40 @@ function requestMatchStart() {
 
     // Ensure we are attached to the intended room before starting
     if (!roomId) {
-      try { worker.postMessage({ type: "room.join", body: {} }); } catch (_) {}
+      try { postWorkerMessage({ type: "room.join", body: {} }); } catch (_) {}
       pendingStartRequested = true;
       if (statusEl) statusEl.textContent = "Joining default room…";
       return;
     }
     if (!roomJoinedAck) {
-      try { worker.postMessage({ type: "room.join", body: { id: roomId } }); } catch (_) {}
+      try { postWorkerMessage({ type: "room.join", body: { id: roomId } }); } catch (_) {}
       pendingStartRequested = true;
       if (statusEl) statusEl.textContent = "Joining room " + roomId + "…";
       return;
     }
 
     // Ensure latest identity stored on server (helps admin assignment on first join)
-    const nameNow = playerName || localStorage.getItem("yourName") || "Default";
-    try { worker.postMessage({ type: "player.info.joining", body: { id: yourId, name: nameNow } }); } catch (_) {}
+    const nameNow = currentDisplayName();
+    try { postWorkerMessage({ type: "player.info.joining", body: playerIdentityPayload({ name: nameNow }) }); } catch (_) {}
 
     // Register and request start; server will emit 'startingGame' and 'game.state'
     if (statusEl) statusEl.textContent = "Starting match…";
-    worker.postMessage({ type: "game.start", body: { playerId: yourId, playerName: nameNow } });
-    worker.postMessage({ type: "admin.start" });
+    postWorkerMessage({
+      type: "game.start",
+      body: {
+        playerId: yourId,
+        playerName: nameNow,
+        clientSessionId,
+        gameplaySessionId: currentSessionId || null,
+      },
+    });
+    postWorkerMessage({ type: "admin.start" });
 
     // If the server didn't flip us to STARTING soon, retry admin.start once
     setTimeout(() => {
       try {
         if (currentPhase !== "STARTING") {
-          worker.postMessage({ type: "admin.start" });
+          postWorkerMessage({ type: "admin.start" });
         }
       } catch (_) {}
     }, 900);
@@ -1176,8 +1372,7 @@ function bindGlobalUI() {
         (inputEl && inputEl.value && inputEl.value.trim()) ||
         localStorage.getItem("yourName") ||
         "Default";
-      playerName = name;
-      localStorage.setItem("yourName", name);
+      setCanonicalPlayerName(name, { sync: true });
       enterWaitingLobby();
     });
   }
@@ -1188,9 +1383,9 @@ function bindGlobalUI() {
     menuBtn.addEventListener("click", () => {
       // Cancel any pending start and optionally end if admin
       pendingStartRequested = false;
-      try { if (isAdmin && worker && (currentPhase === "STARTING" || currentPhase === "GAMEPLAY")) worker.postMessage({ type: "admin.end" }); } catch (_) {}
+      try { if (isAdmin && worker && (currentPhase === "STARTING" || currentPhase === "GAMEPLAY")) postWorkerMessage({ type: "admin.end" }); } catch (_) {}
       // Fully detach networking so server events cannot pull us back
-      try { if (worker) worker.postMessage({ type: "close" }); } catch (_) {}
+      try { if (worker) postWorkerMessage({ type: "close" }); } catch (_) {}
       try { if (worker && typeof worker.terminate === "function") worker.terminate(); } catch (_) {}
       worker = null;
       // Reset room/admin flags
@@ -1231,7 +1426,7 @@ function bindGlobalUI() {
     startMatchBtn.addEventListener("click", async () => {
       if (!gameInitialized) await init();
       try {
-        if (worker) { try { worker.postMessage({ type: "admin.claim" }); } catch (_) {} }
+        if (worker) { try { postWorkerMessage({ type: "admin.claim" }); } catch (_) {} }
         requestMatchStart();
         // Countdown and state changes will arrive via server events (startingGame/game.state)
       } catch (_) {}
@@ -1245,7 +1440,7 @@ function bindGlobalUI() {
       if (!isAdmin || (currentPhase !== "GAMEPLAY" && currentPhase !== "STARTING")) return;
       if (!gameInitialized) await init();
       try {
-        if (worker) worker.postMessage({ type: "admin.end" });
+        if (worker) postWorkerMessage({ type: "admin.end" });
         setPhase("POST_GAME");
       } catch (_) {}
     });
@@ -1259,11 +1454,19 @@ function bindGlobalUI() {
       if (!gameInitialized) await init();
       try {
         if (worker) {
-          worker.postMessage({ type: "admin.end" });
+          postWorkerMessage({ type: "admin.end" });
           setTimeout(() => {
             try {
-              worker.postMessage({ type: "game.start", body: { playerId: yourId, playerName } });
-              worker.postMessage({ type: "admin.start" });
+              postWorkerMessage({
+                type: "game.start",
+                body: {
+                  playerId: yourId,
+                  playerName: currentDisplayName(),
+                  clientSessionId,
+                  gameplaySessionId: currentSessionId || null,
+                },
+              });
+              postWorkerMessage({ type: "admin.start" });
             } catch (_) {}
           }, 1200);
         }
@@ -1277,8 +1480,7 @@ function bindGlobalUI() {
     accessContinueBtn.addEventListener("click", async () => {
       const inputEl = document.getElementById("name-input");
       const name = (inputEl && inputEl.value && inputEl.value.trim()) || localStorage.getItem("yourName") || "Default";
-      playerName = name;
-      localStorage.setItem("yourName", name);
+      setCanonicalPlayerName(name, { sync: true });
       await enterWaitingLobby();
     });
   }
@@ -1291,7 +1493,7 @@ function bindGlobalUI() {
         if (def) {
           setRoomAndBroadcast(def, false);
         } else {
-          if (worker) worker.postMessage({ type: "room.join", body: {} });
+          if (worker) postWorkerMessage({ type: "room.join", body: {} });
         }
       } catch (_) {}
       setPhase("LOBBY");
@@ -1323,20 +1525,22 @@ function bindGlobalUI() {
   const lobbyLeaveBtn = document.getElementById("btn-lobby-leave");
   if (lobbyLeaveBtn) {
     lobbyLeaveBtn.addEventListener("click", () => {
+      const previousRoom = roomId;
       // Cancel any pending start; end match if you are admin and countdown already started
       pendingStartRequested = false;
-      try { if (isAdmin && worker && (currentPhase === "STARTING" || currentPhase === "GAMEPLAY")) worker.postMessage({ type: "admin.end" }); } catch (_) {}
+      try { if (isAdmin && worker && (currentPhase === "STARTING" || currentPhase === "GAMEPLAY")) postWorkerMessage({ type: "admin.end" }); } catch (_) {}
       // Fully detach networking so server events cannot pull us back
-      try { if (worker) worker.postMessage({ type: "close" }); } catch (_) {}
+      try { if (worker) postWorkerMessage({ type: "close" }); } catch (_) {}
       try { if (worker && typeof worker.terminate === "function") worker.terminate(); } catch (_) {}
       worker = null;
       // Reset room/admin flags
-      roomId = null;
+      roomId = previousRoom;
+      pendingRoomJoinId = previousRoom || null;
       roomJoinedAck = false;
       isAdmin = false;
       gameState = "WAITING";
       clearCountdown();
-      setRoomAndBroadcast(null, false);
+      updateRoomHud();
       setPhase("ACCESS");
     });
   }
@@ -1347,7 +1551,7 @@ function bindGlobalUI() {
       const text = (input && input.value) ? String(input.value).slice(0, 300) : "";
       if (!text) return;
       if (!gameInitialized) await init();
-      try { if (worker) worker.postMessage({ type: "chat.send", body: { text } }); } catch (_) {}
+      try { if (worker) postWorkerMessage({ type: "chat.send", body: { text } }); } catch (_) {}
       if (input) input.value = "";
     });
   }
@@ -1359,7 +1563,7 @@ function bindGlobalUI() {
         const val = String(chatText.value || "").slice(0, 300).trim();
         if (val) {
           if (!worker && !gameInitialized) { try { init(); } catch (_) {} }
-          try { if (worker) worker.postMessage({ type: "chat.send", body: { text: val } }); } catch (_) {}
+          try { if (worker) postWorkerMessage({ type: "chat.send", body: { text: val } }); } catch (_) {}
           chatText.value = "";
         }
       }
@@ -1383,7 +1587,7 @@ function bindGlobalUI() {
   if (adminRoomInput) {
     adminRoomInput.addEventListener("change", () => {
       const room = syncAdminRoomUi(adminRoomInput.value);
-      try { if (worker) worker.postMessage({ type: "room.join", body: { id: room } }); } catch (_) {}
+      try { if (worker) postWorkerMessage({ type: "room.join", body: { id: room } }); } catch (_) {}
     });
   }
   const adminStartBtn = document.getElementById("btn-admin-start");
@@ -1421,7 +1625,7 @@ function bindGlobalUI() {
       if (!isAdmin) return;
       const target = window.prompt("Enter player ID to grant admin:");
       if (!target) return;
-      try { if (worker) worker.postMessage({ type: "admin.grant", body: { id: String(target).trim() } }); } catch (_) {}
+      try { if (worker) postWorkerMessage({ type: "admin.grant", body: { id: String(target).trim() } }); } catch (_) {}
     });
   }
 
@@ -1435,7 +1639,7 @@ function bindGlobalUI() {
       const tr = parseFloat((document.getElementById("mon-tr")?.value) || "1");
       const mr = parseFloat((document.getElementById("mon-mr")?.value) || "2");
       const pr = parseFloat((document.getElementById("mon-pr")?.value) || "0.2");
-      if (worker) worker.postMessage({ type: "admin.spawnMode.set", body: { mode, params: { k, tr, mr, pr } } });
+      if (worker) postWorkerMessage({ type: "admin.spawnMode.set", body: { mode, params: { k, tr, mr, pr } } });
     };
   }
   const applyWorldBtn = document.getElementById("mon-apply-world");
@@ -1445,7 +1649,7 @@ function bindGlobalUI() {
       const minZ = parseInt((document.getElementById("mon-minz")?.value) || "11");
       const maxX = parseInt((document.getElementById("mon-maxx")?.value) || "176");
       const maxZ = parseInt((document.getElementById("mon-maxz")?.value) || "88");
-      if (worker) worker.postMessage({ type: "admin.worldScaling.set", body: { minX, minZ, maxX, maxZ } });
+      if (worker) postWorkerMessage({ type: "admin.worldScaling.set", body: { minX, minZ, maxX, maxZ } });
     };
   }
 }
@@ -1525,7 +1729,7 @@ try {
   }
   const saved = localStorage.getItem("yourName");
   if (saved) {
-    playerName = saved;
+    setCanonicalPlayerName(saved, { persist: false, sync: false });
     setPhase("LOBBY");
     setTimeout(() => { enterWaitingLobby(); }, 100);
   } else {
@@ -1547,13 +1751,13 @@ try {
       }
       return;
     }
-    if (nameParam && nameParam.trim()) {
-      localStorage.setItem("yourName", nameParam.trim());
-      playerName = nameParam.trim();
+    if (nameParam && nameParam.trim() && !localStorage.getItem("yourName")) {
+      setCanonicalPlayerName(nameParam.trim(), { sync: false });
       if (currentPhase === "ACCESS") {
         setPhase("LOBBY");
       }
     }
+    stripNameParamFromUrl();
     if (roomParam && roomParam.trim()) {
       const desired = normalizeRoomId(roomParam);
       if (desired) {
@@ -1640,7 +1844,7 @@ function toggleCullingDebug(sceneRef) {
 async function init() {
   if (gameInitialized) return;
   gameInitialized = true;
-  playerName = localStorage.getItem("yourName") || "Default";
+  playerName = currentDisplayName();
   scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(ARCADE_ENVIRONMENT.fogColor, ARCADE_ENVIRONMENT.fogDensity);
 
@@ -1927,13 +2131,13 @@ async function init() {
 
   worker = new Worker(new URL("./commsWorker.js", import.meta.url));
   window.__gameWorker = worker;
-  worker.postMessage({
+  postWorkerMessage({
     type: "init",
-    body: { wsURL, yourId, yourName: playerName, room: roomId, isPresenter: IS_ADMIN_VIEW },
+    body: { wsURL, yourId, yourName: currentDisplayName(), room: roomId, clientSessionId, isPresenter: IS_ADMIN_VIEW },
   });
   // If a join was requested before comms started, perform it now
   if (pendingRoomJoinId) {
-    try { worker.postMessage({ type: "room.join", body: { id: pendingRoomJoinId } }); } catch (_) {}
+    try { postWorkerMessage({ type: "room.join", body: { id: pendingRoomJoinId } }); } catch (_) {}
     pendingRoomJoinId = null;
   }
 
@@ -1943,7 +2147,7 @@ async function init() {
     startBtnHud.onclick = async () => {
       if (!gameInitialized) await init();
       try {
-        if (worker) { try { worker.postMessage({ type: "admin.claim" }); } catch (_) {} }
+        if (worker) { try { postWorkerMessage({ type: "admin.claim" }); } catch (_) {} }
         requestMatchStart();
         // Countdown and state changes will arrive via server events (startingGame/game.state)
       } catch (_) {}
@@ -1953,7 +2157,7 @@ async function init() {
   if (endBtnHud) {
     endBtnHud.onclick = () => {
       if (!isAdmin || (currentPhase !== "GAMEPLAY" && currentPhase !== "STARTING")) return;
-      try { if (worker) worker.postMessage({ type: "admin.end" }); } catch (_) {}
+      try { if (worker) postWorkerMessage({ type: "admin.end" }); } catch (_) {}
       setPhase("POST_GAME");
     };
   }
@@ -1961,12 +2165,20 @@ async function init() {
   if (restartBtnHud) {
     restartBtnHud.onclick = () => {
       if (!isAdmin || (currentPhase !== "GAMEPLAY" && currentPhase !== "POST_GAME")) return;
-      try { if (worker) worker.postMessage({ type: "admin.end" }); } catch (_) {}
+      try { if (worker) postWorkerMessage({ type: "admin.end" }); } catch (_) {}
       setTimeout(() => {
         try {
           if (worker) {
-            worker.postMessage({ type: "game.start", body: { playerId: yourId, playerName } });
-            worker.postMessage({ type: "admin.start" });
+            postWorkerMessage({
+              type: "game.start",
+              body: {
+                playerId: yourId,
+                playerName: currentDisplayName(),
+                clientSessionId,
+                gameplaySessionId: currentSessionId || null,
+              },
+            });
+            postWorkerMessage({ type: "admin.start" });
           }
         } catch (_) {}
       }, 1200);
@@ -2024,14 +2236,14 @@ async function init() {
       case "connect":
         if (!IS_ADMIN_VIEW) {
           try {
-            worker.postMessage({
+            postWorkerMessage({
               type: "player.info.joining",
-              body: { id: yourId, name: playerName || localStorage.getItem("yourName") || "Default", room: roomId }
+              body: playerIdentityPayload()
             });
           } catch (_) {}
         }
         if (roomId) {
-          try { worker.postMessage({ type: "room.join", body: { id: roomId } }); } catch (_) {}
+          try { postWorkerMessage({ type: "room.join", body: { id: roomId } }); } catch (_) {}
         }
         break;
       case "disconnect":
@@ -2080,6 +2292,9 @@ async function init() {
           }
           const sp = body && body.startPosition ? body.startPosition : null;
           startPosition = sp;
+          if (clientGameStarted) {
+            prepareExistingSceneForMatch(sp);
+          }
           if (gameState !== "RUNNING") {
             gameState = "RUNNING";
             setPhase("GAMEPLAY");
@@ -2097,9 +2312,14 @@ async function init() {
             startLocalTimeTicker();
             try { if (typeof updateControls === "function") updateControls(); } catch (_) {}
           }
-          worker.postMessage({
+          postWorkerMessage({
             type: "game.start",
-            body: { playerId: yourId, playerName },
+            body: {
+              playerId: yourId,
+              playerName: currentDisplayName(),
+              clientSessionId,
+              gameplaySessionId: currentSessionId || null,
+            },
           });
           if (!clientGameStarted) {
             startGame(
@@ -2169,6 +2389,14 @@ async function init() {
         break;
       case "player.trace.all":
         for (const [key, traceData] of Object.entries(body)) {
+          if (key === yourId) {
+            if (otherPlayersMeshes[key]) {
+              returnBoatToPool(otherPlayersMeshes[key]);
+              delete otherPlayersMeshes[key];
+            }
+            delete otherPlayers[key];
+            continue;
+          }
           otherPlayers[key] = traceData;
           if (!otherPlayersMeshes[key]) {
             otherPlayersMeshes[key] = makePlayerMesh(boatModel, key);
@@ -2194,6 +2422,13 @@ async function init() {
             }
           }
           updatePlayersHud();
+        }
+        break;
+      case "player.session":
+        {
+          if (body && body.id === yourId && body.name) {
+            setCanonicalPlayerName(body.name, { sync: false });
+          }
         }
         break;
       case "player.info.left":
@@ -2503,7 +2738,7 @@ async function init() {
 
   // Handle disconnect on unload
   window.addEventListener("beforeunload", function () {
-    worker.postMessage({ type: "close" });
+    postWorkerMessage({ type: "close" });
   });
 
   // Object pooling for boats (other players)
@@ -2524,6 +2759,7 @@ async function init() {
     create: createBoatGroup,
     reset: (group) => {
       if (!group) return;
+      if (group.userData && group.userData.boatFeel) resetBoatFeel(group.userData.boatFeel);
       group.visible = false;
       group.position.set(0, 0, 0);
       group.rotation.set(0, 0, 0);
@@ -2533,6 +2769,10 @@ async function init() {
         if (ch && ch.name === "nameTag" && uiNameTagPool) {
           uiNameTagPool.release(ch);
         }
+      }
+      if (group.userData) {
+        delete group.userData.boatFeel;
+        delete group.userData.boatFeelPivot;
       }
     },
   });
@@ -2603,6 +2843,8 @@ async function init() {
     group.userData.lodHigh = mesh;
     group.userData.lodLow = lodLow;
     group.userData.boatVisual = mesh;
+    group.userData.boatFeel = createBoatFeelState();
+    installBoatFeelPivot(group, [mesh, lodLow]);
     const label =
       (otherPlayersInfo[id] && otherPlayersInfo[id].name)
         ? otherPlayersInfo[id].name
@@ -2853,6 +3095,7 @@ function addNameTag(object3d, name) {
   setNameSpriteText(sprite, name || "");
   sprite.position.set(0, 1.4, 0);
   sprite.visible = true;
+  try { disableReflectionForSprite(sprite); } catch (_) {}
   object3d.add(sprite);
   return sprite;
 }
@@ -3136,8 +3379,7 @@ function checkTrailCollisionsWithPlayer() {
         distPointToSegmentSq(p, pts[i], pts[i + 1]) <
         TRAIL_COLLISION_RADIUS * TRAIL_COLLISION_RADIUS
       ) {
-        // Apply freeze effect for 5 seconds
-        freezeUntilMs = Date.now() + 5000;
+        freezeUntilMs = Date.now() + TRAIL_SLOW_DURATION_MS;
         eventStats.trail_crossed++;
         eventStats.player_frozen++;
         emitGameplayEvent("trail_crossed", {
@@ -3149,12 +3391,13 @@ function checkTrailCollisionsWithPlayer() {
         });
         emitGameplayEvent("player_frozen", {
           related_player_id: id,
-          freeze_ms: 5000,
+          freeze_ms: TRAIL_SLOW_DURATION_MS,
+          slow_multiplier: TRAIL_SLOW_SPEED_MULT,
         });
         try {
           triggerReplayMoment("player_frozen", {
             relatedPlayerId: id,
-            freezeMs: 5000,
+            freezeMs: TRAIL_SLOW_DURATION_MS,
             worldPos: currentPlayerPosition(),
             trailSegment: {
               from: { x: Number(pts[i].x || 0), y: Number(pts[i].y || 0), z: Number(pts[i].z || 0) },
@@ -3172,7 +3415,7 @@ function checkTrailCollisionsWithPlayer() {
           freezeDiv.style.backgroundColor = "rgba(0, 0, 0, 0.6)";
           document.body.appendChild(freezeDiv);
         }
-        freezeDiv.innerHTML = "Frozen: 5s";
+        freezeDiv.innerHTML = "Slowed: " + Math.ceil(TRAIL_SLOW_DURATION_MS / 1000) + "s";
         if (emitters) emitters.collision.trigger(player.position);
         updatePowerUpBadge();
         updateFrozenIndicators();
@@ -3269,12 +3512,18 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     1000
   );
 
-  scene.add(boat);
-  player = boat;
+  const playerRoot = new THREE.Group();
+  playerRoot.name = "localPlayerGameplayRoot";
+  playerRoot.add(boat);
+  scene.add(playerRoot);
+  player = playerRoot;
   player.userData.boatVisual = boat;
   boat.userData.baseRotX = boat.rotation.x || 0;
   boat.userData.baseRotY = boat.rotation.y || 0;
   boat.userData.baseRotZ = boat.rotation.z || 0;
+  captureGameplayCollisionBox(player);
+  localBoatFeelState = createBoatFeelState();
+  installBoatFeelPivot(player, [boat]);
   if (startPosition && typeof startPosition.x === "number" && typeof startPosition.z === "number") {
     player.position.set(startPosition.x, (startPosition.y || 0), startPosition.z);
   }
@@ -3469,7 +3718,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       Math.abs(trace.z - lastTrace.z) >= 0.02 ||
       Math.abs(trace.rotY - lastTrace.rotY) >= 0.01;
     if (changed) {
-      worker.postMessage({ type: "player.trace.change", body: trace });
+      postWorkerMessage({ type: "player.trace.change", body: trace });
       lastTrace = trace;
     }
   });
@@ -3491,7 +3740,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   navmeshGeometry.rotateX(Math.PI / 2);
   scene.add(navmesh);
 
-  // Particles (engine trail, splash, collision)
+  // Particles (engine trail and collision feedback)
   const scale = window.innerWidth < 800 ? 0.6 : 1.0;
   emitters = createEmitters(scene, scale);
 
@@ -3799,7 +4048,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       ts,
       timeISO: new Date(ts).toISOString(),
       room: roomId || null,
-      player: { id: yourId, name: playerName || localStorage.getItem("yourName") || "Default" },
+      player: { id: yourId, name: currentDisplayName() },
       state: {
         position: pos,
         rotY,
@@ -3825,7 +4074,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           serverVersion: serverVersion || null,
           sessionId: currentSessionId || `${roomId || "ROOM"}:${yourId}:pending`,
           room: roomId || null,
-          player: { id: yourId, name: playerName || localStorage.getItem("yourName") || "Default" },
+          player: { id: yourId, name: currentDisplayName() },
           event: __pendingReplay.event, // { type, at, meta }
           clip: {
             before: REPLAY_BEFORE_FRAMES,
@@ -3915,7 +4164,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
   function checkCollisions() {
     clearStalePendingItemCollisions();
-    const playerBox = new THREE.Box3().setFromObject(player);
+    const playerBox = getPlayerCollisionBox();
     const trashBox = new THREE.Box3();
     const trashCenter = new THREE.Vector3();
     const trashSize = new THREE.Vector3();
@@ -3951,7 +4200,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         playerName: playerName,
       };
 
-      worker.postMessage({
+      postWorkerMessage({
         type: "items.collision",
         body: collisionData,
       });
@@ -3988,7 +4237,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         playerName: playerName,
       };
 
-      worker.postMessage({
+      postWorkerMessage({
         type: "items.collision",
         body: collisionData,
       });
@@ -4026,7 +4275,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
       if (String(mesh.itemType || "").startsWith("powerup_")) {
         // Notify server to remove the power-up
-        worker.postMessage({
+        postWorkerMessage({
           type: "items.collision",
           body: collisionData,
         });
@@ -4040,7 +4289,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         mesh.animationActions.forEach((action) => action.play());
       }
 
-      worker.postMessage({
+      postWorkerMessage({
         type: "items.collision",
         body: collisionData,
       });
@@ -4072,26 +4321,12 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       return;
     }
 
-    // Freeze handling: disable movement while frozen, keep camera following
-    if (Date.now() < freezeUntilMs) {
+    const trailSlowActive = Date.now() < freezeUntilMs;
+    if (trailSlowActive) {
       const left = Math.ceil((freezeUntilMs - Date.now()) / 1000);
-      if (freezeDiv) freezeDiv.innerHTML = "Frozen: " + left + "s";
-      playerSpeed = 0;
-
-      const targetCameraPosition = new THREE.Vector3();
-      const sphericalCoords = new THREE.Spherical(
-        2,
-        Math.PI / 2,
-        player.rotation.y + Math.PI
-      );
-      targetCameraPosition.setFromSpherical(sphericalCoords);
-      targetCameraPosition.y += 0.5;
-      targetCameraPosition.add(player.position);
-      camera.position.lerp(targetCameraPosition, 0.1);
-      camera.lookAt(player.position);
+      if (freezeDiv) freezeDiv.innerHTML = "Slowed: " + left + "s";
       updatePowerUpBadge();
       updateFrozenIndicators();
-      return;
     } else if (freezeDiv) {
       freezeDiv.innerHTML = "";
       updatePowerUpBadge();
@@ -4124,11 +4359,17 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const authFreshForYou = !!(authFreshGlobal && authStates && authStates[yourId]);
     const movement = new THREE.Vector3(0, 0, 0);
     const lateralVelocity = new THREE.Vector3(0, 0, 0);
-    const throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
-    const steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) + Number(mobileInput.steer || 0)));
+    let throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
+    let steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) + Number(mobileInput.steer || 0)));
+    if (trailSlowActive) {
+      throttle *= TRAIL_SLOW_SPEED_MULT;
+      steer *= 0.75;
+      ACCELERATION *= TRAIL_SLOW_SPEED_MULT;
+      MAX_SPEED *= TRAIL_SLOW_SPEED_MULT;
+    }
     if (serverAuthEnabled) {
       inputSeq++;
-      worker.postMessage({
+      postWorkerMessage({
         type: "player.input",
         body: { id: yourId, seq: inputSeq, throttle, steer, brake: throttle < 0 }
       });
@@ -4159,8 +4400,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     }
 
 
+    let effectiveSignedSpeed = playerSpeed;
     if (!serverAuthEnabled || !authFreshForYou) {
       playerSpeed = Math.max(Math.min(playerSpeed, MAX_SPEED), -MAX_SPEED);
+      effectiveSignedSpeed = playerSpeed;
       if (speedElement) {
         speedElement.innerHTML = `Speed: ${playerSpeed.toFixed(2)}`;
       }
@@ -4169,7 +4412,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       }
     } else {
       const s = authStates && authStates[yourId];
-      const shown = s && typeof s.speed === "number" ? Math.abs(s.speed) : 0;
+      effectiveSignedSpeed = s && typeof s.speed === "number" ? s.speed : 0;
+      const shown = Math.abs(effectiveSignedSpeed);
       if (speedElement) {
         speedElement.innerHTML = `Speed: ${shown.toFixed(2)}`;
       }
@@ -4177,6 +4421,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         compactSpeedEl.innerHTML = `Speed: ${shown.toFixed(2)}`;
       }
     }
+    latestEffectiveSpeed = Math.abs(Number(effectiveSignedSpeed) || 0);
+    latestAuthLagMs = serverAuthEnabled ? Math.max(0, Math.round(lagMs || 0)) : 0;
 
     const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(
       player.quaternion
@@ -4222,6 +4468,15 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       const delta = ((s.rotY - player.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
       player.rotation.y += delta * 0.2;
     }
+    latestBoatFeelDebug = updateBoatFeel(player, localBoatFeelState, {
+      dt,
+      time: performance.now() * 0.001,
+      speed: effectiveSignedSpeed,
+      maxSpeed: MAX_SPEED,
+      steer,
+      throttle,
+      isMobile: window.innerWidth < 800,
+    }) || getBoatFeelDebug(localBoatFeelState);
     // Leave a trail point for the local player
     addTrailPoint(yourId, player.position);
     // Emit engine particles based on speed
@@ -4231,12 +4486,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       const exhaustLocal = new THREE.Vector3(0, -1.0, 0);
       const exhaustPos = exhaustLocal.applyQuaternion(player.quaternion).add(player.position);
       emitters.engine.emitAt(exhaustPos, dir, 1 + Math.abs(playerSpeed) * 150);
-      // Water splash when steering at speed; spawn near stern but anchored under hull
-      if (Math.abs(playerSpeed) > 0.01 && (keyboard["ArrowLeft"] || keyboard["ArrowRight"])) {
-        const splashLocal = new THREE.Vector3(0, -1.0, -0.3);
-        const splashPos = splashLocal.applyQuaternion(player.quaternion).add(player.position);
-        emitters.splash.trigger(splashPos, 6);
-      }
     }
   }
 
@@ -4256,6 +4505,15 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         m.position.z = THREE.MathUtils.lerp(m.position.z, s.z, lerpFactor);
         const delta = ((s.rotY - m.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
         m.rotation.y += delta * lerpFactor;
+        updateBoatFeel(m, m.userData && m.userData.boatFeel, {
+          dt: frameDt || 0.016,
+          time: performance.now() * 0.001,
+          speed: typeof s.speed === "number" ? s.speed : null,
+          maxSpeed: serverPhysics?.maxSpeed || 3,
+          steer: 0,
+          throttle: 0,
+          isMobile: window.innerWidth < 800,
+        });
         // Trail for remote players
         addTrailPoint(id, m.position);
       });
@@ -4268,6 +4526,15 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         playerMeshes[id].position.z = THREE.MathUtils.lerp(playerMeshes[id].position.z, otherPlayers[id].z, lerpFactor);
         const delta = ((otherPlayers[id].rotY - playerMeshes[id].rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
         playerMeshes[id].rotation.y += delta * lerpFactor;
+        updateBoatFeel(playerMeshes[id], playerMeshes[id].userData && playerMeshes[id].userData.boatFeel, {
+          dt: frameDt || 0.016,
+          time: performance.now() * 0.001,
+          speed: null,
+          maxSpeed: serverPhysics?.maxSpeed || 3,
+          steer: 0,
+          throttle: 0,
+          isMobile: window.innerWidth < 800,
+        });
         applyLodForGroup(playerMeshes[id]);
         // Leave a trail point for remote players
         addTrailPoint(id, playerMeshes[id].position);
@@ -4288,7 +4555,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       const lag = serverAuthEnabled ? Math.max(0, Math.round(nowDbg - (authStatesTime || nowDbg))) : 0;
       const th = (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0);
       const st = (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0);
-      const sp = typeof playerSpeed === "number" ? playerSpeed.toFixed(2) : "0.00";
+      const sp = Number.isFinite(latestEffectiveSpeed) ? latestEffectiveSpeed.toFixed(2) : "0.00";
       const px = player ? player.position.x.toFixed(2) : "0.00";
       const pz = player ? player.position.z.toFixed(2) : "0.00";
       const netQ = networkStats.quality || "unknown";
@@ -4428,6 +4695,11 @@ function isPowerUp(type) {
 }
 
 function endGame() {
+  if (gameOverFlag) {
+    stopLocalTimeTicker();
+    setPhase("POST_GAME");
+    return;
+  }
   stopLocalTimeTicker();
   emitGameplayEvent("game_over", {
     final_score: Number(localScore || 0),
@@ -4443,23 +4715,7 @@ function endGame() {
   gameOverFlag = true;
   keyboard = {};
   mobileInput = { throttle: 0, steer: 0, active: false };
-  clearCullingDebugHelpers(scene);
-
-  for (const [, mesh] of Object.entries(itemMeshes)) {
-    if (mesh && mesh.isObject3D) scene.remove(mesh);
-  }
-  clearTrashInstances();
-  clearPowerupInstances();
-  // Cleanup trails and freeze UI
-  for (const t of Object.values(trails)) {
-    scene.remove(t.line);
-  }
-  trails = {};
-  freezeUntilMs = 0;
-  if (freezeDiv) {
-    freezeDiv.remove();
-    freezeDiv = null;
-  }
+  clearMatchVisualState();
 
   // Populate results screen instead of creating ad-hoc overlays
   const rn = document.getElementById("results-name");
@@ -4506,21 +4762,52 @@ function renderGameToText() {
       z: Number((mesh.position?.z || 0).toFixed(3)),
       rotY: Number((mesh.rotation?.y || 0).toFixed(3)),
     }));
+  const px = player ? Number(player.position.x || 0) : 0;
+  const pz = player ? Number(player.position.z || 0) : 0;
+  const trashSamples = Object.entries(items || {})
+    .filter(([itemId, item]) => {
+      if (!item || isMarineLife(item.type) || isPowerUp(item.type)) return false;
+      return trashInstances && trashInstances.map && trashInstances.map.has(itemId);
+    })
+    .map(([itemId, item]) => {
+      const x = Number(item.position?.x || 0);
+      const y = Number(item.position?.y || 0);
+      const z = Number(item.position?.z || 0);
+      return {
+        id: itemId,
+        x: Number(x.toFixed(3)),
+        y: Number(y.toFixed(3)),
+        z: Number(z.toFixed(3)),
+        distance: Number(Math.hypot(px - x, pz - z).toFixed(3)),
+      };
+    })
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 5);
   const payload = {
     mode: gameState,
     coordinateSystem: "World origin is center; +x right, +z forward, +y up",
     player: player
-      ? { x: Number(player.position.x || 0), y: Number(player.position.y || 0), z: Number(player.position.z || 0) }
+      ? {
+          x: Number(player.position.x || 0),
+          y: Number(player.position.y || 0),
+          z: Number(player.position.z || 0),
+          rotY: Number(player.rotation.y || 0),
+          speed: Number((latestEffectiveSpeed || 0).toFixed(3)),
+        }
       : null,
+    serverAuthEnabled,
+    authLagMs: latestAuthLagMs,
     score: Number(localScore || 0),
     timeRemaining: Number(remainingTime || 0),
     playersVisible: Object.keys(otherPlayers || {}).length,
     itemsVisible: Object.keys(items || {}).length,
     trashInstances: trashInstances && trashInstances.map ? trashInstances.map.size : 0,
+    trashSamples,
     powerupInstances: powerupInstances && powerupInstances.map ? powerupInstances.map.size : 0,
     environmentPropsVisible: environmentPropStats.total || 0,
     turtlesVisible: turtleSamples.length,
     turtleSamples,
+    boatFeel: getBoatFeelDebug(localBoatFeelState) || latestBoatFeelDebug,
     powerUps: {
       speed: Number(powerUpState.speedMultiplier || 1),
       shield: !!powerUpState.shield,

@@ -6,7 +6,7 @@ import { deleteCurrentScore, postCurrentScore } from "./score.js";
 import pkg from "./package.json" with { type: "json" };
 import ObjectPool from './object-pool.js';
 import { updateRuntimeMetrics } from "./metrics.js";
-import { buildCommentary, recordGameEvent } from "./lib/gameEvents.js";
+import { buildCommentary, recordGameEvent, recordPlayerSessionProfile } from "./lib/gameEvents.js";
 import { createCoherenceAdapter } from "./lib/coherenceSocketAdapter.js";
 import {
   resolveRealtimeBackend,
@@ -14,6 +14,12 @@ import {
   socketBusConfigFromEnv,
 } from "./lib/realtimeBackend.js";
 import { reinitializeItemForSpawn, snapshotItemForEvent } from "./lib/itemLifecycle.js";
+import {
+  buildPlayerSessionProfile,
+  resolveAuthoritativeBoatTypes,
+  resolveCollisionValidateRadius,
+  resolveServerAuthSpeedLimit,
+} from "./lib/gameLogic.js";
 
 dotenv.config();
 dotenv.config({ path: "config/.env" });
@@ -218,44 +224,7 @@ const GAME_DURATION_IN_SECONDS = process.env.GAME_DURATION_IN_SECONDS
   ? parseInt(process.env.GAME_DURATION_IN_SECONDS)
   : 180;
 
-const BOAT_TYPES = {
-  speed: {
-    maxSpeed: 100,
-    handling: 0.8,
-    capacity: 5,
-    mass: 1000,
-    drag: 0.1,
-    angularDrag: 0.05,
-    acceleration: 8,
-    brake: 4,
-    turnSpeed: 0.6,
-    driftFactor: 0.1
-  },
-  fishing: {
-    maxSpeed: 60,
-    handling: 0.6,
-    capacity: 15,
-    mass: 2000,
-    drag: 0.3,
-    angularDrag: 0.15,
-    acceleration: 4,
-    brake: 3,
-    turnSpeed: 0.4,
-    driftFactor: 0.05
-  },
-  rescue: {
-    maxSpeed: 80,
-    handling: 0.7,
-    capacity: 10,
-    mass: 1500,
-    drag: 0.2,
-    angularDrag: 0.1,
-    acceleration: 6,
-    brake: 3.5,
-    turnSpeed: 0.5,
-    driftFactor: 0.08
-  }
-};
+const BOAT_TYPES = resolveAuthoritativeBoatTypes(process.env);
 
 const PHYSICS_CONFIG = {
   acceleration: parseFloat(process.env.PHYS_ACCELERATION ?? "6"),
@@ -269,8 +238,9 @@ const PHYSICS_CONFIG = {
 const SERVER_AUTH_ENABLED = process.env.SERVER_AUTH_ENABLED === "true";
 const SIM_TPS = parseInt(process.env.SIM_TPS ?? "60");
 const STATE_BROADCAST_HZ = parseInt(process.env.STATE_BROADCAST_HZ ?? "20");
-const COLLISION_VALIDATE_RADIUS = parseFloat(process.env.COLLISION_VALIDATE_RADIUS ?? "1.0");
+const COLLISION_VALIDATE_RADIUS = resolveCollisionValidateRadius(process.env.COLLISION_VALIDATE_RADIUS);
 const POWERUP_SPEED_MULTIPLIER = parseFloat(process.env.POWERUP_SPEED_MULTIPLIER ?? "2");
+const SERVER_AUTH_MAX_SPEED_LIMIT = resolveServerAuthSpeedLimit(process.env.SERVER_AUTH_MAX_SPEED_LIMIT);
 const POWERUP_SPEED_DURATION_MS = parseInt(process.env.POWERUP_SPEED_DURATION_MS ?? "10000");
 const POWERUP_SHIELD_DURATION_MS = parseInt(process.env.POWERUP_SHIELD_DURATION_MS ?? "5000");
 const POWERUP_MAGNET_DURATION_MS = parseInt(process.env.POWERUP_MAGNET_DURATION_MS ?? "8000");
@@ -287,7 +257,7 @@ let gameState = 'WAITING';
 let gameStartTime = null;
 let gameStartingAt = null;
 let gameTimer = null;
-const roomTimers = new Map(); // roomId -> { state, startTime, startingAt, timerId }
+const roomTimers = new Map(); // roomId -> { state, startTime, startingAt, timerId, resetTimerId }
 const GLOBAL_ROOM = "__global__";
 const pendingRoomRefills = new Map();
 
@@ -328,17 +298,16 @@ async function humansInRoomDirectory(room) {
   if (isLoadCanaryRoom(want)) return 0;
   let info = {};
   try {
-    if (ENABLE_COHERENCE_BACKEND && mapPlayersInfo) {
-      info = await getPlayersInfoObject();
-    } else {
-      info = mapPlayersInfo || {};
-    }
+    info = ENABLE_COHERENCE_BACKEND && mapPlayersInfo
+      ? await readCacheEntries(mapPlayersInfo)
+      : (mapPlayersInfo || {});
   } catch (_) {
     info = {};
   }
   let humans = 0;
   for (const [id, v] of Object.entries(info || {})) {
-    const r = playerRooms.get(id) || DEFAULT_ROOM_ID;
+    const profileRoom = v && v.room ? normalizeRoom(v.room) : null;
+    const r = profileRoom || playerRooms.get(id) || DEFAULT_ROOM_ID;
     if (r !== want) continue;
     const name = v && v.name ? String(v.name) : "";
     if (!name.toLowerCase().startsWith("bot ")) humans++;
@@ -356,6 +325,15 @@ async function buildRoomsPayload() {
     const room = r || GLOBAL_ROOM;
     if (!isLoadCanaryRoom(room)) set.add(room);
   }
+  try {
+    const info = ENABLE_COHERENCE_BACKEND && mapPlayersInfo
+      ? await readCacheEntries(mapPlayersInfo)
+      : (mapPlayersInfo || {});
+    for (const value of Object.values(info || {})) {
+      const room = value && value.room ? normalizeRoom(value.room) : null;
+      if (room && !isLoadCanaryRoom(room)) set.add(room);
+    }
+  } catch (_) {}
 
   const rooms = [];
   for (const id of set.values()) {
@@ -544,6 +522,49 @@ export async function start(
     return ENABLE_COHERENCE_BACKEND ? localPlayersInfo : mapPlayersInfo;
   }
 
+  async function upsertPlayerSessionProfile(id, input = {}) {
+    if (!id) return null;
+    const info = await getPlayersInfoObject();
+    const existing = info && info[id] ? info[id] : {};
+    const profile = buildPlayerSessionProfile(existing, {
+      ...input,
+      id,
+    });
+    if (ENABLE_COHERENCE_BACKEND) {
+      await writeCache(mapPlayersInfo, id, profile);
+    } else {
+      mapPlayersInfo[id] = profile;
+    }
+    runAsyncTask("player.session.profile.persist", () => recordPlayerSessionProfile(profile));
+    return profile;
+  }
+
+  async function getPlayersInfoForRoom(room) {
+    const info = ENABLE_COHERENCE_BACKEND && mapPlayersInfo
+      ? await readCacheEntries(mapPlayersInfo)
+      : await getPlayersInfoObject();
+    const wanted = room || GLOBAL_ROOM;
+    const scoped = {};
+    for (const [id, value] of Object.entries(info || {})) {
+      const profileRoom = value && value.room ? normalizeRoom(value.room) : null;
+      const playerRoom = profileRoom || playerRooms.get(id) || GLOBAL_ROOM;
+      if (playerRoom === wanted) scoped[id] = value;
+    }
+    return scoped;
+  }
+
+  async function emitLobbyPlayersForRoom(room) {
+    if (!room || isLoadCanaryRoom(room)) return;
+    const scoped = await getPlayersInfoForRoom(room);
+    io.to(room).emit("lobby.players", scoped);
+    io.to(room).emit("player.info.all", scoped);
+  }
+
+  async function emitLobbyPlayersForRooms(...rooms) {
+    const uniqueRooms = Array.from(new Set(rooms.filter(Boolean)));
+    await Promise.all(uniqueRooms.map((room) => emitLobbyPlayersForRoom(room)));
+  }
+
   // Persist per-room timer state (document-like record)
   async function persistRoomState(room, state) {
     try {
@@ -667,11 +688,39 @@ function broadcastRoomState(room, state, extra = {}) {
   if (extra.end) io.to(room).emit("game.end", extra.end);
 }
 
+function clearRoomResetTimer(room) {
+  const rs = roomTimers.get(room);
+  if (rs && rs.resetTimerId) {
+    try { clearTimeout(rs.resetTimerId); } catch (_) {}
+    rs.resetTimerId = null;
+    roomTimers.set(room, rs);
+  }
+}
+
+function scheduleRoomWaitingReset(room, delayMs = 10000) {
+  if (!room) return;
+  clearRoomResetTimer(room);
+  const rs = roomTimers.get(room) || { state: 'ENDED', startTime: null, startingAt: null, timerId: null };
+  rs.resetTimerId = setTimeout(() => {
+    const latest = roomTimers.get(room);
+    if (!latest || latest.state !== 'ENDED') return;
+    latest.resetTimerId = null;
+    roomTimers.set(room, latest);
+    broadcastRoomState(room, 'WAITING');
+  }, Math.max(0, delayMs));
+  roomTimers.set(room, rs);
+}
+
 function startRoomMatch(room) {
   if (!room) return { ok: false, error: "missing_room" };
   const existing = roomTimers.get(room) || { state: 'WAITING', startTime: null, startingAt: null, timerId: null };
-  if (existing.state !== 'WAITING') {
+  if (existing.state !== 'WAITING' && existing.state !== 'ENDED') {
     return { ok: false, error: "invalid_state", room, state: existing.state };
+  }
+  clearRoomResetTimer(room);
+  if (existing.timerId) {
+    try { clearInterval(existing.timerId); } catch (_) {}
+    existing.timerId = null;
   }
 
   const startingAt = Date.now() + 10000;
@@ -702,9 +751,7 @@ function startRoomMatch(room) {
         clearInterval(rs.timerId);
         rs.timerId = null;
         broadcastRoomState(room, 'ENDED', { end: { room } });
-        setTimeout(() => {
-          broadcastRoomState(room, 'WAITING');
-        }, 10000);
+        scheduleRoomWaitingReset(room, 10000);
         return;
       }
       io.to(room).emit("game.time", Math.max(0, Math.round(remaining / 1000)));
@@ -725,9 +772,7 @@ function endRoomMatch(room) {
   rs.startingAt = null;
   rs.startTime = null;
   broadcastRoomState(room, 'ENDED', { end: { room } });
-  setTimeout(() => {
-    broadcastRoomState(room, 'WAITING');
-  }, 10000);
+  scheduleRoomWaitingReset(room, 10000);
   return { ok: true, scope: "room", room, state: "ENDED" };
 }
 
@@ -776,11 +821,9 @@ function scheduleRoomRefill(room, delayMs = 0) {
           const initialItems = await getItemsForRoom(DEFAULT_ROOM_ID);
           socket.emit("items.all", initialItems);
 
-          // TODO: Implement spatial scoping for players (e.g., using rooms based on grid positions)
-          // For now, emitting to all - optimization needed for large player counts
           socket.emit(
             "player.info.all",
-            await getPlayersInfoObject()
+            await getPlayersInfoForRoom(DEFAULT_ROOM_ID)
           );
         } catch (e) {
           logger.error(`initial socket sync error: ${e && e.message ? e.message : e}`);
@@ -797,17 +840,23 @@ function scheduleRoomRefill(room, delayMs = 0) {
     }
 
 
-    socket.on("player.info.joining", async ({ id, name, room }) => {
+    socket.on("player.info.joining", async ({ id, name, room, clientSessionId, gameplaySessionId } = {}) => {
       // Track the playerId bound to this socket for chat attribution/throttling
+      if (!id) return;
       playerIdForSocket = id;
       const requestedRoom = normalizeRoom(room);
       const currentRoom = (socket.data && socket.data.room) || (requestedRoom || DEFAULT_ROOM_ID);
       const loadRoom = loadCanarySocket || isLoadCanaryRoom(currentRoom);
-      if (ENABLE_COHERENCE_BACKEND) {
-        await writeCache(mapPlayersInfo, id, { name });
-      } else {
-        mapPlayersInfo[id] = { name };
-      }
+      socket.data = socket.data || {};
+      if (clientSessionId) socket.data.clientSessionId = clientSessionId;
+      try { playerRooms.set(id, currentRoom); } catch (_) {}
+      const profile = await upsertPlayerSessionProfile(id, {
+        name,
+        room: currentRoom,
+        clientSessionId,
+        gameplaySessionId,
+      });
+      socket.emit("player.session", profile);
       // Seed chat history for this socket's current room
       if (!loadRoom) {
         try {
@@ -815,11 +864,8 @@ function scheduleRoomRefill(room, delayMs = 0) {
           const hist = roomChats.get(r) || [];
           socket.emit("chat.history", hist);
         } catch (_) {}
-        // Broadcast updated lobby roster
-        io.emit(
-          "lobby.players",
-          await getPlayersInfoObject()
-        );
+        // Broadcast updated lobby roster only to this room.
+        await emitLobbyPlayersForRoom(currentRoom);
         await emitPlayerCount();
       }
 
@@ -829,7 +875,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         playerRooms.set(id, cur);
         // Assign admin if unset for this room and joiner is a human
         try {
-          const isBot = typeof name === "string" && name.toLowerCase().startsWith("bot ");
+          const isBot = typeof profile?.name === "string" && profile.name.toLowerCase().startsWith("bot ");
           if (cur && !loadRoom && !roomAdmin.has(cur) && !isBot) {
             roomAdmin.set(cur, id);
             io.to(cur).emit("room.admin", { id });
@@ -845,9 +891,11 @@ function scheduleRoomRefill(room, delayMs = 0) {
           const prev = socket.data.room || null;
           if (prev && prev !== rnorm) { try { socket.leave(prev); } catch (_) {} }
           socket.data.room = rnorm;
+          try { playerRooms.set(id, rnorm); } catch (_) {}
           try { socket.join(rnorm); } catch (_) {}
           try { socket.leave(GLOBAL_ROOM); } catch (_) {}
           if (!isLoadCanaryRoom(rnorm)) scheduleRoomsUpdate(io);
+          await emitLobbyPlayersForRooms(prev, rnorm);
 
           let rs = roomTimers.get(rnorm);
           if (!rs && ENABLE_COHERENCE_BACKEND) {
@@ -889,7 +937,9 @@ function scheduleRoomRefill(room, delayMs = 0) {
           const prevR = socket.data.room || null;
           if (prevR && prevR !== defRoom) { try { socket.leave(prevR); } catch (_) {} }
           socket.data.room = defRoom;
+          try { playerRooms.set(id, defRoom); } catch (_) {}
           socket.join(defRoom);
+          await emitLobbyPlayersForRooms(prevR, defRoom);
         } catch (_) {}
         // Sync per-room state if any
         const rs = roomTimers.get(defRoom);
@@ -931,6 +981,11 @@ function scheduleRoomRefill(room, delayMs = 0) {
         // Track mapping for this player if we know their id already
         if (playerIdForSocket) {
           try { playerRooms.set(playerIdForSocket, wanted); } catch (_) {}
+          const profile = await upsertPlayerSessionProfile(playerIdForSocket, {
+            room: wanted,
+            clientSessionId: socket.data && socket.data.clientSessionId,
+          });
+          socket.emit("player.session", profile);
           // If no admin yet for this room, promote this player
           try {
             if (!roomAdmin.has(wanted)) {
@@ -939,6 +994,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
             }
           } catch (_) {}
         }
+        await emitLobbyPlayersForRooms(prev, wanted);
         // Ack to caller and push current state/items for that room
         socket.emit("room.joined", { id: wanted, default: wanted === DEFAULT_ROOM_ID, state: (roomTimers.get(wanted)?.state || 'WAITING') });
         try {
@@ -972,24 +1028,35 @@ function scheduleRoomRefill(room, delayMs = 0) {
       }
     });
 
-    socket.on("game.start", async ({ playerId, playerName }) => {
+    socket.on("game.start", async ({ playerId, playerName, clientSessionId, gameplaySessionId } = {}) => {
+      if (!playerId) return;
       playerIdForSocket = playerId;
       mapPlayerSockets[playerId] = socket;
-      try { playerRooms.set(playerId, (socket.data && socket.data.room) || null); } catch (_) {}
-      const body = { name: playerName };
-      if (ENABLE_COHERENCE_BACKEND) {
-        await writeCache(mapPlayersInfo, playerId, body);
-      } else {
-        mapPlayersInfo[playerId] = body;
+      const room = getSocketRoom(socket);
+      try { playerRooms.set(playerId, room); } catch (_) {}
+      if (clientSessionId) {
+        socket.data = socket.data || {};
+        socket.data.clientSessionId = clientSessionId;
       }
-      io.emit("player.info.joined", {
-        id: playerId,
+      const profile = await upsertPlayerSessionProfile(playerId, {
         name: playerName,
+        room,
+        clientSessionId: clientSessionId || (socket.data && socket.data.clientSessionId),
+        gameplaySessionId: gameplaySessionId || sessionIdForRoom(room),
       });
+      socket.emit("player.session", profile);
+      io.to(room).emit("player.info.joined", {
+        id: playerId,
+        name: profile?.name || playerName || "Player",
+        profile,
+      });
+      await emitLobbyPlayersForRoom(room);
       await emitPlayerCount();
 
       // Initialize authoritative state for late joiners when a match is already RUNNING
-      if (SERVER_AUTH_ENABLED && gameState === 'RUNNING' && !playersState.has(playerId)) {
+      const rs = roomTimers.get(room);
+      const matchRunning = rs ? rs.state === 'RUNNING' : gameState === 'RUNNING';
+      if (SERVER_AUTH_ENABLED && matchRunning && !playersState.has(playerId)) {
         const startX = randSpawnCoord(worldSizeX);
         const startZ = randSpawnCoord(worldSizeZ);
         playersState.set(playerId, {
@@ -1084,13 +1151,18 @@ function scheduleRoomRefill(room, delayMs = 0) {
     socket.on("game.event", async (payload = {}, ack) => {
       try {
         const room = getSocketRoom(socket);
+        let canonicalPlayerName;
+        try {
+          const info = await getPlayersInfoObject();
+          canonicalPlayerName = playerIdForSocket && info && info[playerIdForSocket] && info[playerIdForSocket].name
+            ? String(info[playerIdForSocket].name)
+            : undefined;
+        } catch (_) {}
         const result = await recordGameEvent(payload, {
           roomId: room,
           sessionId: payload.session_id || payload.sessionId || sessionIdForRoom(room),
           playerId: playerIdForSocket,
-          playerName: mapPlayersInfo && playerIdForSocket
-            ? (ENABLE_COHERENCE_BACKEND ? undefined : mapPlayersInfo[playerIdForSocket]?.name)
-            : undefined,
+          playerName: canonicalPlayerName,
         });
         let commentary = null;
         if (result.event && result.event.event_type === "game_over") {
@@ -1115,6 +1187,24 @@ function scheduleRoomRefill(room, delayMs = 0) {
       };
       try {
         const room = getSocketRoom(socket);
+        if (playerIdForSocket) {
+          if (playerId && playerId !== playerIdForSocket) {
+            safeAck({ ok: false, error: "wrong_player", itemId });
+            return;
+          }
+          playerId = playerIdForSocket;
+        }
+        if (!playerId) {
+          safeAck({ ok: false, error: "missing_player", itemId });
+          return;
+        }
+        try {
+          const info = await getPlayersInfoObject();
+          const recordedName = info && info[playerId] && info[playerId].name ? String(info[playerId].name) : "";
+          playerName = recordedName || playerName || "Player";
+        } catch (_) {
+          playerName = playerName || "Player";
+        }
         // Ignore collisions unless match is RUNNING (per-room or global)
         const rs = roomTimers.get(room);
         if (rs ? rs.state !== 'RUNNING' : gameState !== 'RUNNING') {
@@ -1339,7 +1429,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
     socket.on("disconnect", async (reason) => {
       const prevRoom = playerRooms.get(playerIdForSocket) || null;
       const loadRoom = loadCanarySocket || isLoadCanaryRoom(prevRoom);
-      if (!loadRoom) io.emit("player.info.left", playerIdForSocket);
+      if (!loadRoom) io.to(prevRoom || GLOBAL_ROOM).emit("player.info.left", playerIdForSocket);
       if (ENABLE_COHERENCE_BACKEND) {
         await deleteCache(mapPlayersTraces, playerIdForSocket);
         await deleteCache(mapPlayersInfo, playerIdForSocket);
@@ -1371,10 +1461,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
 
       // Broadcast updated lobby roster after removal
       if (!loadRoom) {
-        io.emit(
-          "lobby.players",
-          await getPlayersInfoObject()
-        );
+        await emitLobbyPlayersForRoom(prevRoom || GLOBAL_ROOM);
       }
       logger.info(`${playerIdForSocket} disconnected because ${reason}`);
       if (!loadRoom) await emitPlayerCount();
@@ -1523,7 +1610,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
             Object.keys(mapPlayerSockets).forEach(async (playerId) => {
               const socket = mapPlayerSockets[playerId];
               socket.emit("game.end", { playerId });
-              io.emit("player.info.left", playerId);
+              io.to(playerRooms.get(playerId) || GLOBAL_ROOM).emit("player.info.left", playerId);
               if (ENABLE_COHERENCE_BACKEND) {
                 await deleteCache(mapPlayersTraces, playerId);
                 await deleteCache(mapPlayersInfo, playerId);
@@ -1567,7 +1654,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       Object.keys(mapPlayerSockets).forEach(async (playerId) => {
         const socket = mapPlayerSockets[playerId];
         socket.emit("game.end", { playerId });
-        io.emit("player.info.left", playerId);
+        io.to(playerRooms.get(playerId) || GLOBAL_ROOM).emit("player.info.left", playerId);
         if (ENABLE_COHERENCE_BACKEND) {
           await deleteCache(mapPlayersTraces, playerId);
           await deleteCache(mapPlayersInfo, playerId);
@@ -1736,7 +1823,9 @@ function scheduleRoomRefill(room, delayMs = 0) {
       const brakeAcc = typeConfig.brake;
       const friction = typeConfig.drag;
       const turnSpeed = typeConfig.turnSpeed * typeConfig.handling;
-      const maxSpeed = typeConfig.maxSpeed * (state.speedMul || 1) * freezeMul;
+      const configuredMaxSpeed = Math.max(0, Number(typeConfig.maxSpeed) || PHYSICS_CONFIG.maxSpeed || 3);
+      const hardSpeedLimit = Math.max(0.5, Number(SERVER_AUTH_MAX_SPEED_LIMIT) || 4.5);
+      const maxSpeed = Math.min(hardSpeedLimit, configuredMaxSpeed * (state.speedMul || 1) * freezeMul);
 
       state.vel = (state.vel || 0) + (input.throttle || 0) * acc * dt;
       if (input.brake) state.vel -= brakeAcc * dt;
@@ -1937,7 +2026,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         delete mapPlayersInfo[p.id];
       }
 
-      io.emit('player.info.left', p.id);
+      io.to(room).emit('player.info.left', p.id);
     }
     emitPlayerCount();
   }, CLEANUP_STALE_IN_SECONDS * 1000);

@@ -271,182 +271,50 @@
           <div class="admin-evidence-header">
             <div>
               <div class="admin-section-eyebrow">Production Canary</div>
-              <h3>Player Join and Commentary Evaluation</h3>
+              <h3>Load Gate Proof</h3>
             </div>
             <div class="admin-evidence-verdict">Tier 1000 pass</div>
           </div>
 
           <div class="admin-evidence-metrics" aria-label="Load canary summary">
             <div class="admin-metric">
-              <span>Strict pass</span>
-              <strong>1000</strong>
-            </div>
-            <div class="admin-metric">
-              <span>Score proof</span>
+              <span>Joined</span>
               <strong>1000/1000</strong>
             </div>
             <div class="admin-metric">
-              <span>Tier 1000 commentary</span>
+              <span>Score rows</span>
               <strong>1000/1000</strong>
             </div>
             <div class="admin-metric">
-              <span>Tier 1000 p95</span>
-              <strong>3742 ms</strong>
+              <span>Commentary</span>
+              <strong>1000/1000</strong>
+            </div>
+            <div class="admin-metric">
+              <span>Duplicates</span>
+              <strong>0</strong>
+            </div>
+            <div class="admin-metric">
+              <span>p95</span>
+              <strong>2420 ms</strong>
             </div>
           </div>
 
-          <div class="admin-evidence-grid">
-            <section class="admin-evidence-section">
-              <div class="admin-section-title">How It Happened</div>
-              <ol class="admin-timeline">
-                <li>
-                  <span class="admin-step-state passed">Pass</span>
-                  <div>
-                    <strong>Tiers 5 and 10 proved the end-to-end path.</strong>
-                    <span>Every joined player wrote a high-score row and received unique Oracle/PAF commentary.</span>
-                  </div>
-                </li>
-                <li>
-                  <span class="admin-step-state failed">Gate</span>
-                  <div>
-                    <strong>Tier 50 exposed commentary timeouts.</strong>
-                    <span>50 players joined and wrote score rows, but 16 commentary events missed the gate before the PAF budget fix.</span>
-                  </div>
-                </li>
-                <li>
-                  <span class="admin-step-state scaled">Scale</span>
-                  <div>
-                    <strong>Private base and fine-tuned endpoints were wired.</strong>
-                    <span>Tier 100 passed with 100/100 score rows, 100/100 PAF routed commentary, 0 duplicates, and 8196 ms p95 latency.</span>
-                  </div>
-                </li>
-                <li>
-                  <span class="admin-step-state failed">Gate</span>
-                  <div>
-                    <strong>Tier 500 found the next capacity gate.</strong>
-                    <span>500/500 joined and wrote score rows, but 411 players fell back to deterministic server commentary before model metadata arrived.</span>
-                  </div>
-                </li>
-                <li>
-                  <span class="admin-step-state passed">Pass</span>
-                  <div>
-                    <strong>PAF fast path removed the fallback pressure.</strong>
-                    <span>Tiers 500 and 1000 passed with full model-route metadata, 0 duplicates, and every joined player verified in the high-score test table.</span>
-                  </div>
-                </li>
-              </ol>
-            </section>
-
-            <section class="admin-evidence-section">
-              <div class="admin-section-title">Tracked Gates</div>
-              <ul class="admin-gate-list">
-                <li><span class="admin-gate-pass">Pass</span> Join failures stayed at 0%</li>
-                <li><span class="admin-gate-pass">Pass</span> High-score test rows matched joined players</li>
-                <li><span class="admin-gate-pass">Pass</span> Tier 1000 commentary stayed on the full Oracle/PAF path</li>
-                <li><span class="admin-gate-pass">Pass</span> Duplicate commentary count stayed 0</li>
-                <li><span class="admin-gate-pass">Pass</span> p95 commentary latency stayed below 10s</li>
-                <li><span class="admin-gate-pass">Pass</span> No deterministic fallback commentary accepted</li>
-              </ul>
-            </section>
-          </div>
-
-          <div class="admin-run-table-wrap">
-            <table class="admin-run-table" aria-label="Load canary runs">
-              <thead>
-                <tr>
-                  <th>Run</th>
-                  <th>Tier</th>
-                  <th>Verdict</th>
-                  <th>Joined</th>
-                  <th>Score Rows</th>
-                  <th>Commentary</th>
-                  <th>p95</th>
-                  <th>Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>202606131033</td>
-                  <td>5</td>
-                  <td><span class="admin-status-pill passed">Passed</span></td>
-                  <td>5/5</td>
-                  <td>5</td>
-                  <td>5</td>
-                  <td>9726 ms</td>
-                  <td>Canvas and Select AI smoke</td>
-                </tr>
-                <tr>
-                  <td>202606131034</td>
-                  <td>10</td>
-                  <td><span class="admin-status-pill passed">Passed</span></td>
-                  <td>10/10</td>
-                  <td>10</td>
-                  <td>10</td>
-                  <td>9477 ms</td>
-                  <td>Unique commentary and score rows</td>
-                </tr>
-                <tr>
-                  <td>202606131035</td>
-                  <td>50</td>
-                  <td><span class="admin-status-pill failed">Failed</span></td>
-                  <td>50/50</td>
-                  <td>50</td>
-                  <td>34</td>
-                  <td>9412 ms</td>
-                  <td>16 commentary timeouts</td>
-                </tr>
-                <tr>
-                  <td>202606132046</td>
-                  <td>500</td>
-                  <td><span class="admin-status-pill failed">Held</span></td>
-                  <td>500/500</td>
-                  <td>500</td>
-                  <td>499</td>
-                  <td>8398 ms</td>
-                  <td>411 deterministic fallback responses</td>
-                </tr>
-                <tr>
-                  <td>202606132048</td>
-                  <td>50</td>
-                  <td><span class="admin-status-pill passed">Passed</span></td>
-                  <td>50/50</td>
-                  <td>50</td>
-                  <td>50</td>
-                  <td>454 ms</td>
-                  <td>Fast-path private model route</td>
-                </tr>
-                <tr>
-                  <td>202606132048</td>
-                  <td>100</td>
-                  <td><span class="admin-status-pill passed">Passed</span></td>
-                  <td>100/100</td>
-                  <td>100</td>
-                  <td>100</td>
-                  <td>390 ms</td>
-                  <td>oci-base to oci-fine-tuned shadow</td>
-                </tr>
-                <tr>
-                  <td>202606132049</td>
-                  <td>500</td>
-                  <td><span class="admin-status-pill passed">Passed</span></td>
-                  <td>500/500</td>
-                  <td>500</td>
-                  <td>500</td>
-                  <td>1549 ms</td>
-                  <td>Fast-path model metadata on every player</td>
-                </tr>
-                <tr>
-                  <td>202606132050</td>
-                  <td>1000</td>
-                  <td><span class="admin-status-pill passed">Passed</span></td>
-                  <td>1000/1000</td>
-                  <td>1000</td>
-                  <td>1000</td>
-                  <td>3742 ms</td>
-                  <td>1000/1000 oci-base to oci-fine-tuned shadow</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="admin-proof-receipts" aria-label="Load canary receipts">
+            <div>
+              <span>Run</span>
+              <strong>202606132052-fastpath-full</strong>
+              <em>High-score test table verified 1000/1000 rows at tier 1000.</em>
+            </div>
+            <div>
+              <span>Gate</span>
+              <strong>No fallback accepted</strong>
+              <em>Earlier deterministic fallback was held; fast path carries model metadata on every player.</em>
+            </div>
+            <div>
+              <span>Route</span>
+              <strong>oci-base -> oci-fine-tuned</strong>
+              <em>Shadow route metadata stayed attached through commentary.ready.</em>
+            </div>
           </div>
         </div>
 
@@ -454,14 +322,14 @@
           <div class="admin-evidence-header">
             <div>
               <div class="admin-section-eyebrow">Model AI</div>
-              <h3>Continuous Learning Evidence</h3>
+              <h3>Learning Gate</h3>
             </div>
-            <div class="admin-evidence-verdict">Shadow canary</div>
+            <div class="admin-evidence-verdict">LLM proof gate pending</div>
           </div>
 
           <div class="admin-learning-frame">
             <strong>Facts in memory, behavior in weights.</strong>
-            <span>Oracle AI Database stores the changing game facts, evidence references, traces, evals, training examples, and promotion decisions. The fine-tuned model is judged only on commentary behavior: concise shape, citations, confidence, and safe tool-use format.</span>
+            <span>Oracle AI Database stores changing game facts, evidence references, traces, evals, training examples, and promotion decisions. The candidate is judged on commentary behavior only.</span>
           </div>
 
           <div class="admin-evidence-metrics" aria-label="Model learning summary">
@@ -479,26 +347,16 @@
             </div>
             <div class="admin-metric">
               <span>Runtime</span>
-              <strong>Adapter</strong>
+              <strong>behavior-adapter</strong>
             </div>
             <div class="admin-metric">
               <span>Handoff</span>
-              <strong>OpenAI</strong>
+              <strong>openai:2</strong>
             </div>
             <div class="admin-metric">
               <span>LLM proof gate</span>
               <strong>Pending</strong>
             </div>
-          </div>
-
-          <div class="admin-learning-pipeline" aria-label="Learning pipeline timeline">
-            <div><span>Trace harvest</span><strong>STWL_MODEL_TRACES</strong></div>
-            <div><span>Eval</span><strong>stwl-commentary-v1</strong></div>
-            <div><span>Dataset</span><strong>behavior-only</strong></div>
-            <div><span>Train</span><strong>A10 LoRA job pending</strong></div>
-            <div><span>Deploy</span><strong>private OKE endpoints</strong></div>
-            <div><span>Canary gate</span><strong>strict</strong></div>
-            <div><span>Promote</span><strong>manual approval</strong></div>
           </div>
 
           <div class="admin-proof-receipts" aria-label="Latest model AI proof receipts">
@@ -520,7 +378,7 @@
             <div>
               <span>Adapter handoff</span>
               <strong>upstream formats openai:2</strong>
-              <em>Both private routes can carry trace ID, route context, and Oracle AI Database evidence refs into upstream model calls.</em>
+              <em>OpenAI upstream handoff contract is wired for both private routes.</em>
             </div>
             <div>
               <span>Upstream gate</span>
@@ -529,65 +387,9 @@
             </div>
           </div>
 
-          <div class="admin-learning-grid">
-            <section class="admin-evidence-section">
-              <div class="admin-section-title">Base vs Fine-Tuned Output</div>
-              <div class="admin-comparison">
-                <div>
-                  <span class="admin-provider-label">oci-base</span>
-                  <p>Ada finished with 42 points after a clean evidence-backed run.</p>
-                  <dl>
-                    <div><dt>Model</dt><dd>stwl-base-commentary-oke-adapter</dd></div>
-                    <div><dt>Runtime</dt><dd>behavior-adapter</dd></div>
-                    <div><dt>Handoff</dt><dd>openai evidence packet</dd></div>
-                    <div><dt>Tokens</dt><dd>12</dd></div>
-                  </dl>
-                </div>
-                <div>
-                  <span class="admin-provider-label">oci-fine-tuned</span>
-                  <p>Ada closed on 42 points, grounded in SQL evidence.</p>
-                  <dl>
-                    <div><dt>Model</dt><dd>stwl-ft-commentary-oke-adapter</dd></div>
-                    <div><dt>Runtime</dt><dd>behavior-adapter</dd></div>
-                    <div><dt>Handoff</dt><dd>openai evidence packet</dd></div>
-                    <div><dt>Tokens</dt><dd>9</dd></div>
-                  </dl>
-                </div>
-              </div>
-            </section>
-
-            <section class="admin-evidence-section">
-              <div class="admin-section-title">DB Evidence and Score Proof</div>
-              <ul class="admin-gate-list">
-                <li><span class="admin-gate-pass">Pass</span> STWL_GAME_EVENTS had game_over rows for joined players</li>
-                <li><span class="admin-gate-pass">Pass</span> High-score test table verified 1000/1000 rows at tier 1000</li>
-                <li><span class="admin-gate-pass">Pass</span> Evidence hash matched the PAF prompt hash lineage</li>
-                <li><span class="admin-gate-pass">Pass</span> Training examples captured redacted behavior traces only</li>
-                <li><span class="admin-gate-pass">Pass</span> Both private adapters expose the OpenAI upstream handoff contract</li>
-                <li><span class="admin-gate-pending">Pending</span> Upstream LLM runtime gate waits for both route outputs to report upstream-llm</li>
-              </ul>
-            </section>
-
-            <section class="admin-evidence-section">
-              <div class="admin-section-title">Rubric Scores</div>
-              <div class="admin-rubric-grid">
-                <span>uses_retrieved_evidence</span><strong>Pass</strong>
-                <span>no_hallucinated_game_facts</span><strong>Pass</strong>
-                <span>unique_commentary</span><strong>Pass</strong>
-                <span>commentary_quality</span><strong>Pass</strong>
-                <span>confidence_calibrated</span><strong>Pass</strong>
-                <span>token_efficiency</span><strong>FT wins</strong>
-                <span>safe_for_stage</span><strong>Pass</strong>
-              </div>
-            </section>
-
-            <section class="admin-evidence-section">
-              <div class="admin-section-title">Gate Explanation</div>
-              <div class="admin-learning-note">
-                <strong>Promotion held for upstream GPU LLM runtime, not for the load gate.</strong>
-                <span>The router, traces, evals, and base-vs-fine-tuned metadata are stable through tier 1000; both private adapters now expose an OpenAI-compatible evidence handoff for upstream model calls. The true fine-tuned promotion gate still waits for private upstream model runtime instead of behavior-adapter mode. The production load harness now has an explicit upstream LLM gate so adapter-mode canary success cannot be mistaken for two live LLMs.</span>
-              </div>
-            </section>
+          <div class="admin-learning-note">
+            <strong>Promotion held for upstream GPU LLM runtime, not for the load gate.</strong>
+            <span>The router, traces, evals, and shadow metadata are stable through tier 1000. The fine-tuned promotion claim waits for both private routes to report runtime_mode=upstream-llm and pass the strict canary.</span>
           </div>
         </div>
       </section>

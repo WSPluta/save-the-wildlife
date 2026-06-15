@@ -59,6 +59,30 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/waterColor: ARCADE_ENVIRONMENT\.waterColor,/);
   });
 
+  it("adds boat feel as a visual-only layer without changing gameplay collision root", () => {
+    expect(script).toMatch(/createBoatFeelState,/);
+    expect(script).toMatch(/installBoatFeelPivot,/);
+    expect(script).toMatch(/updateBoatFeel,/);
+    expect(script).toMatch(/function captureGameplayCollisionBox\(object3d\)/);
+    expect(script).toMatch(/function getPlayerCollisionBox\(\)/);
+    expect(script).toMatch(/object3d\.userData\.gameplayCollisionBoxLocal = playerCollisionWorldBox\.clone\(\)\.applyMatrix4\(playerCollisionMatrix\);/);
+    expect(script).toMatch(/const playerRoot = new THREE\.Group\(\);/);
+    expect(script).toMatch(/playerRoot\.name = "localPlayerGameplayRoot";/);
+    expect(script).toMatch(/playerRoot\.add\(boat\);/);
+    expect(script).toMatch(/captureGameplayCollisionBox\(player\);/);
+    expect(script).toMatch(/localBoatFeelState = createBoatFeelState\(\);/);
+    expect(script).toMatch(/installBoatFeelPivot\(player, \[boat\]\);/);
+    expect(script).toMatch(/const playerBox = getPlayerCollisionBox\(\);/);
+    expect(script).toMatch(/latestBoatFeelDebug = updateBoatFeel\(player, localBoatFeelState,/);
+    expect(script).toMatch(/updateBoatFeel\(m, m\.userData && m\.userData\.boatFeel,/);
+    expect(script).toMatch(/boatFeel: getBoatFeelDebug\(localBoatFeelState\) \|\| latestBoatFeelDebug,/);
+    expect(script).not.toMatch(/createWakeRippleEffect/);
+    expect(script).not.toMatch(/wakeRippleEffect/);
+    expect(script).not.toMatch(/wakeRipples: latestWakeRippleDebug,/);
+    expect(script).toMatch(/if \(key === yourId\) \{/);
+    expect(script).toMatch(/try \{ disableReflectionForSprite\(sprite\); \} catch \(_\) \{\}/);
+  });
+
   it("pins the arcade-bright water and lightweight environment prop pass", () => {
     expect(script).toMatch(/const ARCADE_ENVIRONMENT = Object\.freeze\(\{/);
     expect(script).toMatch(/toneMappingExposure: 0\.6,/);

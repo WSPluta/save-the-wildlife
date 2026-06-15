@@ -33,8 +33,22 @@ CREATE INDEX stwl_game_events_type_ix ON stwl_game_events (event_type, occurred_
 
 CREATE SEQUENCE stwl_game_events_seq START WITH 1 INCREMENT BY 1 NOCACHE;
 
+CREATE TABLE stwl_player_sessions (
+  player_id VARCHAR2(128) PRIMARY KEY,
+  client_session_id VARCHAR2(128),
+  gameplay_session_id VARCHAR2(128),
+  room_id VARCHAR2(64),
+  player_name VARCHAR2(256),
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  sessions_json CLOB CHECK (sessions_json IS JSON)
+);
+
+CREATE INDEX stwl_player_sessions_room_ix ON stwl_player_sessions (room_id, updated_at);
+
 COMMENT ON TABLE stwl_game_events IS
   'Save the Wildlife gameplay timeline. Each row is one player event used by Oracle Private Agent Factory and Select AI demos.';
+COMMENT ON TABLE stwl_player_sessions IS
+  'Canonical Save the Wildlife player display names and browser/game session history for multiplayer identity tracking.';
 COMMENT ON COLUMN stwl_game_events.session_id IS
   'Stable match/session identifier emitted by the game client or server.';
 COMMENT ON COLUMN stwl_game_events.event_type IS

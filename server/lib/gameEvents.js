@@ -17,6 +17,7 @@ const COMMENTARY_MAX_CHARS = parseInt(process.env.COMMENTARY_MAX_CHARS ?? "200",
 const profanityPattern = /\b(fuck|shit|bitch|asshole|bastard|dick|cunt)\b/i;
 
 const localEvents = [];
+const localPlayerSessions = [];
 const lastPositionSampleByPlayer = new Map();
 let oracleState = { attempted: false, ready: false, oracledb: null, connection: null };
 
@@ -49,6 +50,13 @@ function trimMetadata(metadata) {
   const encoded = JSON.stringify(copy);
   if (encoded.length <= 4000) return copy;
   return { truncated: true, preview: encoded.slice(0, 3800) };
+}
+
+function rememberLocalPlayerSession(profile) {
+  localPlayerSessions.push(profile);
+  if (localPlayerSessions.length > MAX_LOCAL_EVENTS) {
+    localPlayerSessions.splice(0, localPlayerSessions.length - MAX_LOCAL_EVENTS);
+  }
 }
 
 export function normalizeGameEvent(payload = {}, context = {}) {
@@ -165,9 +173,24 @@ async function ensureOracleSchema(connection) {
   } catch (error) {
     if (!String(error && error.message).includes("ORA-00955")) throw error;
   }
+  const playerSessionDdl = `CREATE TABLE stwl_player_sessions (
+    player_id VARCHAR2(128) PRIMARY KEY,
+    client_session_id VARCHAR2(128),
+    gameplay_session_id VARCHAR2(128),
+    room_id VARCHAR2(64),
+    player_name VARCHAR2(256),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    sessions_json CLOB CHECK (sessions_json IS JSON)
+  )`;
+  try {
+    await connection.execute(playerSessionDdl);
+  } catch (error) {
+    if (!String(error && error.message).includes("ORA-00955")) throw error;
+  }
   await executeIgnoring("CREATE INDEX stwl_game_events_session_ix ON stwl_game_events (session_id, occurred_at)", ["ORA-00955"]);
   await executeIgnoring("CREATE INDEX stwl_game_events_player_ix ON stwl_game_events (player_id, occurred_at)", ["ORA-00955"]);
   await executeIgnoring("CREATE INDEX stwl_game_events_type_ix ON stwl_game_events (event_type, occurred_at)", ["ORA-00955"]);
+  await executeIgnoring("CREATE INDEX stwl_player_sessions_room_ix ON stwl_player_sessions (room_id, updated_at)", ["ORA-00955"]);
   await executeIgnoring(`DECLARE
     v_count NUMBER := 0;
     v_start NUMBER := 1;
@@ -195,6 +218,7 @@ async function ensureOracleSchema(connection) {
     FROM stwl_game_events
     GROUP BY session_id, room_id, player_id`);
   await executeIgnoring("COMMENT ON TABLE stwl_game_events IS 'Save the Wildlife gameplay timeline used by Oracle Private Agent Factory and Select AI demos.'");
+  await executeIgnoring("COMMENT ON TABLE stwl_player_sessions IS 'Canonical Save the Wildlife player display names and browser/game session history for multiplayer identity tracking.'");
   await executeIgnoring("COMMENT ON VIEW stwl_session_summary IS 'Derived per-session gameplay summary for deterministic commentary prompts and Select AI demos.'");
 }
 
@@ -234,6 +258,70 @@ async function persistService(event) {
     throw new Error(`game_events_service_http_${response.status}:${body.slice(0, 200)}`);
   }
   return true;
+}
+
+async function persistOraclePlayerSession(profile) {
+  const connection = await getOracleConnection();
+  if (!connection) return false;
+  await connection.execute(
+    `MERGE INTO stwl_player_sessions dst
+     USING (
+       SELECT
+         :player_id AS player_id,
+         :client_session_id AS client_session_id,
+         :gameplay_session_id AS gameplay_session_id,
+         :room_id AS room_id,
+         :player_name AS player_name,
+         TO_TIMESTAMP_TZ(:updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"') AS updated_at,
+         :sessions_json AS sessions_json
+       FROM dual
+     ) src
+     ON (dst.player_id = src.player_id)
+     WHEN MATCHED THEN UPDATE SET
+       dst.client_session_id = src.client_session_id,
+       dst.gameplay_session_id = src.gameplay_session_id,
+       dst.room_id = src.room_id,
+       dst.player_name = src.player_name,
+       dst.updated_at = src.updated_at,
+       dst.sessions_json = src.sessions_json
+     WHEN NOT MATCHED THEN INSERT (
+       player_id, client_session_id, gameplay_session_id, room_id, player_name, updated_at, sessions_json
+     ) VALUES (
+       src.player_id, src.client_session_id, src.gameplay_session_id, src.room_id, src.player_name, src.updated_at, src.sessions_json
+     )`,
+    {
+      player_id: String(profile.id || ""),
+      client_session_id: profile.clientSessionId || null,
+      gameplay_session_id: profile.gameplaySessionId || null,
+      room_id: profile.room || null,
+      player_name: profile.name || "Player",
+      updated_at: profile.updatedAt || new Date().toISOString(),
+      sessions_json: JSON.stringify(profile.sessions || []),
+    },
+    { autoCommit: true }
+  );
+  return true;
+}
+
+export async function recordPlayerSessionProfile(profile = {}) {
+  if (!profile || !profile.id) return { ok: false, error: "missing_player_id" };
+  const normalized = {
+    id: String(profile.id),
+    name: asString(profile.name || profile.displayName, "Player"),
+    displayName: asString(profile.displayName || profile.name, "Player"),
+    room: asString(profile.room, "GLOBAL"),
+    clientSessionId: asString(profile.clientSessionId || profile.client_session_id),
+    gameplaySessionId: asString(profile.gameplaySessionId || profile.gameplay_session_id),
+    updatedAt: profile.updatedAt || profile.updated_at || new Date().toISOString(),
+    sessions: Array.isArray(profile.sessions) ? profile.sessions : [],
+  };
+  rememberLocalPlayerSession(normalized);
+  try {
+    const persisted = await persistOraclePlayerSession(normalized);
+    return { ok: true, persisted, profile: normalized };
+  } catch (error) {
+    return { ok: true, persisted: false, profile: normalized, warning: error.message };
+  }
 }
 
 export async function recordGameEvent(payload, context = {}) {
@@ -366,6 +454,7 @@ export function getLocalEvents() {
 
 export function __resetGameEventsForTests() {
   localEvents.length = 0;
+  localPlayerSessions.length = 0;
   lastPositionSampleByPlayer.clear();
   oracleState = { attempted: false, ready: false, oracledb: null, connection: null };
 }

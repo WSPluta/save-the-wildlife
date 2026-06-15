@@ -5,6 +5,7 @@ const html = readFileSync("src/index.html", "utf8");
 const script = readFileSync("src/script.js", "utf8");
 const styles = readFileSync("src/style.css", "utf8");
 const worker = readFileSync("src/commsWorker.js", "utf8");
+const lobby = readFileSync("src/lobby.js", "utf8");
 const server = readFileSync("../server/server.js", "utf8");
 const dockerfile = readFileSync("Dockerfile", "utf8");
 const nginx = readFileSync("nginx.conf", "utf8");
@@ -32,7 +33,27 @@ describe("presenter-controlled lobby flow", () => {
     expect(script).toMatch(/accessContinueBtn\.addEventListener\("click", async \(\) =>/);
     expect(script).toMatch(/await enterWaitingLobby\(\)/);
     expect(script).toMatch(/setPhase\("LOBBY"\)/);
-    expect(script).toMatch(/if \(!IS_ADMIN_VIEW\)\s*{\s*try\s*{\s*worker\.postMessage\(\{\s*type: "player\.info\.joining"/);
+    expect(script).toMatch(/if \(!IS_ADMIN_VIEW\)\s*{\s*try\s*{\s*postWorkerMessage\(\{\s*type: "player\.info\.joining"/);
+  });
+
+  it("keeps player names out of invite URLs and syncs canonical session identity", () => {
+    expect(lobby).toMatch(/Player names are server\/session state, not URL state/);
+    expect(lobby).not.toMatch(/params\.set\("name"/);
+    expect(script).toMatch(/const CLIENT_SESSION_STORAGE_KEY = "stwlClientSessionId"/);
+    expect(script).toMatch(/function stripNameParamFromUrl\(\)/);
+    expect(script).toMatch(/url\.searchParams\.delete\("name"\)/);
+    expect(script).toMatch(/nameParam && nameParam\.trim\(\) && !localStorage\.getItem\("yourName"\)/);
+    expect(script).toMatch(/clientSessionId,/);
+    expect(worker).toMatch(/clientSessionId/);
+    expect(worker).toMatch(/socket\.on\("player\.session"/);
+    expect(server).toMatch(/socket\.emit\("player\.session", profile\)/);
+  });
+
+  it("uses canonical profile room/name data for scaled websocket rosters", () => {
+    expect(server).toMatch(/await readCacheEntries\(mapPlayersInfo\)/);
+    expect(server).toMatch(/const profileRoom = v && v\.room \? normalizeRoom\(v\.room\) : null;/);
+    expect(server).toMatch(/const profileRoom = value && value\.room \? normalizeRoom\(value\.room\) : null;/);
+    expect(server).toMatch(/playerName: canonicalPlayerName,/);
   });
 
   it("uses presenter socket commands instead of player admin claim for /admin start", () => {
@@ -42,6 +63,8 @@ describe("presenter-controlled lobby flow", () => {
     expect(worker).toMatch(/emitWithAck\("admin\.presenter\.start"/);
     expect(worker).toMatch(/case "admin\.presenter\.end":/);
     expect(worker).toMatch(/emitWithAck\("admin\.presenter\.end"/);
+    expect(worker).toMatch(/isPresenter/);
+    expect(worker).toMatch(/if \(!isPresenter\) \{\s*socket\.emit\("player\.info\.joining"/);
     expect(server).toMatch(/socket\.on\("admin\.presenter\.start"/);
     expect(server).toMatch(/socket\.on\("admin\.presenter\.end"/);
     expect(server).toMatch(/DEMO_ADMIN_TOKEN/);

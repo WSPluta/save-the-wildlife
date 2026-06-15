@@ -101,3 +101,109 @@ export function recomputeWorldSize(humans, worldScaleCfg) {
   const z = clampNum(Math.round(baseZ * scale), minZ, maxZ);
   return { x, z };
 }
+
+export const DEFAULT_COLLISION_VALIDATE_RADIUS = 1.6;
+
+export function resolveCollisionValidateRadius(value) {
+  if (value === undefined || value === null || value === "") {
+    return DEFAULT_COLLISION_VALIDATE_RADIUS;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_COLLISION_VALIDATE_RADIUS;
+}
+
+function positiveNumber(value, fallback, max = Number.POSITIVE_INFINITY) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, max) : fallback;
+}
+
+export const DEFAULT_SERVER_AUTH_SPEED_LIMIT = 4.5;
+
+export function resolveServerAuthSpeedLimit(value) {
+  return positiveNumber(value, DEFAULT_SERVER_AUTH_SPEED_LIMIT);
+}
+
+export function resolveAuthoritativeBoatTypes(env = {}) {
+  return {
+    speed: {
+      maxSpeed: positiveNumber(env.BOAT_SPEED_MAX_SPEED, 3, DEFAULT_SERVER_AUTH_SPEED_LIMIT),
+      handling: 0.8,
+      capacity: 5,
+      mass: 1000,
+      drag: 1.5,
+      angularDrag: 0.05,
+      acceleration: 6,
+      brake: 3,
+      turnSpeed: 0.55,
+      driftFactor: 0.1,
+    },
+    fishing: {
+      maxSpeed: positiveNumber(env.BOAT_FISHING_MAX_SPEED, 2.35, DEFAULT_SERVER_AUTH_SPEED_LIMIT),
+      handling: 0.6,
+      capacity: 15,
+      mass: 2000,
+      drag: 1.7,
+      angularDrag: 0.15,
+      acceleration: 4.5,
+      brake: 3.2,
+      turnSpeed: 0.45,
+      driftFactor: 0.05,
+    },
+    rescue: {
+      maxSpeed: positiveNumber(env.BOAT_RESCUE_MAX_SPEED, 2.75, DEFAULT_SERVER_AUTH_SPEED_LIMIT),
+      handling: 0.7,
+      capacity: 10,
+      mass: 1500,
+      drag: 1.6,
+      angularDrag: 0.1,
+      acceleration: 5.2,
+      brake: 3.4,
+      turnSpeed: 0.5,
+      driftFactor: 0.08,
+    },
+  };
+}
+
+export const MAX_PLAYER_SESSION_HISTORY = 20;
+
+export function normalizePlayerName(value, fallback = "Player") {
+  const raw = value == null ? "" : String(value).trim();
+  const singleLine = raw.replace(/\s+/g, " ").slice(0, 80);
+  return singleLine || fallback;
+}
+
+export function buildPlayerSessionProfile(existing = {}, input = {}, nowIso = new Date().toISOString()) {
+  const id = input.id || existing.id || null;
+  const room = input.room || existing.room || "GLOBAL";
+  const name = normalizePlayerName(input.name ?? existing.name);
+  const clientSessionId = input.clientSessionId || existing.clientSessionId || id || null;
+  const gameplaySessionId = input.gameplaySessionId || existing.gameplaySessionId || null;
+  const sessionKey = [clientSessionId || "client", gameplaySessionId || "lobby", room].join(":");
+  const prior = Array.isArray(existing.sessions) ? existing.sessions.slice() : [];
+  const sessions = prior.filter((entry) => entry && entry.sessionKey !== sessionKey);
+  const previous = prior.find((entry) => entry && entry.sessionKey === sessionKey) || {};
+  sessions.push({
+    ...previous,
+    sessionKey,
+    clientSessionId,
+    gameplaySessionId,
+    room,
+    name,
+    firstSeenAt: previous.firstSeenAt || nowIso,
+    updatedAt: nowIso,
+  });
+  const trimmedSessions = sessions.slice(-MAX_PLAYER_SESSION_HISTORY);
+  return {
+    ...existing,
+    id,
+    name,
+    displayName: name,
+    room,
+    clientSessionId,
+    gameplaySessionId,
+    updatedAt: nowIso,
+    sessions: trimmedSessions,
+  };
+}

@@ -44,14 +44,13 @@ export async function getLeaderBoard() {
 }
 
 /**
- * Build a shareable invite link with room and optional name.
+ * Build a shareable invite link. Player names are server/session state, not URL state.
  */
-export function buildInviteLink(room, name) {
+export function buildInviteLink(room) {
   try {
     const base = window.location.origin + window.location.pathname;
     const params = new URLSearchParams();
     if (room) params.set("room", String(room).trim());
-    if (name) params.set("name", String(name).trim());
     const qs = params.toString();
     return qs ? `${base}?${qs}` : base;
   } catch (_) {

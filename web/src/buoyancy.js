@@ -19,7 +19,7 @@ const WAVES = [
 
 const TWO_PI = Math.PI * 2.0;
 
-export function getHeightAndNormal(x, z, time = 0) {
+export function getHeightAndNormalInto(x, z, time = 0, target = {}) {
   let height = 0.0;
 
   // Partial derivatives for normal (d(height)/dx, d(height)/dz)
@@ -44,8 +44,18 @@ export function getHeightAndNormal(x, z, time = 0) {
   }
 
   // Normal from gradient: n = normalize( -dHdX, 1, -dHdZ )
-  const normal = new THREE.Vector3(-dHdX, 1.0, -dHdZ).normalize();
+  const normal = target.normal || new THREE.Vector3();
+  normal.set(-dHdX, 1.0, -dHdZ).normalize();
 
+  target.height = height;
+  target.normal = normal;
+  return target;
+}
+
+export function getHeightAndNormal(x, z, time = 0) {
+  const { height, normal } = getHeightAndNormalInto(x, z, time, {
+    normal: new THREE.Vector3(),
+  });
   return { height, normal };
 }
 

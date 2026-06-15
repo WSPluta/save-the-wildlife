@@ -156,10 +156,10 @@ function stopNetworkMonitoring() {
   detachEnginePacketTracking();
 }
 
-function init(wsURL, yourId, yourName, room, debugWorker = false) {
+function init(wsURL, yourId, yourName, room, clientSessionId = null, debugWorker = false, isPresenter = false) {
   DEBUG_WORKER = !!debugWorker;
   logger(`WebWorker commsWorker start on ${wsURL}`);
-  savedInit = { wsURL, yourId, yourName, room, debugWorker: DEBUG_WORKER };
+  savedInit = { wsURL, yourId, yourName, room, clientSessionId, debugWorker: DEBUG_WORKER, isPresenter: !!isPresenter };
   socket = io(wsURL, {
     transports: ["websocket", "polling"],
     withCredentials: false,
@@ -182,8 +182,10 @@ function init(wsURL, yourId, yourName, room, debugWorker = false) {
   socket.io.on("close", (reason) => logger(`manager close: ${reason}`));
   socket.io.on("error", (error) => postMessage({ type: "error", body: `manager error: ${error && error.message ? error.message : error}` }));
 
-  logger(`I am ${yourName} with id ${yourId} joining the game${room ? ` room=${room}` : ""}`);
-  socket.emit("player.info.joining", { id: yourId, name: yourName, room });
+  logger(`I am ${yourName} with id ${yourId} joining the game${room ? ` room=${room}` : ""}${isPresenter ? " as presenter" : ""}`);
+  if (!isPresenter) {
+    socket.emit("player.info.joining", { id: yourId, name: yourName, room, clientSessionId });
+  }
 
   socket.io.on("error", (error) => postMessage({ error }));
 
@@ -194,8 +196,13 @@ function init(wsURL, yourId, yourName, room, debugWorker = false) {
     postMessage({ type: "connect" });
     attachEnginePacketTracking();
     try {
-      if (savedInit) {
-        socket.emit("player.info.joining", { id: savedInit.yourId, name: savedInit.yourName, room: savedInit.room });
+      if (savedInit && !savedInit.isPresenter) {
+        socket.emit("player.info.joining", {
+          id: savedInit.yourId,
+          name: savedInit.yourName,
+          room: savedInit.room,
+          clientSessionId: savedInit.clientSessionId,
+        });
       }
     } catch (_) {}
   });
@@ -288,6 +295,10 @@ function init(wsURL, yourId, yourName, room, debugWorker = false) {
 
   socket.on("player.info.joined", (data) => {
     postMessage({ type: "player.info.joined", body: data });
+  });
+
+  socket.on("player.session", (data) => {
+    postMessage({ type: "player.session", body: data });
   });
 
   socket.on("player.info.left", (data) => {
@@ -397,11 +408,22 @@ onmessage = ({ data }) => {
       break;
     case "player.info.joining":
       // allow updating name while in lobby
+      try {
+        if (data && data.body) {
+          savedInit = {
+            ...(savedInit || {}),
+            yourId: data.body.id || savedInit?.yourId,
+            yourName: data.body.name || savedInit?.yourName,
+            room: data.body.room || savedInit?.room,
+            clientSessionId: data.body.clientSessionId || savedInit?.clientSessionId,
+          };
+        }
+      } catch (_) {}
       socket.emit("player.info.joining", data.body);
       break;
     case "init":
-      const { wsURL, yourId, yourName, room, debugWorker } = data.body;
-      init(wsURL, yourId, yourName, room, !!debugWorker);
+      const { wsURL, yourId, yourName, room, clientSessionId, debugWorker, isPresenter } = data.body;
+      init(wsURL, yourId, yourName, room, clientSessionId, !!debugWorker, !!isPresenter);
       break;
     case "admin.start":
       logger("admin.start");
