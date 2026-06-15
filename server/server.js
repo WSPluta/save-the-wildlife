@@ -16,6 +16,7 @@ import {
 import { reinitializeItemForSpawn, snapshotItemForEvent } from "./lib/itemLifecycle.js";
 import {
   buildPlayerSessionProfile,
+  resolveJoiningRoom,
   resolveAuthoritativeBoatTypes,
   resolveCollisionValidateRadius,
   resolveServerAuthSpeedLimit,
@@ -845,9 +846,19 @@ function scheduleRoomRefill(room, delayMs = 0) {
       if (!id) return;
       playerIdForSocket = id;
       const requestedRoom = normalizeRoom(room);
-      const currentRoom = (socket.data && socket.data.room) || (requestedRoom || DEFAULT_ROOM_ID);
+      const currentRoom = resolveJoiningRoom({
+        requestedRoom,
+        socketRoom: socket.data && socket.data.room,
+        defaultRoom: DEFAULT_ROOM_ID,
+      });
       const loadRoom = loadCanarySocket || isLoadCanaryRoom(currentRoom);
       socket.data = socket.data || {};
+      const previousRoom = socket.data.room || null;
+      if (previousRoom && previousRoom !== currentRoom) {
+        try { socket.leave(previousRoom); } catch (_) {}
+      }
+      socket.data.room = currentRoom;
+      try { socket.join(currentRoom); } catch (_) {}
       if (clientSessionId) socket.data.clientSessionId = clientSessionId;
       try { playerRooms.set(id, currentRoom); } catch (_) {}
       const profile = await upsertPlayerSessionProfile(id, {

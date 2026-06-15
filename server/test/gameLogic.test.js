@@ -7,6 +7,7 @@ import {
   buildPlayerSessionProfile,
   fib,
   normalizeRoom,
+  resolveJoiningRoom,
   normalizePlayerName,
   computeTargets,
   recomputeWorldSize,
@@ -48,6 +49,21 @@ describe("normalizeRoom", () => {
     const long = "ROOM-THIS-IS-A-VERY-LONG-IDENTIFIER-123456";
     const norm = normalizeRoom(long);
     expect(norm.length).toBeLessThanOrEqual(24);
+  });
+});
+
+describe("resolveJoiningRoom", () => {
+  it("prefers the requested room over the socket default room", () => {
+    expect(resolveJoiningRoom({
+      requestedRoom: "room-dynamic",
+      socketRoom: "ROOM-0001",
+      defaultRoom: "ROOM-0001",
+    })).toBe("ROOM-DYNAMIC");
+  });
+
+  it("falls back to socket room and then default room", () => {
+    expect(resolveJoiningRoom({ socketRoom: "room-socket", defaultRoom: "ROOM-0001" })).toBe("ROOM-SOCKET");
+    expect(resolveJoiningRoom({ defaultRoom: "ROOM-0001" })).toBe("ROOM-0001");
   });
 });
 

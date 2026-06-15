@@ -36,6 +36,15 @@ export function normalizeRoom(r) {
   return cleaned || null;
 }
 
+export function resolveJoiningRoom({ requestedRoom, socketRoom, defaultRoom = "ROOM-0001" } = {}) {
+  return (
+    normalizeRoom(requestedRoom) ||
+    normalizeRoom(socketRoom) ||
+    normalizeRoom(defaultRoom) ||
+    "ROOM-0001"
+  );
+}
+
 /**
  * Compute target item counts given players and spawn mode.
  * Params:
