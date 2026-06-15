@@ -200,7 +200,7 @@ function recomputeWorldSize(humans) {
 
 let nextItemsSpawnAt = Date.now();
 
-function buildMetricsObject(playersInfo, counts, targets) {
+function buildMetricsObject(playersInfo, counts, targets, roomStats = {}, socketStats = {}) {
   const ids = Object.keys(playersInfo || {});
   const total = ids.length;
   let bots = 0;
@@ -211,6 +211,16 @@ function buildMetricsObject(playersInfo, counts, targets) {
   const humans = Math.max(0, total - bots);
   return {
     players: { total, humans, bots },
+    sockets: {
+      connections: Number.isFinite(socketStats.connections) ? socketStats.connections : 0,
+    },
+    rooms: {
+      active: Number.isFinite(roomStats.active) ? roomStats.active : 0,
+      waiting: Number.isFinite(roomStats.waiting) ? roomStats.waiting : 0,
+      starting: Number.isFinite(roomStats.starting) ? roomStats.starting : 0,
+      running: Number.isFinite(roomStats.running) ? roomStats.running : 0,
+      ended: Number.isFinite(roomStats.ended) ? roomStats.ended : 0,
+    },
     world: { x: worldSizeX, z: worldSizeZ },
     items: counts,
     targets,
@@ -807,6 +817,19 @@ function scheduleRoomRefill(room, delayMs = 0) {
     } catch (e) {
       logger.error(`emitPlayerCount error: ${e && e.message ? e.message : e}`);
     }
+  }
+
+  function summarizeRoomsForObservability(payload) {
+    const rooms = Array.isArray(payload?.rooms) ? payload.rooms : [];
+    const summary = { active: rooms.length, waiting: 0, starting: 0, running: 0, ended: 0 };
+    for (const room of rooms) {
+      const state = String(room?.state || "WAITING").toLowerCase();
+      if (state === "starting") summary.starting++;
+      else if (state === "running") summary.running++;
+      else if (state === "ended") summary.ended++;
+      else summary.waiting++;
+    }
+    return summary;
   }
 
   io.on("connection", async (socket) => {
@@ -1513,6 +1536,39 @@ function scheduleRoomRefill(room, delayMs = 0) {
       }
     });
 
+    socket.on("admin.presenter.grant", async (payload = {}, ack) => {
+      const cmdId = payload && payload.cmdId;
+      if (adminTrackDuplicate(cmdId)) { try { if (typeof ack === "function") ack({ ok: true, duplicate: true }); } catch (_) {} return; }
+      try {
+        if (!isPresenterCommandAuthorized(payload)) {
+          try { if (typeof ack === "function") ack({ ok: false, error: "unauthorized" }); } catch (_) {}
+          return;
+        }
+        const room = normalizeRoom(payload.room || payload.roomId || payload.idRoom) || DEFAULT_ROOM_ID;
+        const target = String(payload.id || payload.playerId || "").trim();
+        if (!target) {
+          try { if (typeof ack === "function") ack({ ok: false, error: "invalid_target" }); } catch (_) {}
+          return;
+        }
+        if (playerRooms.get(target) !== room) {
+          try { if (typeof ack === "function") ack({ ok: false, error: "wrong_room", room, id: target }); } catch (_) {}
+          return;
+        }
+        const info = await getPlayersInfoObject();
+        const name = info && info[target] && info[target].name ? String(info[target].name) : "";
+        if (name.toLowerCase().startsWith("bot ")) {
+          try { if (typeof ack === "function") ack({ ok: false, error: "target_is_bot" }); } catch (_) {}
+          return;
+        }
+        roomAdmin.set(room, target);
+        io.to(room).emit("room.admin", { id: target });
+        try { if (typeof ack === "function") ack({ ok: true, room, id: target }); } catch (_) {}
+      } catch (e) {
+        logger.error(`admin.presenter.grant error: ${e && e.message ? e.message : e}`);
+        try { if (typeof ack === "function") ack({ ok: false, error: "server_error" }); } catch (_) {}
+      }
+    });
+
     socket.on("admin.start", (payload = {}, ack) => {
       const cmdId = payload && payload.cmdId;
       if (adminTrackDuplicate(cmdId)) { try { if (typeof ack === "function") ack({ ok: true, duplicate: true }); } catch (_) {} return; }
@@ -2074,7 +2130,17 @@ function scheduleRoomRefill(room, delayMs = 0) {
       });
       const humans = Math.max(0, ids.length - bots);
       const targets = computeEffectiveTargets(humans);
-      const m = buildMetricsObject(info, counts, targets);
+      let roomStats = { active: 0, waiting: 0, starting: 0, running: 0, ended: 0 };
+      try {
+        roomStats = summarizeRoomsForObservability(await buildRoomsPayload());
+      } catch (_) {}
+      const m = buildMetricsObject(
+        info,
+        counts,
+        targets,
+        roomStats,
+        { connections: io.engine?.clientsCount || io.of("/").sockets.size || 0 }
+      );
       try { updateRuntimeMetrics(m, gameState); } catch (_) {}
       io.volatile.compress(true).emit("server.metrics", m);
     } catch (e) {

@@ -24,6 +24,7 @@ By the end, AI developers should understand three things:
 ## Pack Contents
 
 - [run-of-show.md](run-of-show.md): minute-by-minute talk flow.
+- [architecture.md](architecture.md): current post-Redis runtime topology and commentary sequence.
 - [slide-outline.md](slide-outline.md): 10-slide deck spine with visual direction and speaker notes.
 - [demo-runbook.md](demo-runbook.md): live commands, smoke checks, fallback path, and recovery cues.
 - [speaker-cards.md](speaker-cards.md): short talk tracks, transitions, and objection handling.

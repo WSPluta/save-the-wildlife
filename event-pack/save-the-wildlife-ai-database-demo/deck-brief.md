@@ -37,6 +37,7 @@ The message to land: sometimes AI engineers should let business users assemble t
 - `/paf/api/context` evidence excerpt.
 - Replay clip manifest example.
 - Runtime architecture diagram.
+- Post-Redis Coherence fanout diagram.
 - Commentary API response excerpt.
 - PAF health excerpt.
 - Agent harness formula.
@@ -48,13 +49,31 @@ The message to land: sometimes AI engineers should let business users assemble t
 
 ```mermaid
 flowchart LR
-  A["Mobile players"] -->|"powerups, trails, freezes, coords"| B["Game / Socket.IO"]
-  B -->|"event stream + replay JSON"| C["Oracle AI Database"]
-  C -->|"SQL, JSON, graph, vector context"| D["/paf/api/context"]
-  D -->|"bounded evidence"| E["Select AI / in-db agents"]
-  E -->|"bounded draft + evidence"| F["Oracle Private Agent Factory Canvas"]
-  F -->|"live line, replay caption, recap"| G["Match intelligence outputs"]
+  classDef client fill:#0f172a,stroke:#38bdf8,color:#ffffff
+  classDef service fill:#052e2b,stroke:#2dd4bf,color:#ffffff
+  classDef state fill:#14532d,stroke:#86efac,color:#ffffff
+  classDef ai fill:#581c87,stroke:#d8b4fe,color:#ffffff
+
+  A["Mobile players<br/>3D browser"] -->|"Socket.IO"| B["ws-server<br/>authoritative game loop"]
+  B <-->|"fanout map<br/>no Redis tier"| C["Oracle Coherence"]
+  B -->|"scores + gameplay events"| D["score service"]
+  D -->|"STWL_GAME_EVENTS"| E["Oracle AI Database"]
+  B -->|"game_over"| F["private-agent-factory<br/>endpoint harness"]
+  F -->|"SQL, JSON, graph, vector context"| E
+  F -->|"bounded draft"| G["Select AI / in-db agents"]
+  F -->|"bounded evidence package"| H["Oracle Private Agent Factory Canvas"]
+  H -->|"live line, replay caption, recap"| F
+  F -->|"commentary response"| B
+  B -->|"commentary.ready"| A
+
+  class A client
+  class B,D,F service
+  class C,E state
+  class G,H ai
 ```
+
+Use [architecture.md](architecture.md) for the full topology and game-over
+commentary sequence.
 
 ### Harness Architecture
 

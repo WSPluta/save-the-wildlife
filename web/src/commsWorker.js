@@ -453,6 +453,13 @@ onmessage = ({ data }) => {
         .then((res) => postMessage({ type: "admin.presenter.end.confirmed", body: res }))
         .catch((err) => postMessage({ type: "admin.presenter.end.error", body: (err && err.message) ? err.message : String(err) }));
       break;
+    case "admin.presenter.grant":
+      logger("admin.presenter.grant");
+      postMessage({ type: "admin.presenter.grant.requested", body: data.body || {} });
+      emitWithAck("admin.presenter.grant", data.body || {}, { tries: 3, timeout: 1000, jitter: 0.2 })
+        .then((res) => postMessage({ type: "admin.presenter.grant.confirmed", body: res }))
+        .catch((err) => postMessage({ type: "admin.presenter.grant.error", body: (err && err.message) ? err.message : String(err) }));
+      break;
     case "admin.spawnMode.set":
       // data.body: { mode, params }
       socket.emit("admin.spawnMode.set", data.body);

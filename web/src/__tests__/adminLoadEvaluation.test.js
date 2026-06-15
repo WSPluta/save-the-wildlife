@@ -4,13 +4,34 @@ import { describe, expect, it } from "vitest";
 const html = readFileSync("src/index.html", "utf8");
 const styles = readFileSync("src/style.css", "utf8");
 const script = readFileSync("src/script.js", "utf8");
+const worker = readFileSync("src/commsWorker.js", "utf8");
+
+function textContent(fragment) {
+  return fragment
+    .replace(/<script[\s\S]*?<\/script>/g, " ")
+    .replace(/<style[\s\S]*?<\/style>/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function wordCount(text) {
+  return String(text || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
+function leafTextUnits(block) {
+  return Array.from(block.matchAll(/<(h3|th|td|span|strong|em|div)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/g))
+    .filter((match) => !/<(?:h3|th|td|span|strong|em|div)\b/i.test(match[2]))
+    .map((match) => textContent(match[2]))
+    .filter((text) => /[a-z]/i.test(text));
+}
 
 describe("admin load evaluation view", () => {
   it("adds canary evidence to the presenter admin UI", () => {
     expect(html).toContain('id="admin-load-evaluation"');
     expect(html).toContain("Load Gate Proof");
     expect(html).toContain("Tier 1000 pass");
-    expect(script).toMatch(/path === "\/admin" \|\| path === "\/admin\/ai-learning"/);
+    expect(script).toContain('path === "/admin/observability"');
     expect(script).toMatch(/const IS_AI_LEARNING_VIEW =/);
   });
 
@@ -51,5 +72,33 @@ describe("admin load evaluation view", () => {
   it("styles the compact AI learning receipt panels", () => {
     expect(styles).toMatch(/\.admin-proof-receipts\s*{/);
     expect(styles).toMatch(/\.admin-learning-note\s*{/);
+  });
+
+  it("adds a compact OCI observability route for live user analytics", () => {
+    expect(html).toContain('id="admin-observability"');
+    expect(html).toContain("Live Operations");
+    expect(html).toContain('id="obs-connections"');
+    expect(html).toContain('id="obs-humans"');
+    expect(html).toContain('id="admin-observability-rooms"');
+    expect(html).toContain("stwl_socket_connections");
+    expect(script).toMatch(/const IS_OBSERVABILITY_VIEW =/);
+    expect(script).toMatch(/updateObservabilityMetrics/);
+    expect(styles).toMatch(/body\.admin-view:not\(\.observability-view\) #admin-observability/);
+  });
+
+  it("keeps observability explanation text under 30 words", () => {
+    const block = html.match(/<div id="admin-observability"[\s\S]*?<div id="admin-load-evaluation"/)?.[0] || "";
+    const prose = leafTextUnits(block);
+    expect(prose.length).toBeGreaterThan(0);
+    for (const text of prose) {
+      expect(wordCount(text), text).toBeLessThanOrEqual(30);
+    }
+  });
+
+  it("wires presenter admin grant without requiring player-socket ownership", () => {
+    expect(html).toContain('id="admin-grant-target"');
+    expect(html).toContain('id="btn-admin-grant"');
+    expect(script).toMatch(/requestPresenterGrant/);
+    expect(worker).toMatch(/admin\.presenter\.grant/);
   });
 });

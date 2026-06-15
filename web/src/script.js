@@ -389,19 +389,34 @@ const PHASES = {
 };
 
 const DEFAULT_ADMIN_ROOM_ID = "ROOM-0001";
-const IS_ADMIN_VIEW = (() => {
+function currentPathname() {
   try {
     const url = new URL(window.location.href);
-    const path = url.pathname.replace(/\/+$/, "") || "/";
-    return path === "/admin" || path === "/admin/ai-learning" || url.searchParams.get("admin") === "1";
+    return url.pathname.replace(/\/+$/, "") || "/";
+  } catch (_) {
+    return "/";
+  }
+}
+
+const IS_ADMIN_VIEW = (() => {
+  try {
+    const path = currentPathname();
+    const url = new URL(window.location.href);
+    return path === "/admin" || path === "/admin/ai-learning" || path === "/admin/observability" || url.searchParams.get("admin") === "1";
   } catch (_) {
     return false;
   }
 })();
 const IS_AI_LEARNING_VIEW = (() => {
   try {
-    const url = new URL(window.location.href);
-    return (url.pathname.replace(/\/+$/, "") || "/") === "/admin/ai-learning";
+    return currentPathname() === "/admin/ai-learning";
+  } catch (_) {
+    return false;
+  }
+})();
+const IS_OBSERVABILITY_VIEW = (() => {
+  try {
+    return currentPathname() === "/admin/observability";
   } catch (_) {
     return false;
   }
@@ -413,6 +428,7 @@ function setPhase(phase) {
     document.body.classList.toggle("phase-gameplay", phase === PHASES.GAMEPLAY);
     document.body.classList.toggle("admin-view", IS_ADMIN_VIEW);
     document.body.classList.toggle("ai-learning-view", IS_AI_LEARNING_VIEW);
+    document.body.classList.toggle("observability-view", IS_OBSERVABILITY_VIEW);
   } catch (_) {}
   renderUI();
   try { if (typeof updateControls === "function") updateControls(); } catch (_) {}
@@ -427,6 +443,7 @@ function renderUI() {
     document.body.classList.add(`phase-${String(currentPhase).toLowerCase()}`);
     document.body.classList.toggle("admin-view", IS_ADMIN_VIEW);
     document.body.classList.toggle("ai-learning-view", IS_AI_LEARNING_VIEW);
+    document.body.classList.toggle("observability-view", IS_OBSERVABILITY_VIEW);
   }
   const screens = {
     ACCESS: document.getElementById("screen-access"),
@@ -447,6 +464,7 @@ function renderUI() {
   // Reflect room code in HUD and Lobby
   updateRoomHud();
   try { renderRoomsDirectory(); } catch (_) {}
+  try { renderObservabilityRooms(); } catch (_) {}
   // Manage countdown lifecycle: let server drive the target; only clear when leaving STARTING
   if (currentPhase !== PHASES.STARTING) {
     clearCountdown();
@@ -815,6 +833,27 @@ async function requestPresenterEnd() {
   }
 }
 
+async function requestPresenterGrant() {
+  const room = syncAdminRoomUi(getConfiguredAdminRoom());
+  const input = document.getElementById("admin-grant-target");
+  const target = input && input.value ? String(input.value).trim() : "";
+  if (!target) {
+    setAdminStatus("Enter a player ID first.", "Waiting");
+    return;
+  }
+  if (!gameInitialized) await init();
+  try {
+    if (worker) postWorkerMessage({ type: "room.join", body: { id: room } });
+    postWorkerMessage({
+      type: "admin.presenter.grant",
+      body: { room, id: target, token: getConfiguredAdminToken() },
+    });
+    setAdminStatus("Grant requested for " + target + ".", "Waiting");
+  } catch (_) {
+    setAdminStatus("Grant failed.", "Error");
+  }
+}
+
 function requestAutoStartMatch() {
   try {
     if (!worker) return;
@@ -824,6 +863,72 @@ function requestAutoStartMatch() {
       body: { room },
     });
   } catch (_) {}
+}
+
+function setTextById(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value == null || value === "" ? "-" : String(value);
+}
+
+function formatCount(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? String(Math.round(n)) : "-";
+}
+
+function updateObservabilityMetrics(m = {}) {
+  if (!IS_OBSERVABILITY_VIEW) return;
+  const players = m.players || {};
+  const sockets = m.sockets || {};
+  const rooms = m.rooms || {};
+  const items = m.items || {};
+  const totalItems =
+    (Number(items.trash) || 0) +
+    (Number(items.marine) || 0) +
+    (Number(items.powerups) || 0);
+  setTextById("obs-connections", formatCount(sockets.connections ?? players.total));
+  setTextById("obs-humans", formatCount(players.humans));
+  setTextById("obs-bots", formatCount(players.bots));
+  setTextById("obs-rooms", formatCount(rooms.active));
+  setTextById("obs-running", formatCount(rooms.running));
+  setTextById("obs-items", formatCount(totalItems));
+  updateObservabilityNetwork();
+}
+
+function updateObservabilityNetwork() {
+  if (!IS_OBSERVABILITY_VIEW) return;
+  const rtt = Number.isFinite(networkStats.rttMs) ? `${Math.round(networkStats.rttMs)} ms` : "-";
+  const traffic = `${Number(networkStats.upKbps || 0).toFixed(1)} up / ${Number(networkStats.downKbps || 0).toFixed(1)} down`;
+  setTextById("obs-rtt", rtt);
+  setTextById("obs-traffic", traffic);
+}
+
+function renderObservabilityRooms() {
+  const body = document.getElementById("admin-observability-rooms");
+  if (!body) return;
+  body.innerHTML = "";
+  const rooms = Array.isArray(roomsDirectory?.rooms) ? roomsDirectory.rooms.slice() : [];
+  if (!rooms.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 4;
+    cell.textContent = "Waiting for room metrics.";
+    row.appendChild(cell);
+    body.appendChild(row);
+    return;
+  }
+  rooms
+    .sort((a, b) => (Number(b.humans || 0) - Number(a.humans || 0)) || String(a.id || "").localeCompare(String(b.id || "")))
+    .slice(0, 8)
+    .forEach((room) => {
+      const row = document.createElement("tr");
+      const startsAt = room.startsAt ? new Date(room.startsAt).toLocaleTimeString() : "-";
+      [room.id || "-", room.state || "WAITING", formatCount(room.humans), startsAt].forEach((value) => {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.appendChild(cell);
+      });
+      body.appendChild(row);
+    });
 }
 
 async function copyAdminPlayerLink() {
@@ -895,6 +1000,7 @@ function renderRoomsDirectory() {
       listEl.appendChild(li);
     });
   }
+  renderObservabilityRooms();
 }
 
 function setRoomAndBroadcast(newRoom, owner = false) {
@@ -1628,6 +1734,19 @@ function bindGlobalUI() {
   const adminCopyBtn = document.getElementById("btn-admin-copy-link");
   if (adminCopyBtn) {
     adminCopyBtn.addEventListener("click", copyAdminPlayerLink);
+  }
+  const adminGrantBtn = document.getElementById("btn-admin-grant");
+  if (adminGrantBtn) {
+    adminGrantBtn.addEventListener("click", requestPresenterGrant);
+  }
+  const adminGrantInput = document.getElementById("admin-grant-target");
+  if (adminGrantInput) {
+    adminGrantInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        requestPresenterGrant();
+      }
+    });
   }
 
   // Options button: open a simple modal (non-invasive, prod-safe)
@@ -2524,6 +2643,7 @@ async function init() {
         break;
       case "server.metrics":
         updateMonitor(body || {});
+        updateObservabilityMetrics(body || {});
         break;
       case "network.stats":
         if (body && typeof body === "object") {
@@ -2535,6 +2655,7 @@ async function init() {
             lossRate: Number(body.lossRate) || 0,
           };
           updateNetworkMonitorOnly();
+          updateObservabilityNetwork();
         }
         break;
       case "rooms.update": {
@@ -2545,6 +2666,7 @@ async function init() {
           updateRoomHud();
         }
         renderRoomsDirectory();
+        renderObservabilityRooms();
         break;
       }
       case "room.joined": {
@@ -2664,6 +2786,9 @@ async function init() {
         const adminCount = renderRoster(document.getElementById("admin-player-list"));
         const countEl = document.getElementById("admin-player-count");
         if (countEl) countEl.textContent = String(Number.isFinite(adminCount) ? adminCount : lobbyCount);
+        if (IS_OBSERVABILITY_VIEW && !Number.isFinite(adminCount)) {
+          setTextById("obs-humans", formatCount(lobbyCount));
+        }
         break;
       }
       case "startingGame": {
@@ -2736,6 +2861,26 @@ async function init() {
       }
       case "admin.presenter.end.error": {
         setAdminStatus("End failed: " + (body || "unknown") + ".", "Error");
+        break;
+      }
+      case "admin.presenter.grant.requested": {
+        const target = body && body.id ? String(body.id) : "player";
+        setAdminStatus("Grant requested for " + target + ".", "Waiting");
+        break;
+      }
+      case "admin.presenter.grant.confirmed": {
+        if (body && body.ok === false) {
+          setAdminStatus("Grant failed: " + (body.error || "unknown") + ".", "Error");
+        } else {
+          const target = body && body.id ? String(body.id) : "player";
+          setAdminStatus("Admin granted to " + target + ".", "Waiting");
+          const input = document.getElementById("admin-grant-target");
+          if (input) input.value = "";
+        }
+        break;
+      }
+      case "admin.presenter.grant.error": {
+        setAdminStatus("Grant failed: " + (body || "unknown") + ".", "Error");
         break;
       }
       case "admin.end.confirmed": {

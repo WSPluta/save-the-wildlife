@@ -12,6 +12,13 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 const PORT = Number(process.env.PORT || 8080);
+const pafMetrics = {
+  startedAt: Date.now(),
+  commentaryRequests: 0,
+  commentaryFailures: 0,
+  contextRequests: 0,
+  contextFailures: 0,
+};
 const AGENT_NAME = process.env.PAF_AGENT_NAME || "save-the-wildlife-commentator";
 const AGENT_MODE = process.env.PAF_AGENT_MODE || "moderated";
 const COMMENTARY_MAX_CHARS = Number(process.env.PAF_COMMENTARY_MAX_CHARS || 200);
@@ -2540,34 +2547,81 @@ app.get("/healthz", (_req, res) => {
   });
 });
 
+function prometheusLine(name, value, labels = {}) {
+  const labelEntries = Object.entries(labels).filter(([, labelValue]) => labelValue != null && labelValue !== "");
+  const suffix = labelEntries.length
+    ? `{${labelEntries.map(([key, labelValue]) => `${key}="${String(labelValue).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`).join(",")}}`
+    : "";
+  return `${name}${suffix} ${Number.isFinite(value) ? value : 0}`;
+}
+
+function renderPrometheusMetrics() {
+  const modelConfig = modelRouterConfig();
+  const lines = [
+    "# HELP stwl_paf_uptime_seconds Private Agent Factory process uptime.",
+    "# TYPE stwl_paf_uptime_seconds gauge",
+    prometheusLine("stwl_paf_uptime_seconds", Math.round((Date.now() - pafMetrics.startedAt) / 1000)),
+    "# HELP stwl_paf_commentary_requests_total Commentary requests received.",
+    "# TYPE stwl_paf_commentary_requests_total counter",
+    prometheusLine("stwl_paf_commentary_requests_total", pafMetrics.commentaryRequests),
+    "# HELP stwl_paf_commentary_failures_total Commentary requests that failed.",
+    "# TYPE stwl_paf_commentary_failures_total counter",
+    prometheusLine("stwl_paf_commentary_failures_total", pafMetrics.commentaryFailures),
+    "# HELP stwl_paf_context_requests_total Context requests received.",
+    "# TYPE stwl_paf_context_requests_total counter",
+    prometheusLine("stwl_paf_context_requests_total", pafMetrics.contextRequests),
+    "# HELP stwl_paf_context_failures_total Context requests that failed.",
+    "# TYPE stwl_paf_context_failures_total counter",
+    prometheusLine("stwl_paf_context_failures_total", pafMetrics.contextFailures),
+    "# HELP stwl_paf_model_endpoint_configured Private model route endpoint configured.",
+    "# TYPE stwl_paf_model_endpoint_configured gauge",
+    prometheusLine("stwl_paf_model_endpoint_configured", modelConfig.baseEndpointUrl ? 1 : 0, { provider: modelConfig.primaryProvider }),
+    prometheusLine("stwl_paf_model_endpoint_configured", modelConfig.fineTunedEndpointUrl ? 1 : 0, { provider: modelConfig.candidateProvider }),
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+app.get("/metrics", (_req, res) => {
+  res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+  res.end(renderPrometheusMetrics());
+});
+
 app.get("/api/context", async (req, res) => {
+  pafMetrics.contextRequests++;
   try {
     res.json(await buildMatchContext(req.query));
   } catch (error) {
+    pafMetrics.contextFailures++;
     res.status(500).json({ ok: false, error: "context_failed", detail: error.message });
   }
 });
 
 app.post("/api/context", async (req, res) => {
+  pafMetrics.contextRequests++;
   try {
     res.json(await buildMatchContext(req.body));
   } catch (error) {
+    pafMetrics.contextFailures++;
     res.status(500).json({ ok: false, error: "context_failed", detail: error.message });
   }
 });
 
 app.get("/api/commentary", async (req, res) => {
+  pafMetrics.commentaryRequests++;
   try {
     res.json(await buildCommentary(req.query));
   } catch (error) {
+    pafMetrics.commentaryFailures++;
     res.status(500).json({ ok: false, error: "commentary_failed", detail: error.message });
   }
 });
 
 app.post("/api/commentary", async (req, res) => {
+  pafMetrics.commentaryRequests++;
   try {
     res.json(await buildCommentary(req.body));
   } catch (error) {
+    pafMetrics.commentaryFailures++;
     res.status(500).json({ ok: false, error: "commentary_failed", detail: error.message });
   }
 });

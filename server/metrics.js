@@ -21,6 +21,36 @@ const gPlayersBots = new client.Gauge({
   help: "Connected bot players",
   registers: [register],
 });
+const gSocketConnections = new client.Gauge({
+  name: "stwl_socket_connections",
+  help: "Open Socket.IO connections",
+  registers: [register],
+});
+const gRoomsActive = new client.Gauge({
+  name: "stwl_rooms_active",
+  help: "Active rooms visible to operators",
+  registers: [register],
+});
+const gRoomsWaiting = new client.Gauge({
+  name: "stwl_rooms_waiting",
+  help: "Rooms in WAITING state",
+  registers: [register],
+});
+const gRoomsStarting = new client.Gauge({
+  name: "stwl_rooms_starting",
+  help: "Rooms in STARTING state",
+  registers: [register],
+});
+const gRoomsRunning = new client.Gauge({
+  name: "stwl_rooms_running",
+  help: "Rooms in RUNNING state",
+  registers: [register],
+});
+const gRoomsEnded = new client.Gauge({
+  name: "stwl_rooms_ended",
+  help: "Rooms in ENDED state",
+  registers: [register],
+});
 
 const gWorldX = new client.Gauge({
   name: "stwl_world_x",
@@ -113,6 +143,16 @@ export function updateRuntimeMetrics(m, stateName) {
       if (Number.isFinite(m.players.total)) gPlayersTotal.set(m.players.total);
       if (Number.isFinite(m.players.humans)) gPlayersHumans.set(m.players.humans);
       if (Number.isFinite(m.players.bots)) gPlayersBots.set(m.players.bots);
+    }
+    if (m.sockets && Number.isFinite(m.sockets.connections)) {
+      gSocketConnections.set(m.sockets.connections);
+    }
+    if (m.rooms) {
+      if (Number.isFinite(m.rooms.active)) gRoomsActive.set(m.rooms.active);
+      if (Number.isFinite(m.rooms.waiting)) gRoomsWaiting.set(m.rooms.waiting);
+      if (Number.isFinite(m.rooms.starting)) gRoomsStarting.set(m.rooms.starting);
+      if (Number.isFinite(m.rooms.running)) gRoomsRunning.set(m.rooms.running);
+      if (Number.isFinite(m.rooms.ended)) gRoomsEnded.set(m.rooms.ended);
     }
     if (m.world) {
       if (Number.isFinite(m.world.x)) gWorldX.set(m.world.x);

@@ -39,10 +39,10 @@ This is the gaming template. Telemetry explains what happened. Replay shows it. 
 **Claim:** The demo uses deterministic context before creative phrasing.
 
 **Visual:** Flow:
-Game -> Socket.IO -> `STWL_GAME_EVENTS` + replay clips -> `/paf/api/context` -> Select AI/in-db agents -> PAF Canvas -> UI/API.
+Browser -> ingress -> `ws-server` -> Coherence fanout -> score/replay -> Oracle AI Database -> `private-agent-factory` -> Select AI/in-db agents -> PAF Canvas -> `commentary.ready`.
 
 **Speaker notes:**
-Emphasize bounded generation: live output under 200 characters, profanity guard, no invented events or unrecorded replay moments.
+Emphasize that Redis is no longer in the runtime path. Coherence handles Socket.IO fanout; Oracle AI Database holds the evidence; generation remains bounded with live output under 200 characters, profanity guard, and no invented events or unrecorded replay moments.
 
 ## Slide 5 - "Live Proof: Commentary From The Timeline"
 
@@ -62,7 +62,7 @@ Show `/paf/api/context` and `/paf/api/commentary`. Read the summary fields aloud
 `web`, `ws-server`, `score`, `replay`, Coherence, Oracle AI Database, and `private-agent-factory`.
 
 **Speaker notes:**
-PAF has `/healthz` and `/api/commentary`; it uses Oracle wallet config, GenAI settings, Canvas auth, and in-db Select AI setup. The point for AI engineers is that business users can shape the Canvas agent while the harness owns evidence, policy, fallback behavior, and broadcast into the game.
+PAF has `/healthz` and `/api/commentary`; it uses Oracle wallet config, GenAI settings, Canvas auth, and in-db Select AI setup. The real-time layer uses Coherence rather than Redis. The point for AI engineers is that business users can shape the Canvas agent while the harness owns evidence, policy, fallback behavior, and broadcast into the game.
 
 ## Slide 7 - "Agent = Model + Harness"
 

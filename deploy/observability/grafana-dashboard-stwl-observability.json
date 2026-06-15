@@ -1,0 +1,106 @@
+{
+  "title": "Save the Wildlife Observability",
+  "uid": "stwl-observability",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "tags": ["save-the-wildlife", "oci", "oke", "prometheus"],
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(stwl_players_total, namespace)",
+        "current": {
+          "text": "default",
+          "value": "default"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Socket Connections",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "stwl_socket_connections{namespace=\"$namespace\"}", "legendFormat": "connections" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Human Players",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "stwl_players_humans{namespace=\"$namespace\"}", "legendFormat": "humans" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Running Rooms",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "stwl_rooms_running{namespace=\"$namespace\"}", "legendFormat": "running" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "PAF Requests",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(stwl_paf_commentary_requests_total{namespace=\"$namespace\"}[5m]))", "legendFormat": "requests/s" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Users and Connections",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "stwl_socket_connections{namespace=\"$namespace\"}", "legendFormat": "socket connections" },
+        { "expr": "stwl_players_humans{namespace=\"$namespace\"}", "legendFormat": "humans" },
+        { "expr": "stwl_players_bots{namespace=\"$namespace\"}", "legendFormat": "bots" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Rooms by State",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "stwl_rooms_waiting{namespace=\"$namespace\"}", "legendFormat": "waiting" },
+        { "expr": "stwl_rooms_starting{namespace=\"$namespace\"}", "legendFormat": "starting" },
+        { "expr": "stwl_rooms_running{namespace=\"$namespace\"}", "legendFormat": "running" },
+        { "expr": "stwl_rooms_ended{namespace=\"$namespace\"}", "legendFormat": "ended" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "World Items",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "stwl_items_trash{namespace=\"$namespace\"}", "legendFormat": "trash" },
+        { "expr": "stwl_items_marine{namespace=\"$namespace\"}", "legendFormat": "marine" },
+        { "expr": "stwl_items_powerups{namespace=\"$namespace\"}", "legendFormat": "powerups" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HPA Replicas",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        {
+          "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"$namespace\", horizontalpodautoscaler=~\"ws-server|private-agent-factory|score\"}",
+          "legendFormat": "{{horizontalpodautoscaler}} current"
+        },
+        {
+          "expr": "kube_horizontalpodautoscaler_spec_max_replicas{namespace=\"$namespace\", horizontalpodautoscaler=~\"ws-server|private-agent-factory|score\"}",
+          "legendFormat": "{{horizontalpodautoscaler}} max"
+        }
+      ]
+    }
+  ]
+}
