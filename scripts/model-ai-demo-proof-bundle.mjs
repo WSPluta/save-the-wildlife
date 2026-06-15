@@ -56,6 +56,19 @@ function renderCanaryRows(report) {
   ].join(""));
 }
 
+function renderRequiredTextList(admin = {}) {
+  const missing = new Set(admin.missing || []);
+  return (admin.requiredText || []).map((text) => `- ${missing.has(text) ? "Missing" : "Present"}: \`${text}\``);
+}
+
+function renderDeploymentRows(report) {
+  const kube = checkNamed(report, "kubernetes-deployments");
+  return (kube.deployments || []).map((deployment) => {
+    const ready = `${deployment.ready}/${deployment.replicas}`;
+    return `| ${deployment.name} | ${ready} | ${deployment.available}/${deployment.replicas} |`;
+  });
+}
+
 function strictFailureIsExpected(report) {
   const failed = report.checks.filter((check) => check.status === "fail");
   if (report.verdict !== "failed") return false;
@@ -65,10 +78,14 @@ function strictFailureIsExpected(report) {
 }
 
 function renderBundle({ adapterReport, strictReport, commands }) {
+  const pafHealth = checkNamed(adapterReport, "paf-health");
+  const adminProof = checkNamed(adapterReport, "admin-proof-ui");
   const adapterHealth = checkNamed(adapterReport, "private-adapter-health");
   const strictHealth = checkNamed(strictReport, "private-adapter-health");
   const training = checkNamed(adapterReport, "training-export-sample");
   const canaryRows = renderCanaryRows(adapterReport);
+  const deploymentRows = renderDeploymentRows(adapterReport);
+  const router = pafHealth.router || {};
   const strictExpected = strictFailureIsExpected(strictReport);
 
   const lines = [
@@ -89,6 +106,30 @@ function renderBundle({ adapterReport, strictReport, commands }) {
     "$ npm run check:model-ai-demo",
     commands.adapterFinal.output,
     "```",
+    "",
+    "## Live Admin And Router Evidence",
+    "",
+    `- Base URL: ${adapterReport.baseUrl}`,
+    `- Admin proof status: ${adminProof.status || "unknown"}`,
+    `- PAF route mode: ${router.route_mode || "unknown"}`,
+    `- Primary provider: ${router.primary_provider || "unknown"}`,
+    `- Candidate provider: ${router.candidate_provider || "unknown"}`,
+    `- Base endpoint configured: ${router.base_endpoint_configured === true ? "yes" : "no"}`,
+    `- Fine-tuned endpoint configured: ${router.fine_tuned_endpoint_configured === true ? "yes" : "no"}`,
+    `- Trace persistence: ${router.trace_persist === true ? "on" : "off"}`,
+    `- Eval enabled: ${router.eval_enabled === true ? "on" : "off"}`,
+    `- Training capture: ${router.training_capture_enabled === true ? "on" : "off"}`,
+    `- Rubric version: ${router.rubric_version || "unknown"}`,
+    "",
+    "### Admin Proof Strings",
+    "",
+    ...(renderRequiredTextList(adminProof).length ? renderRequiredTextList(adminProof) : ["- No admin proof strings recorded"]),
+    "",
+    "## Deployment Evidence",
+    "",
+    "| Deployment | Ready | Available |",
+    "| --- | ---: | ---: |",
+    ...(deploymentRows.length ? deploymentRows : ["| unknown | 0/0 | 0/0 |"]),
     "",
     "## Canary Evidence",
     "",
