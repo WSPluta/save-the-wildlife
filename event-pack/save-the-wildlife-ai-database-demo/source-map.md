@@ -72,9 +72,17 @@ Use this to answer technical follow-up questions.
 
 Use this section when an AI engineer asks what is proven live versus what is still intentionally gated.
 
+One-command local proof bundle:
+
+```bash
+npm run check:model-ai-demo:proof
+```
+
+It writes `.codex_tmp/model-ai-readiness/proof-bundle.md` after running adapter-mode, strict-upstream, then adapter-mode again.
+
 | Claim | Current verdict | Proof receipt |
 |---|---|---|
-| PAF/Oracle AI Database harness is live | Proven | `npm run check:model-ai-demo`; `/admin/ai-learning`; `private-agent-factory/index.js` |
+| PAF/Oracle AI Database harness is live | Proven | `npm run check:model-ai-demo:proof`; `/admin/ai-learning`; `private-agent-factory/index.js` |
 | Tier-1000 adapter-mode canary passed | Proven | `output/prod-load/202606132052-fastpath-full/summary.md`; admin proof `Tier 1000 pass` |
 | Every tier-1000 player wrote a high-score test row | Proven | Admin proof `Score proof 1000/1000`; load report high-score row verification |
 | Commentary remained unique at tier 1000 | Proven | Load report duplicate check `0`; admin proof `0 duplicates` |

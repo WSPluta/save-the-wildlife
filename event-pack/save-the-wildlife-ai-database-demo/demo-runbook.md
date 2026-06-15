@@ -99,6 +99,18 @@ Talk track:
 
 ## Model AI Proof Path
 
+Run the full local proof bundle:
+
+```bash
+npm run check:model-ai-demo:proof
+```
+
+Expected:
+
+- `adapter_verdict=ready_with_upstream_llm_blocker`
+- `strict_verdict=failed`
+- bundle receipt: `.codex_tmp/model-ai-readiness/proof-bundle.md`
+
 Run the presenter-friendly readiness receipt:
 
 ```bash
