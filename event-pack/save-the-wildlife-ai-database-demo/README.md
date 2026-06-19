@@ -24,7 +24,7 @@ By the end, AI developers should understand four things:
 ## Pack Contents
 
 - [run-of-show.md](run-of-show.md): minute-by-minute talk flow.
-- [current-proof-snapshot.md](current-proof-snapshot.md): current deployed commit, live image tags, green receipts, and gated claims.
+- [current-proof-snapshot.md](current-proof-snapshot.md): runtime deploy proof, live image tags, green receipts, and gated claims.
 - [18-minute-stage-script.md](18-minute-stage-script.md): read-aloud rehearsal script with stage actions, proof boundaries, and timing rescue.
 - [architecture.md](architecture.md): current post-Redis runtime topology and commentary sequence.
 - [slide-outline.md](slide-outline.md): 10-slide deck spine with visual direction and speaker notes.
@@ -55,8 +55,8 @@ The larger lesson is Canvas plus harness. Canvas is where business users can sha
 
 ## Proof Points To Show
 
-- Latest deployed commit: `307cc06`
-- Latest deployment receipt: `stwl-deploy-codex-307cc06`
+- Latest runtime-changing deploy commit: `307cc06`
+- Latest runtime deployment receipt: `stwl-deploy-codex-307cc06`
 - Current proof snapshot: [current-proof-snapshot.md](current-proof-snapshot.md)
 - One-command stage brief:
   - `npm run check:conference-demo:stage`

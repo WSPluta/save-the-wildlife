@@ -18,9 +18,9 @@ cat .codex_tmp/conference-stage-brief/latest.md
 - PAF commentary API: `http://130.162.174.167/paf/api/commentary`
 - PAF Canvas UI: `https://145.241.196.162:8080/agentFactory/`
 
-## Current Deployment Proof
+## Current Runtime Deployment Proof
 
-- Verified commit: `307cc06`
+- Latest runtime-changing deploy commit: `307cc06`
 - Build run: `stwl-build-codex-307cc06`
 - Deploy run: `stwl-deploy-codex-307cc06`
 - Stage verdict: `go_with_caveats`
@@ -29,6 +29,11 @@ cat .codex_tmp/conference-stage-brief/latest.md
 - Conference preflight: `ready_with_caveats`
 - Model proof: `adapter_verdict=ready_with_upstream_llm_blocker`
 - Strict upstream proof: `failed`, expected while both model routes report `behavior-adapter`
+
+Note: the generated stage brief's `Verified commit` is the current repository
+commit when the receipt is generated. It can be newer than `307cc06` after
+docs-only event-pack commits. The runtime proof is the deployed image tags,
+public smoke receipts, and the `stwl-deploy-codex-307cc06` rollout.
 
 ## Live Images
 

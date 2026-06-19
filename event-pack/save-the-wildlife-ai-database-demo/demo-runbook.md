@@ -17,7 +17,7 @@ it proves deployed HTTP and Socket.IO room lifecycle only when its verdict is `r
 
 For the proof ladder to use when AI engineers challenge the architecture, keep
 [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md) open. It maps each live receipt to what it proves and what it does not prove yet.
-For the current deployed commit, image tags, and proof posture, keep
+For the current runtime deployment, image tags, and proof posture, keep
 [current-proof-snapshot.md](current-proof-snapshot.md) open.
 
 ## Current Verified Posture
@@ -25,7 +25,7 @@ For the current deployed commit, image tags, and proof posture, keep
 Use these as the latest receipts before walking on stage:
 
 - Public game endpoint: `http://130.162.174.167/`
-- Deployed proof: commit `307cc06`, deployment `stwl-deploy-codex-307cc06`, `web:0.0.22`, `ws-server:0.0.31`, `private-agent-factory:0.0.4`
+- Runtime deployment proof: commit `307cc06`, deployment `stwl-deploy-codex-307cc06`, `web:0.0.22`, `ws-server:0.0.31`, `private-agent-factory:0.0.4`
 - Public game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
 - Public transport smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
 - Mobile proof: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at waterline when game smoke or manual visual proof is current
