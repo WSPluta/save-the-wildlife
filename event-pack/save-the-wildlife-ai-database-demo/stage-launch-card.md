@@ -18,6 +18,7 @@ receipts, say only what the evidence proves.
 ```bash
 npm run check:conference-demo:transport
 npm run check:conference-demo:game
+npm run check:conference-demo
 npm run check:conference-demo:stage -- --skip-refresh
 ```
 
@@ -25,6 +26,7 @@ Expected stage posture:
 
 - Transport: `ready`
 - Game smoke: `ready`
+- Conference preflight: `ready_with_caveats` or better
 - Stage brief: `go_with_caveats` or better
 - Mobile: `RUNNING`, joystick visible, boat seated at the waterline
 - PAF health: pass

@@ -1,11 +1,13 @@
 # Current Proof Snapshot
 
-Last verified from the generated stage receipts on **2026-06-19 22:09 UTC**.
+Last verified from the generated stage and preflight receipts on
+**2026-06-19 22:17 UTC**.
 
 Use this file as the quick "what is live right now?" anchor. The generated
 receipt remains the authority:
 
 ```bash
+npm run check:conference-demo
 npm run check:conference-demo:stage
 cat .codex_tmp/conference-stage-brief/latest.md
 ```
@@ -29,6 +31,7 @@ cat .codex_tmp/conference-stage-brief/latest.md
 - Conference preflight: `ready_with_caveats`
 - Model proof: `adapter_verdict=ready_with_upstream_llm_blocker`
 - Strict upstream proof: `failed`, expected while both model routes report `behavior-adapter`
+- Latest docs/event-pack commit verified by the generated stage brief: `eacd680`
 
 Note: the generated stage brief's `Verified commit` is the current repository
 commit when the receipt is generated. It can be newer than `3f26f08` after
