@@ -205,16 +205,41 @@ describe("safe item spawning", () => {
     expect(position).toEqual({ x: 7, y: 0, z: 3 });
   });
 
-  it("falls back to the safest attempted candidate when all candidates are close", () => {
+  it("uses a deterministic safe fallback when all random candidates are close", () => {
     const coords = [0, 0, 1, 1, 2, 0];
     const position = chooseSpawnPositionAwayFromPlayers({
       players: [{ x: 0, z: 0 }],
+      worldSizeX: 12,
+      worldSizeZ: 12,
       clearRadius: 4,
       coordinateFactory: () => coords.shift(),
       attempts: 3,
     });
 
-    expect(position).toEqual({ x: 2, y: 0, z: 0 });
+    expect(isPositionWithinRadius2d(position, { x: 0, z: 0 }, 4)).toBe(false);
+    expect([{ x: 0, z: 0 }, { x: 1, z: 1 }, { x: 2, z: 0 }])
+      .not.toContainEqual({ x: position.x, z: position.z });
+  });
+
+  it("keeps required clear positions safe before softer spacing preferences", () => {
+    const coords = [0, 0, 1, 1, -1, 1];
+    const position = chooseSpawnPositionAwayFromPlayers({
+      requiredPlayers: [{ x: 0, z: 0 }],
+      players: [
+        { x: 0, z: 0 },
+        { x: -4, z: -4 },
+        { x: -4, z: 4 },
+        { x: 4, z: -4 },
+        { x: 4, z: 4 },
+      ],
+      worldSizeX: 10,
+      worldSizeZ: 10,
+      clearRadius: 4,
+      coordinateFactory: () => coords.shift(),
+      attempts: 3,
+    });
+
+    expect(isPositionWithinRadius2d(position, { x: 0, z: 0 }, 4)).toBe(false);
   });
 });
 
@@ -262,6 +287,27 @@ describe("safe opening item relocation", () => {
     expect(relocations[1].position).toEqual({ x: -8, y: 0, z: 0 });
     expect(isPositionWithinRadius2d(relocations[0].position, relocations[1].position, 6)).toBe(false);
     expect(isPositionWithinRadius2d(relocations[0].position, { x: 16, z: 0 }, 6)).toBe(false);
+  });
+
+  it("keeps relocated opening items outside the start buffer even when random picks are unsafe", () => {
+    const coords = [0, 0, 1, 1, 2, 0];
+    const relocations = buildStartPositionItemRelocations({
+      startPosition: { x: -3, z: 2 },
+      clearRadius: 6,
+      worldSizeX: 20,
+      worldSizeZ: 14,
+      coordinateFactory: () => coords.shift(),
+      attempts: 3,
+      items: {
+        trash_near: { id: "trash_near", type: "trash", position: { x: -6, z: 2 } },
+        turtle_safe_a: { id: "turtle_safe_a", type: "turtle", position: { x: 6, z: 6 } },
+        turtle_safe_b: { id: "turtle_safe_b", type: "turtle", position: { x: -9, z: -5 } },
+      },
+    });
+
+    expect(relocations).toHaveLength(1);
+    expect(relocations[0].id).toBe("trash_near");
+    expect(isPositionWithinRadius2d(relocations[0].position, { x: -3, z: 2 }, 6)).toBe(false);
   });
 });
 

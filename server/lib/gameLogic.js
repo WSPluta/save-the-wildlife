@@ -189,8 +189,91 @@ export function isPositionWithinRadius2d(a, b, radius) {
   return distanceSq2d(a, b) < r * r;
 }
 
+function normalizePositions(positions = []) {
+  return (Array.isArray(positions) ? positions : [])
+    .map((position) => ({
+      x: Number(position?.x),
+      z: Number(position?.z),
+    }))
+    .filter((position) => Number.isFinite(position.x) && Number.isFinite(position.z));
+}
+
+function nearestDistanceSq2d(candidate, positions) {
+  if (!positions.length) return Number.POSITIVE_INFINITY;
+  return positions.reduce(
+    (nearest, position) => Math.min(nearest, distanceSq2d(candidate, position)),
+    Number.POSITIVE_INFINITY
+  );
+}
+
+function worldAxisBounds(size) {
+  const span = Math.max(1, Math.floor(Number(size) || 1));
+  const half = (span - 1) / 2;
+  return {
+    min: -Math.floor(half),
+    max: Math.ceil(half),
+  };
+}
+
+function evaluateSpawnCandidate(candidate, requiredPositions, preferredPositions) {
+  const nearestRequiredSq = nearestDistanceSq2d(candidate, requiredPositions);
+  const nearestPreferredSq = nearestDistanceSq2d(candidate, preferredPositions);
+  return {
+    position: candidate,
+    nearestRequiredSq,
+    nearestPreferredSq,
+    centerDistanceSq: distanceSq2d(candidate, { x: 0, z: 0 }),
+  };
+}
+
+function isBetterSpawnCandidate(candidate, best) {
+  if (!best) return true;
+  if (candidate.nearestPreferredSq !== best.nearestPreferredSq) {
+    return candidate.nearestPreferredSq > best.nearestPreferredSq;
+  }
+  if (candidate.nearestRequiredSq !== best.nearestRequiredSq) {
+    return candidate.nearestRequiredSq > best.nearestRequiredSq;
+  }
+  if (candidate.centerDistanceSq !== best.centerDistanceSq) {
+    return candidate.centerDistanceSq < best.centerDistanceSq;
+  }
+  if (candidate.position.x !== best.position.x) {
+    return candidate.position.x < best.position.x;
+  }
+  return candidate.position.z < best.position.z;
+}
+
+function findDeterministicSpawnCandidate({
+  requiredPositions,
+  preferredPositions,
+  worldSizeX,
+  worldSizeZ,
+  minDistanceSq,
+  requirePreferredClear,
+}) {
+  const boundsX = worldAxisBounds(worldSizeX);
+  const boundsZ = worldAxisBounds(worldSizeZ);
+  let best = null;
+
+  for (let x = boundsX.min; x <= boundsX.max; x += 1) {
+    for (let z = boundsZ.min; z <= boundsZ.max; z += 1) {
+      const candidate = evaluateSpawnCandidate(
+        { x, y: 0, z },
+        requiredPositions,
+        preferredPositions
+      );
+      if (candidate.nearestRequiredSq < minDistanceSq) continue;
+      if (requirePreferredClear && candidate.nearestPreferredSq < minDistanceSq) continue;
+      if (isBetterSpawnCandidate(candidate, best)) best = candidate;
+    }
+  }
+
+  return best ? best.position : null;
+}
+
 export function chooseSpawnPositionAwayFromPlayers({
   players = [],
+  requiredPlayers,
   coordinateFactory,
   worldSizeX = 88,
   worldSizeZ = 22,
@@ -200,17 +283,15 @@ export function chooseSpawnPositionAwayFromPlayers({
   const coord = typeof coordinateFactory === "function"
     ? coordinateFactory
     : (size) => Math.round((Math.random() - 0.5) * (Number(size || 1) - 1));
-  const activePlayers = (Array.isArray(players) ? players : [])
-    .map((player) => ({
-      x: Number(player?.x),
-      z: Number(player?.z),
-    }))
-    .filter((player) => Number.isFinite(player.x) && Number.isFinite(player.z));
+  const preferredPositions = normalizePositions(players);
+  const requiredPositions = requiredPlayers === undefined
+    ? preferredPositions
+    : normalizePositions(requiredPlayers);
   const tries = Math.max(1, Number(attempts) || 1);
   const radius = Math.max(0, Number(clearRadius) || 0);
   const minDistanceSq = radius * radius;
   let best = null;
-  let bestDistanceSq = -1;
+  let bestRequiredClear = null;
 
   for (let i = 0; i < tries; i += 1) {
     const candidate = {
@@ -218,19 +299,45 @@ export function chooseSpawnPositionAwayFromPlayers({
       y: 0,
       z: coord(worldSizeZ),
     };
-    if (!activePlayers.length || radius <= 0) return candidate;
-    const nearestSq = activePlayers.reduce(
-      (nearest, player) => Math.min(nearest, distanceSq2d(candidate, player)),
-      Number.POSITIVE_INFINITY
-    );
-    if (nearestSq >= minDistanceSq) return candidate;
-    if (nearestSq > bestDistanceSq) {
-      best = candidate;
-      bestDistanceSq = nearestSq;
+    if (!Number.isFinite(candidate.x) || !Number.isFinite(candidate.z)) continue;
+    if ((!requiredPositions.length && !preferredPositions.length) || radius <= 0) return candidate;
+    const evaluated = evaluateSpawnCandidate(candidate, requiredPositions, preferredPositions);
+    if (evaluated.nearestRequiredSq >= minDistanceSq && evaluated.nearestPreferredSq >= minDistanceSq) {
+      return candidate;
     }
+    if (evaluated.nearestRequiredSq >= minDistanceSq && isBetterSpawnCandidate(evaluated, bestRequiredClear)) {
+      bestRequiredClear = evaluated;
+    }
+    if (isBetterSpawnCandidate(evaluated, best)) best = evaluated;
   }
 
-  return best || { x: coord(worldSizeX), y: 0, z: coord(worldSizeZ) };
+  const requiredAndPreferredClear = findDeterministicSpawnCandidate({
+    requiredPositions,
+    preferredPositions,
+    worldSizeX,
+    worldSizeZ,
+    minDistanceSq,
+    requirePreferredClear: true,
+  });
+  if (requiredAndPreferredClear) return requiredAndPreferredClear;
+
+  const requiredClear = findDeterministicSpawnCandidate({
+    requiredPositions,
+    preferredPositions,
+    worldSizeX,
+    worldSizeZ,
+    minDistanceSq,
+    requirePreferredClear: false,
+  });
+  if (requiredClear) return requiredClear;
+
+  if (bestRequiredClear) return bestRequiredClear.position;
+  if (best) return best.position;
+
+  const fallback = { x: coord(worldSizeX), y: 0, z: coord(worldSizeZ) };
+  return Number.isFinite(fallback.x) && Number.isFinite(fallback.z)
+    ? fallback
+    : { x: 0, y: 0, z: 0 };
 }
 
 export function buildStartPositionItemRelocations({
@@ -282,6 +389,7 @@ export function buildStartPositionItemRelocations({
     if (entry.distanceSq >= radiusSq) continue;
     const position = chooseSpawnPositionAwayFromPlayers({
       players: blockedPositions,
+      requiredPlayers: [start],
       coordinateFactory,
       worldSizeX,
       worldSizeZ,
