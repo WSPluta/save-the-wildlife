@@ -1,13 +1,15 @@
 # Current Proof Snapshot
 
-Last verified from the generated stage, preflight, and model-proof receipts on
-**2026-06-19 22:29 UTC**.
+Last verified from the generated stage, preflight, game, transport, and
+model-proof receipts on **2026-06-19 22:36 UTC**.
 
 Use this file as the quick "what is live right now?" anchor. The generated
 receipt remains the authority:
 
 ```bash
 npm run check:conference-demo
+npm run check:conference-demo:transport
+npm run check:conference-demo:game
 npm run check:model-ai-demo:proof
 npm run check:conference-demo:stage
 cat .codex_tmp/conference-stage-brief/latest.md
@@ -52,7 +54,7 @@ public smoke receipts, and the `stwl-deploy-codex-3f26f08` rollout.
 
 ## Latest Playability Receipt
 
-- Mobile: `RUNNING`, joystick `134x134`, boat visual `y=-0.069`, seat depth `0.072`
+- Mobile: `RUNNING`, joystick `134x134`, boat visual `y=-0.066`, seat depth `0.069`
 - Desktop: `RUNNING`, wake ripples `10`, boat visual `y=-0.069`, seat depth `0.072`
 - Transport: public HTTP `200`, Socket.IO room lifecycle `pass`
 - Recent `ws-server` logs after `server:0.0.31`: no `Session ID unknown`, no Coherence scan timeout burst
