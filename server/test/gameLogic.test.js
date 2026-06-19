@@ -15,6 +15,8 @@ import {
   resolveCollisionValidateRadius,
   resolveServerAuthSpeedLimit,
   chooseSpawnPositionAwayFromPlayers,
+  buildStartPositionItemRelocations,
+  isPositionWithinRadius2d,
 } from "../lib/gameLogic.js";
 
 describe("clampNum", () => {
@@ -213,6 +215,53 @@ describe("safe item spawning", () => {
     });
 
     expect(position).toEqual({ x: 2, y: 0, z: 0 });
+  });
+});
+
+describe("safe opening item relocation", () => {
+  it("relocates only items inside the start-position buffer while preserving ids", () => {
+    const coords = [10, 0, 12, 1];
+    const relocations = buildStartPositionItemRelocations({
+      startPosition: { x: 0, z: 0 },
+      clearRadius: 6,
+      coordinateFactory: () => coords.shift(),
+      attempts: 2,
+      items: {
+        trash_near: { id: "trash_near", type: "trash", position: { x: 2, z: 1 } },
+        turtle_safe: { id: "turtle_safe", type: "turtle", position: { x: 20, z: 0 } },
+      },
+    });
+
+    expect(relocations).toEqual([
+      { id: "trash_near", position: { x: 10, y: 0, z: 0 } },
+    ]);
+    expect(isPositionWithinRadius2d(relocations[0].position, { x: 0, z: 0 }, 6)).toBe(false);
+  });
+
+  it("keeps relocated opening items away from each other and existing safe items", () => {
+    const coords = [
+      15, 0, // rejected: too close to existing safe turtle
+      8, 0,  // accepted for first item
+      8, 1,  // rejected: too close to first relocation
+      -8, 0, // accepted for second item
+    ];
+    const relocations = buildStartPositionItemRelocations({
+      startPosition: { x: 0, z: 0 },
+      clearRadius: 6,
+      coordinateFactory: () => coords.shift(),
+      attempts: 4,
+      items: {
+        trash_a: { id: "trash_a", type: "trash", position: { x: 1, z: 1 } },
+        trash_b: { id: "trash_b", type: "trash", position: { x: -1, z: 1 } },
+        turtle_safe: { id: "turtle_safe", type: "turtle", position: { x: 16, z: 0 } },
+      },
+    });
+
+    expect(relocations.map((entry) => entry.id)).toEqual(["trash_a", "trash_b"]);
+    expect(relocations[0].position).toEqual({ x: 8, y: 0, z: 0 });
+    expect(relocations[1].position).toEqual({ x: -8, y: 0, z: 0 });
+    expect(isPositionWithinRadius2d(relocations[0].position, relocations[1].position, 6)).toBe(false);
+    expect(isPositionWithinRadius2d(relocations[0].position, { x: 16, z: 0 }, 6)).toBe(false);
   });
 });
 

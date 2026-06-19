@@ -19,6 +19,7 @@ import {
   resolveJoiningRoom,
   resolveAuthoritativeBoatTypes,
   chooseSpawnPositionAwayFromPlayers,
+  buildStartPositionItemRelocations,
   resolveCollisionValidateRadius,
   resolveServerAuthSpeedLimit,
 } from "./lib/gameLogic.js";
@@ -92,6 +93,9 @@ const DEMO_ADMIN_TOKEN = process.env.DEMO_ADMIN_TOKEN || process.env.ADMIN_DEMO_
 const SPAWN_PLAYER_CLEAR_RADIUS = process.env.SPAWN_PLAYER_CLEAR_RADIUS
   ? parseFloat(process.env.SPAWN_PLAYER_CLEAR_RADIUS)
   : 4;
+const START_POSITION_ITEM_CLEAR_RADIUS = process.env.START_POSITION_ITEM_CLEAR_RADIUS
+  ? parseFloat(process.env.START_POSITION_ITEM_CLEAR_RADIUS)
+  : Math.max(6, SPAWN_PLAYER_CLEAR_RADIUS);
 
 const ITEM_MAX_SIZE = process.env.ITEM_MAX_SIZE
   ? parseFloat(process.env.ITEM_MAX_SIZE)
@@ -728,6 +732,74 @@ export async function start(
     });
   }
 
+  async function writeRoomItem(source, id, item) {
+    if (!id || !item) return;
+    if (source === "trash") {
+      if (ENABLE_COHERENCE_BACKEND) await writeCache(mapTrash, id, item);
+      else mapTrash[id] = item;
+      return;
+    }
+    if (source === "marine") {
+      if (ENABLE_COHERENCE_BACKEND) await writeCache(mapMarineLife, id, item);
+      else mapMarineLife[id] = item;
+      return;
+    }
+    if (source === "power") {
+      if (ENABLE_COHERENCE_BACKEND) await writeCache(mapPowerUps, id, item);
+      else mapPowerUps[id] = item;
+    }
+  }
+
+  async function clearOpeningItemsNearStart(room, startPosition) {
+    if (!shouldSyncVisualItems(room)) return { relocated: 0 };
+    const { trash, marine, power } = await readAllItemsObjects();
+    const want = room || GLOBAL_ROOM;
+    const items = {};
+    const sourceById = new Map();
+    const addItems = (objects, source) => {
+      for (const [id, item] of Object.entries(objects || {})) {
+        const itemRoom = item && item.room ? item.room : GLOBAL_ROOM;
+        if (itemRoom !== want) continue;
+        items[id] = item;
+        sourceById.set(id, source);
+      }
+    };
+    addItems(trash, "trash");
+    addItems(marine, "marine");
+    addItems(power, "power");
+
+    const relocations = buildStartPositionItemRelocations({
+      items,
+      startPosition,
+      coordinateFactory: randSpawnCoord,
+      worldSizeX,
+      worldSizeZ,
+      clearRadius: START_POSITION_ITEM_CLEAR_RADIUS,
+      attempts: 64,
+    });
+
+    for (const relocation of relocations) {
+      const item = items[relocation.id];
+      if (!item) continue;
+      item.position = {
+        x: relocation.position.x,
+        y: 0,
+        z: relocation.position.z,
+      };
+      await writeRoomItem(sourceById.get(relocation.id), relocation.id, item);
+    }
+
+    if (relocations.length > 0) {
+      io.to(room).emit("items.all", await getItemsForRoom(room));
+      logger.info({
+        room,
+        relocated: relocations.length,
+        clearRadius: START_POSITION_ITEM_CLEAR_RADIUS,
+      }, "opening item safety sweep");
+    }
+    return { relocated: relocations.length };
+  }
+
   // Per-room match lifecycle: separate STARTING/RUNNING/ENDED timers per room (time only; items remain global)
 function broadcastRoomState(room, state, extra = {}) {
   if (!room) return;
@@ -809,6 +881,8 @@ function startRoomMatch(room) {
     }));
     const startX = startPosition.x;
     const startZ = startPosition.z;
+    await clearOpeningItemsNearStart(room, { x: startX, y: 0, z: startZ })
+      .catch((error) => logAsyncFailure("room.start.openingItemSweep", error));
     rs.startTime = startTime;
     rs.startingAt = null;
     if (SERVER_AUTH_ENABLED) {

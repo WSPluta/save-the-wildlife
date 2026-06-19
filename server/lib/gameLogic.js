@@ -176,11 +176,17 @@ export function resolveAuthoritativeBoatTypes(env = {}) {
 }
 
 export const DEFAULT_SPAWN_PLAYER_CLEAR_RADIUS = 4;
+export const DEFAULT_START_POSITION_ITEM_CLEAR_RADIUS = 6;
 
 function distanceSq2d(a, b) {
   const dx = Number(a?.x || 0) - Number(b?.x || 0);
   const dz = Number(a?.z || 0) - Number(b?.z || 0);
   return dx * dx + dz * dz;
+}
+
+export function isPositionWithinRadius2d(a, b, radius) {
+  const r = Math.max(0, Number(radius) || 0);
+  return distanceSq2d(a, b) < r * r;
 }
 
 export function chooseSpawnPositionAwayFromPlayers({
@@ -225,6 +231,71 @@ export function chooseSpawnPositionAwayFromPlayers({
   }
 
   return best || { x: coord(worldSizeX), y: 0, z: coord(worldSizeZ) };
+}
+
+export function buildStartPositionItemRelocations({
+  items = {},
+  startPosition,
+  coordinateFactory,
+  worldSizeX = 88,
+  worldSizeZ = 22,
+  clearRadius = DEFAULT_START_POSITION_ITEM_CLEAR_RADIUS,
+  attempts = 48,
+} = {}) {
+  const start = {
+    x: Number(startPosition?.x),
+    z: Number(startPosition?.z),
+  };
+  if (!Number.isFinite(start.x) || !Number.isFinite(start.z)) return [];
+
+  const radius = Math.max(0, Number(clearRadius) || 0);
+  if (radius <= 0) return [];
+  const radiusSq = radius * radius;
+  const parsedItems = Object.entries(items || {})
+    .map(([id, item]) => ({
+      id,
+      item,
+      position: {
+        x: Number(item?.position?.x),
+        z: Number(item?.position?.z),
+      },
+    }))
+    .filter(({ id, position }) => (
+      id &&
+      Number.isFinite(position.x) &&
+      Number.isFinite(position.z)
+    ))
+    .map((entry) => ({
+      ...entry,
+      distanceSq: distanceSq2d(entry.position, start),
+    }));
+
+  const blockedPositions = [
+    start,
+    ...parsedItems
+      .filter((entry) => entry.distanceSq >= radiusSq)
+      .map((entry) => entry.position),
+  ];
+  const relocations = [];
+
+  for (const entry of parsedItems) {
+    if (entry.distanceSq >= radiusSq) continue;
+    const position = chooseSpawnPositionAwayFromPlayers({
+      players: blockedPositions,
+      coordinateFactory,
+      worldSizeX,
+      worldSizeZ,
+      clearRadius: radius,
+      attempts,
+    });
+    relocations.push({
+      id: entry.id,
+      position,
+    });
+    blockedPositions.push({ x: position.x, z: position.z });
+  }
+
+  return relocations;
 }
 
 export const MAX_PLAYER_SESSION_HISTORY = 20;
