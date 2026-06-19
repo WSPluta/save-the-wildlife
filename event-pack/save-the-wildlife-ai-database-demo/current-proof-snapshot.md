@@ -32,7 +32,7 @@ cat .codex_tmp/conference-stage-brief/latest.md
 - Conference preflight: `ready_with_caveats`
 - Model proof: `adapter_verdict=ready_with_upstream_llm_blocker`
 - Strict upstream proof: `failed`, expected while both model routes report `behavior-adapter`
-- Latest docs/event-pack commit verified by the generated stage brief: `9877def`
+- Docs/event-pack commit: read the `Verified commit` line in the generated stage brief after rerunning `npm run check:conference-demo:stage`
 
 Note: the generated stage brief's `Verified commit` is the current repository
 commit when the receipt is generated. It can be newer than `3f26f08` after
