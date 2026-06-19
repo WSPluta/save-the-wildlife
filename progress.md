@@ -374,3 +374,102 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - `npm --prefix web run test:unit` (9 files, 43 tests)
     - `npm --prefix web run build` passed with existing asset/entrypoint size warnings only.
     - Web-game Playwright smoke reached `RUNNING`; final `render_game_to_text` reported `boatFeel.y=-0.018`, `waterlineContact.visible=true`, healthy item counts, and no fresh browser error artifacts.
+- Conference demo deployment on 2026-06-19:
+  - Committed and pushed `e7c5526` (`Harden conference demo smoke and waterline`) to `main`.
+  - OCI DevOps build `stwl-build-e7c5526-20260619` succeeded:
+    - exported versions: `WS_SERVER_VERSION=0.0.25`, `WEB_VERSION=0.0.18`, `PAF_VERSION=0.0.4`, `SCORE_VERSION=0.0.7`, `REPLAY_VERSION=0.0.1`.
+    - built/delivered `server`, `web`, `score`, `replay`, `private-agent-factory`, `model-ai-training`, and `model-ai-inference` artifacts.
+  - OCI DevOps deployment `prod-conference-demo-e7c5526` succeeded through the `Deploy with Kustomize` shell stage.
+  - Public checks after deploy:
+    - `curl -sSI http://130.162.174.167/` returned `HTTP/1.1 200 OK`.
+    - `curl -sS http://130.162.174.167/paf/healthz` returned healthy PAF with Oracle, GenAI, Canvas, Select AI, in-db agent, graph, replay, vector, and model-router configuration enabled.
+    - `npm run check:conference-demo` returned `ready_with_caveats`, with expected warnings for no smoke replay/vector rows and behavior-adapter runtime metadata.
+    - `npm run check:conference-demo:game` returned `ready`, with public mobile and desktop gameplay both reaching `RUNNING`.
+    - Public mobile smoke: joystick visible, `items=40`, `trash=16`, `powerups=2`, `boatFeel.y=-0.008`, `waterlineContact.visible=true`.
+    - Public desktop smoke: wake ripples visible, `items=22`, `trash=14`, `powerups=2`, `boatFeel.y=-0.011`, `waterlineContact.visible=true`.
+- Boat water seating follow-up on 2026-06-19:
+  - User still perceived the local boat as floating above the water, likely from a too-shallow visual hull offset plus a strong water reflection.
+  - Tightened the visual-only boat feel layer so the gameplay root remains at authoritative `y=0`, while the hull pivot now sits in a safer submerged range (`boatFeel.y` around `-0.044`).
+  - Added a subtle under-hull contact shadow/ring and exposed `waterlineContact.seatDepth` in `render_game_to_text` so smokes can catch visible air-gap regressions.
+  - Updated the conference game smoke to validate seated waterline depth instead of only checking that `boatFeel.y` is close to zero.
+  - Validation passed:
+    - `node --check web/src/boatFeel.js`
+    - `node --check web/src/script.js`
+    - `node --check scripts/conference-game-smoke.mjs`
+    - `npm --prefix web run test:unit -- --run src/__tests__/boatFeel.test.js src/__tests__/gameplayPolish.test.js`
+    - `npm --prefix web run test:unit`
+    - `npm --prefix web run build` (existing asset/entrypoint size warnings only)
+    - `node .codex_tmp/arcade_environment_smoke.mjs` against local dev passed with `boatFeel.y=-0.044`, `seatDepth=0.05`, and visible wake ripples.
+    - `node scripts/conference-game-smoke.mjs --base-url http://127.0.0.1:8080 --scenario both --output-dir .codex_tmp/conference-game-smoke-local` passed mobile and desktop.
+    - Standard web-game Playwright client passed against local `?autostart=1`; final sampled state showed `boatFeel.y=-0.044` and `seatDepth=0.05`.
+  - Deployed the water seating fix:
+    - Committed and pushed `5aea6ad` (`Seat boat visuals into waterline`) to `main`.
+    - Bumped web image version to `0.0.19`.
+    - OCI DevOps build `stwl-build-5aea6ad-20260619134241` succeeded and exported `WEB_VERSION=0.0.19`.
+    - OCI DevOps deployment `prod-conference-demo-5aea6ad` succeeded.
+    - Public checks passed: game URL `200 OK`, PAF `/paf/healthz` healthy, public mobile/desktop conference game smoke `ready`, and full conference preflight `ready_with_caveats`.
+    - Public game smoke showed mobile `boatFeel.y=-0.043`, `seatDepth=0.049`, joystick visible, and desktop wake/contact visible.
+    - Model proof returned expected boundary: adapter verdict `ready_with_upstream_llm_blocker`, strict verdict `failed`.
+- Boat water adhesion follow-up on 2026-06-19:
+  - User still saw the local boat floating in air, so the boat feel layer was changed from "ride positive CPU waves" to "settle downward against the rendered Three.js Water plane."
+  - Kept the gameplay root authoritative at `y=0`; only the visual-only hull pivot moves.
+  - Added explicit `waterSurfaceY` debug and aligned wake/contact ripples to that surface.
+  - Tuned the hull to a conservative seated band (`boatFeel.y` around `-0.054` to `-0.057`) so it reads as in-water without hiding the deck.
+  - Desktop smoke passed at `output/boat-seat-running-smoke/latest.md` with `mode=RUNNING`, `waterlineContact.visible=true`, `seatDepth=0.062`, and wake ripples visible.
+  - Mobile smoke passed at `output/boat-seat-mobile-smoke/latest.md` with `mode=RUNNING`, joystick visible at `134x134`, `waterlineContact.visible=true`, and `seatDepth=0.059`.
+  - Validation passed:
+    - `node --check web/src/script.js`
+    - `npm --prefix web run test:unit -- --run src/__tests__/boatFeel.test.js src/__tests__/gameplayPolish.test.js`
+    - `npm --prefix web run test:unit`
+    - `npm --prefix web run build` passed with existing asset/entrypoint size warnings only.
+    - Scoped `git diff --check` passed for touched web files.
+- Opening spawn safety follow-up on 2026-06-19:
+  - Public conference smoke after `57c1c2c` showed the boat/water fix deployed, but mobile failed because the nearest trash could be `3.162` units from the start, under the `3.5` smoke threshold.
+  - Added a server-side room-start sweep that relocates items inside `START_POSITION_ITEM_CLEAR_RADIUS` after choosing the start coordinate and before broadcasting `game.on`.
+  - Preserves item ids and writes relocated positions back to the correct trash/marine/powerup map, then emits a fresh `items.all` snapshot.
+  - Added pure game-logic tests for opening relocation id preservation, start-distance safety, and spacing against existing safe items.
+  - Validation passed:
+    - `node --check server/server.js`
+    - `npm --prefix server run test:unit -- --run test/gameLogic.test.js`
+    - `npm --prefix server run test:unit`
+    - Scoped `git diff --check` passed for touched server files.
+  - Public smoke after deploying `8e7f492` still failed mobile with nearest trash at `3`, while desktop passed.
+  - Follow-up hotfix: move authoritative `playersState` initialization before the opening item sweep so refills and the sweep both see the real start coordinate before `game.on`.
+  - Validation passed again:
+    - `node --check server/server.js`
+    - `npm --prefix server run test:unit`
+  - Deployed final hotfix:
+    - Commit `15aa3af` (`Seed start state before opening item sweep`) pushed to `main`.
+    - OCI DevOps build `stwl-build-15aa3af-20260619154655` succeeded with `WS_SERVER_VERSION=0.0.27`.
+    - OCI DevOps deployment `prod-conference-demo-15aa3af` succeeded.
+    - Public game smoke passed mobile and desktop at `.codex_tmp/conference-game-smoke/latest.md`; mobile nearest trash is now `6` units from start, boat `seatDepth=0.059`, joystick visible.
+    - Public conference preflight passed as `ready_with_caveats` at `.codex_tmp/conference-preflight/latest.md`; caveats remain claim-boundary warnings for replay/vector evidence in the smoke session, exact Canvas/in-db response metadata, and behavior-adapter model runtime mode.
+- Event-pack proof-boundary pass on 2026-06-19:
+  - Updated the AI Engineer stage materials to reflect latest deployed proof: commit `15aa3af`, public game smoke `ready`, conference preflight `ready_with_caveats`, mobile joystick/start safety proof, and PAF health configuration.
+  - Tightened Canvas language so the talk says Canvas is configured/business-facing while response metadata remains authority for whether a specific line came from Canvas.
+  - Updated the recording storyboard caption from "Canvas prompt" to "PAF harness" to avoid overclaiming the current smoke path.
+  - Checked event-pack wording for stale Canvas overclaims, legacy Oracle AI Database naming, and trailing whitespace in touched files.
+- Slide/deck resonance pass on 2026-06-19:
+  - Updated `deck-brief.md`, `slide-outline.md`, and `slide-demo-cues.md` with the latest verified receipts and safer stage language.
+  - Reframed Slide 6 from "Canvas Agent, Production Harness" to "Canvas Shapes, Harness Proves" so the story matches current metadata.
+  - Added proof anchors for public mobile smoke, `ready_with_caveats`, and the Canvas/source metadata boundary.
+  - Added the reusable final line: "SQL decides what happened. The model decides how to say it. The harness decides whether it is allowed to say it."
+  - Ran wording scans for stale Canvas overclaims, raw-footage claims, DDS shorthand, and legacy Oracle AI Database naming; remaining hits are explicit "do not say" boundary lines.
+- Deterministic spawn fallback follow-up on 2026-06-19:
+  - Fresh public `npm run check:conference-demo:game` after `15aa3af` caught an intermittent mobile opening item issue: one trash item could still land 3 units from the player start.
+  - Root cause: `chooseSpawnPositionAwayFromPlayers` still returned the best random attempt if random placement failed, and opening relocation used item-to-item spacing as a hard constraint alongside the player start.
+  - Patched `server/lib/gameLogic.js` with a deterministic grid fallback and required-vs-preferred blocker handling; opening relocation now treats the start buffer as mandatory while item spacing remains preferred when feasible.
+  - Bumped `server` to `0.0.28`.
+  - Validation passed:
+    - `node --check server/server.js`
+    - `npm --prefix server run test:unit -- --run test/gameLogic.test.js`
+    - `npm --prefix server run test:unit`
+    - Scoped `git diff --check` for touched server files
+    - Local `node scripts/conference-game-smoke.mjs --base-url http://127.0.0.1:8080 --scenario both --output-dir .codex_tmp/conference-game-smoke-local` passed mobile and desktop.
+  - Deployed final hotfix:
+    - Commit `71dd1f1` (`Guarantee safe fallback spawn positions`) pushed to `main`.
+    - OCI DevOps build `stwl-build-71dd1f1-202606191635` succeeded with `WS_SERVER_VERSION=0.0.28`, `WEB_VERSION=0.0.20`, `PAF_VERSION=0.0.4`, `SCORE_VERSION=0.0.7`, `REPLAY_VERSION=0.0.1`, and model image variables.
+    - OCI DevOps deployment `prod-conference-demo-71dd1f1` succeeded.
+    - Public game smoke passed mobile and desktop at `.codex_tmp/conference-game-smoke/latest.md`; mobile nearest trash is now over 12 units from start, joystick visible, and boat `seatDepth=0.058`.
+    - Public conference preflight passed as `ready_with_caveats` at `.codex_tmp/conference-preflight/latest.md`; expected caveats remain no replay/vector rows in the smoke context, exact `canvas:null`/`in_db_agent:null` metadata for the smoke line, and behavior-adapter model runtime mode.
+    - Model proof bundle passed as `ready_with_upstream_llm_blocker`; strict upstream remains `failed`, which is the expected claim boundary.

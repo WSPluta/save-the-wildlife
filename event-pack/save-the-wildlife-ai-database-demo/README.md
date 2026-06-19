@@ -6,7 +6,7 @@ This pack is the source-of-truth for an 18-minute AI developer presentation and 
 
 ## Audience Promise
 
-By the end, AI developers should understand three things:
+By the end, AI developers should understand four things:
 
 1. A good game AI demo starts from real gameplay events and replay evidence, not generic prompts.
 2. Oracle AI Database can be the grounded match-intelligence layer for SQL facts, JSON clips, graph relationships, vector memory, and deterministic context.
@@ -24,6 +24,7 @@ By the end, AI developers should understand three things:
 ## Pack Contents
 
 - [run-of-show.md](run-of-show.md): minute-by-minute talk flow.
+- [18-minute-stage-script.md](18-minute-stage-script.md): read-aloud rehearsal script with stage actions, proof boundaries, and timing rescue.
 - [architecture.md](architecture.md): current post-Redis runtime topology and commentary sequence.
 - [slide-outline.md](slide-outline.md): 10-slide deck spine with visual direction and speaker notes.
 - [demo-runbook.md](demo-runbook.md): live commands, smoke checks, fallback path, and recovery cues.
@@ -47,6 +48,10 @@ The larger lesson is Canvas plus harness. Canvas is where business users can sha
 
 ## Proof Points To Show
 
+- Latest deployed commit: `71dd1f1`
+- Latest deployment receipt: `prod-conference-demo-71dd1f1`
+- Current public game smoke: `ready`
+- Current public conference preflight: `ready_with_caveats`
 - One-command preflight:
   - `npm run check:conference-demo`
   - receipt: `.codex_tmp/conference-preflight/latest.md`
@@ -54,6 +59,7 @@ The larger lesson is Canvas plus harness. Canvas is where business users can sha
   - `npm run check:conference-demo:game`
   - receipt: `.codex_tmp/conference-game-smoke/latest.md`
 - The game works on mobile and desktop.
+- Mobile proof now includes joystick visibility, `RUNNING` state, healthy item counts, boat-waterline contact, and a safe opening spawn buffer.
 - PAF health reports Oracle, GenAI, Canvas, in-db agent, and Select AI configured.
 - PAF context reports SQL/JSON/graph/vector/replay evidence counts.
 - Commentary API returns `warning: null` and source metadata. In the current no-spend proof, expect `source: "oci-base"` with `fallback_source: "oracle-sql"` and `runtime_mode: "behavior-adapter"`; only say Canvas produced a line when the response's `canvas` or `source` fields prove it.

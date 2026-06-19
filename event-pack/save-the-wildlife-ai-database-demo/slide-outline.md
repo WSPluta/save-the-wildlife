@@ -6,13 +6,15 @@ Use a teal-led Oracle technical style: ivory or charcoal canvas, sparse headline
 
 **Claim:** The audience is about to generate the data the agent will use.
 
-**Visual:** Full-screen game screenshot or QR/URL over a dark charcoal background.
+**Visual:** Full-screen game screenshot or QR/URL over a dark charcoal background. Use the verified mobile game screenshot if available.
 
 **Speaker notes:**
-Open with the URL. Ask people to join on mobile. Say the data they generate will become the agent context.
+Open with the URL. Ask people to join on mobile. Say the data they generate will become the agent context. Keep the opening under 45 seconds; the first emotional beat is play, not architecture.
 
 **On-slide text:**
 `http://130.162.174.167/`
+
+**Proof cue:** Public mobile smoke is `ready`: `RUNNING`, joystick visible, safe opening spawn, boat seated at waterline.
 
 ## Slide 2 - "A Game That Emits Match Intelligence"
 
@@ -32,7 +34,7 @@ Mention powerups, trails, freezes, coordinates, scores, related player IDs, JSON
 `SQL facts`, `JSON replay docs`, `Graph relationships`, `Vector memory`.
 
 **Speaker notes:**
-This is the gaming template. Telemetry explains what happened. Replay shows it. The agent receives evidence and clip pointers, not unlimited video.
+This is the gaming template. Telemetry explains what happened. Replay shows it. The agent receives evidence and clip pointers, not unlimited video. If the smoke session has no replay rows, say that explicitly and keep replay as the configured path, not returned evidence for this exact call.
 
 ## Slide 4 - "Runtime Path: Evidence First, Model Last"
 
@@ -42,7 +44,7 @@ This is the gaming template. Telemetry explains what happened. Replay shows it. 
 Browser -> ingress -> `ws-server` -> Coherence fanout -> score/replay -> Oracle AI Database -> `private-agent-factory` -> Select AI/in-db agents/model route/Canvas when selected -> `commentary.ready`.
 
 **Speaker notes:**
-Emphasize that Redis is no longer in the runtime path. Coherence handles Socket.IO fanout; Oracle AI Database holds the evidence; generation remains bounded with live output under 200 characters, profanity guard, and no invented events or unrecorded replay moments.
+Emphasize that Redis is no longer in the runtime path. Coherence handles Socket.IO fanout; Oracle AI Database holds the evidence; generation remains bounded with live output under 200 characters, profanity guard, and no invented events or unrecorded replay moments. This is the line AI engineers should remember: explicit context first, model phrasing last.
 
 ## Slide 5 - "Live Proof: Commentary From The Timeline"
 
@@ -52,9 +54,11 @@ Emphasize that Redis is no longer in the runtime path. Coherence handles Socket.
 `source`, `fallback_source`, `model_route.runtime_mode`, `canvas`, `in_db_agent`, `summary`, `capabilities.graph_facts`.
 
 **Speaker notes:**
-Show `/paf/api/context` and `/paf/api/commentary`. Read the summary fields aloud: shield, trail crossing, freeze, coordinates, replay clip evidence when present.
+Show `/paf/api/context` and `/paf/api/commentary`. Read the summary fields aloud: shield, trail crossing, freeze, coordinates, replay clip evidence when present. Read the metadata too: `source`, `fallback_source`, `canvas`, `in_db_agent`, and `model_route.runtime_mode`.
 
-## Slide 6 - "Canvas Agent, Production Harness"
+**Proof boundary:** If `canvas:null`, do not say Canvas produced the line. Say Canvas is configured and the harness metadata identifies the exact path.
+
+## Slide 6 - "Canvas Shapes, Harness Proves"
 
 **Claim:** Canvas is the agent-building surface; the deployed harness is the live-system connection.
 
@@ -62,7 +66,7 @@ Show `/paf/api/context` and `/paf/api/commentary`. Read the summary fields aloud
 `web`, `ws-server`, `score`, `replay`, Coherence, Oracle AI Database, and `private-agent-factory`.
 
 **Speaker notes:**
-PAF has `/healthz` and `/api/commentary`; it uses Oracle wallet config, GenAI settings, Canvas auth, and in-db Select AI setup. The real-time layer uses Coherence rather than Redis. The point for AI engineers is that business users can shape the Canvas agent while the harness owns evidence, policy, fallback behavior, and broadcast into the game.
+PAF has `/healthz` and `/api/commentary`; it uses Oracle wallet config, GenAI settings, Canvas auth, and in-db Select AI setup. The real-time layer uses Coherence rather than Redis. The point for AI engineers is that business users can shape the Canvas experience while the harness owns evidence, policy, fallback behavior, source metadata, and broadcast into the game.
 
 ## Slide 7 - "Agent = Model + Harness"
 
@@ -72,7 +76,7 @@ PAF has `/healthz` and `/api/commentary`; it uses Oracle wallet config, GenAI se
 memory, tools, retrieval, SQL, identity, budgets, trace, safety.
 
 **Speaker notes:**
-From the heavyweight notebook: the model emits tokens; the harness owns state, dispatch, memory, context, retries, and deterministic work.
+From the heavyweight notebook: the model emits tokens; the harness owns state, dispatch, memory, context, retries, policy, traces, and deterministic work. A vector database is not a memory system; production memory needs scope, provenance, deletion, retrieval, and governance.
 
 ## Slide 8 - "Harness Pattern In This Demo"
 
@@ -106,7 +110,7 @@ For gaming, this becomes live action commentary, instant replay captions, post-m
 3. Long Conversation Memory
 
 **Speaker notes:**
-CTA each notebook: build the harness, engineer memory/context, prove scoped retrieval and long conversation continuity.
+CTA each notebook: build the harness, engineer memory/context, prove scoped retrieval and long conversation continuity. The game is the front door; the notebooks are the runnable developer path.
 
 ## Slide 10 - "CTA: Build Agents Around Truth"
 
@@ -120,3 +124,6 @@ Close with: start from real events, store them where governance lives, retrieve 
 
 **On-slide CTA:**
 Play the demo. Inspect the SQL. Run the notebooks. Adapt the harness.
+
+**Final spoken line:**
+SQL decides what happened. The model decides how to say it. The harness decides whether it is allowed to say it.

@@ -2,11 +2,19 @@
 
 ## 15-Second Core
 
-We turned a live mobile game into a match-intelligence template: real events and replay clips go into Oracle AI Database, SQL/JSON/graph/vector context grounds the agent, Oracle Private Agent Factory Canvas shapes the agent experience, and the harness records which runtime path produced the final commentary before broadcasting it back into the live game.
+We turned a live mobile game into a match-intelligence template: real events and replay clips go into Oracle AI Database, SQL/JSON/graph/vector context grounds the agent, Canvas shapes the experience, and the harness records which runtime path produced the final commentary before broadcasting it back into the game.
 
 ## 45-Second Core
 
-This game is a signal generator. Every powerup, trail crossing, freeze, coordinate, score, and replay clip becomes evidence in Oracle AI Database. The agent does not guess from raw footage; it reads the event timeline, replay manifest, graph facts, and memory. The in-database package summarizes the session, Select AI can generate a short draft from grounded context, Canvas gives business users the agent-building surface, and the harness records whether a specific line came from Canvas, an in-database agent, Select AI, the model router, or SQL fallback. The broader lesson is Canvas plus harness: business users can shape the agent experience, and AI engineers keep it grounded, governed, and connected to the live 3D environment.
+This game is a signal generator. Every powerup, trail crossing, freeze, coordinate, score, and replay clip becomes evidence in Oracle AI Database. The agent does not guess from raw footage; it reads the event timeline, replay manifest, graph facts, and memory. The in-database package summarizes the session, Select AI can generate a short draft from grounded context, Canvas gives business users the agent-shaping surface, and the harness records whether a specific line came from Canvas, an in-database agent, Select AI, the model router, or SQL fallback. The broader lesson is Canvas plus harness: business users can shape the agent experience, and AI engineers keep it grounded, governed, and connected to the live 3D environment.
+
+## Current Proof Posture
+
+**15-second version**
+The game path is green: public mobile and desktop smoke both pass. The AI path is ready with caveats: PAF health, Oracle AI Database evidence, Select AI, in-db agent configuration, model routing, trace persistence, and adapter proof pass; replay/vector rows and exact Canvas generation are claim-boundary items for the smoke response.
+
+**What to say if challenged**
+The honest answer is better than the polished one. The game is live, PAF is live, and the harness is proving the path. For a specific commentary line, I trust the metadata: if `canvas:null`, I do not claim Canvas generated it.
 
 ## Transition: Game To Data
 
@@ -53,7 +61,7 @@ Because the runtime needs deterministic grounding. SQL decides what happened. Th
 Because the same platform can hold relational match facts, JSON replay documents, graph relationships, vector memory, Select AI profiles, in-database agent calls, and governed access controls.
 
 **Where does PAF fit?**
-PAF is the agent workflow and Canvas experience. In this demo it receives a bounded evidence package and produces the final conference-safe live line, replay caption, or recap. The harness is still the production connection to SQL evidence, Select AI or in-database drafts, policy, and the live game.
+PAF is the deployed agent workflow service and Canvas experience. In this demo it receives a bounded evidence package and can produce conference-safe live lines, replay captions, or recaps through the configured route. The harness is still the production connection to SQL evidence, Select AI or in-database drafts, policy, metadata, fallback, and the live game.
 
 **Is this really a gaming industry pattern?**
 Yes. The demo is small, but the shape is production-friendly: event SDK, replay manifest, match graph, vector memories, moderation, output policies, and human override for broadcast workflows.
@@ -75,6 +83,7 @@ Stable behavior: concise commentary shape, evidence citation, confidence discipl
 - The game is the wrapper; the event stream is the product.
 - Telemetry explains what happened. Replay shows it. Oracle AI Database connects both.
 - SQL decides what happened. The model decides how to say it.
+- Metadata proves which path produced the line.
 - Graph explains relationships. Vector finds similar moments.
 - The harness is where agent quality becomes engineering.
 - Canvas lets the business shape the agent. The harness keeps it connected, governed, and live.
@@ -85,6 +94,7 @@ Stable behavior: concise commentary shape, evidence citation, confidence discipl
 - Facts in memory, behavior in weights.
 - Tier 1000 proves the harness; upstream runtime proves the two LLMs.
 - OpenAI-compatible handoff is live; upstream LLM runtime is still pending.
+- SQL decides what happened. The model decides how to say it. The harness decides whether it is allowed to say it.
 
 ## Final Close
 

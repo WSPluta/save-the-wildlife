@@ -30,17 +30,35 @@ The line to land:
 
 > Modern AI apps are not one giant prompt. They are live systems with memory, tools, traces, policy, and a model inside a harness.
 
+## Current Receipts
+
+Use this when someone asks, "what is actually live right now?"
+
+- Deployed commit: `71dd1f1`
+- Game endpoint: `http://130.162.174.167/`
+- Game smoke: `ready`
+- Mobile proof: joystick visible, `RUNNING`, nearest trash over `12` units from start, boat seated at waterline
+- PAF proof: Oracle, GenAI, Canvas, Select AI, in-db agent, graph/replay/vector retrieval, and model router configured
+- Conference preflight: `ready_with_caveats`
+
+Say:
+
+> The game path is green. The AI path is green with boundaries. That is the point: the harness is allowed to say "this part is proven" and "this part is configured but not the source of this exact line."
+
 ## The Proof Ladder
 
-Use this order. Do not jump straight to model routing.
+Use this order. Do not jump straight to model routing. AI engineers will trust the ladder if every rung has a clear receipt and a clear boundary.
 
-1. **Play:** audience joins the game.
-2. **Facts:** show event types: `powerup_collected`, `trail_crossed`, `player_frozen`, `game_over`.
-3. **Context:** show `/paf/api/context`.
-4. **Commentary:** show `/paf/api/commentary`.
-5. **Harness:** show `Agent = Model + Harness`.
-6. **Scale proof:** show the model AI readiness receipt.
-7. **CTA:** notebooks are the developer path.
+| Rung | What to show | What it proves | What it does not prove |
+|---|---|---|---|
+| 1. Play | Audience joins `http://130.162.174.167/` | A modern mobile/browser 3D app is live on OCI | AI quality |
+| 2. Game smoke | `npm run check:conference-demo:game` | Public mobile/desktop playability, joystick, item counts, safe start, boat-waterline contact | Commentary correctness |
+| 3. Facts | Event chips: `powerup_collected`, `trail_crossed`, `player_frozen`, `game_over` | The game emits structured operational truth | That the model generated anything |
+| 4. Context | `/paf/api/context` | Oracle AI Database can assemble SQL, JSON, graph, replay, and vector evidence when present | Replay/vector evidence for a smoke call when counts are zero |
+| 5. Commentary | `/paf/api/commentary` | The harness returns bounded, traceable language with source metadata | Canvas generation unless `canvas` or `source` proves it |
+| 6. Harness | `Agent = Model + Harness` slide | The engineering work is retrieval, tools, policy, memory, fallback, trace, and live-system connection | That one prompt is enough |
+| 7. Scale proof | `.codex_tmp/model-ai-readiness/proof-bundle.md` | Tier-1000 canary, score-row proof, adapter handoff, trace/eval/training path | Two live private upstream LLM runtimes |
+| 8. CTA | notebooks | Developers can take the pattern into harness, memory, and long-conversation work | That the demo is the final production product |
 
 Current proof receipt:
 
@@ -63,6 +81,10 @@ How to say it:
 > `upstream formats openai:2` proves the private handoff contract for evidence-bearing model calls.
 >
 > The strict upstream gate is intentionally still red because the endpoints are behavior adapters today. That is a good thing. The demo refuses to claim two live LLM runtimes before the runtime proves it.
+
+The room should leave with this mental model:
+
+> The frontend proves Oracle can run a modern interactive app. The database proves the AI has operational truth. The harness proves the model is not allowed to outrun the evidence.
 
 ## The Oracle Argument
 
@@ -97,6 +119,22 @@ Say this without apology:
 > Not claiming today: two live private upstream LLM runtimes. That claim waits until strict upstream readiness passes.
 
 That boundary builds trust with engineers.
+
+## The Three Claims To Land
+
+Use these when you need to tighten the room back to the thesis.
+
+1. **Modern app claim**
+
+   > This is not a form over a table. It is a mobile-playable, browser-3D, real-time app on OCI, with OKE services, Socket.IO, Coherence fanout, and a live game loop.
+
+2. **Oracle AI Database claim**
+
+   > The AI layer is useful because the operational truth is close: SQL facts, JSON event and replay payloads, graph relationships, vector-ready memory, traces, and training examples sit in Oracle AI Database.
+
+3. **Agent engineering claim**
+
+   > The model is the least interesting part to over-mystify. The harness is where the app becomes trustworthy: context construction, deterministic tools, memory scoping, policy, fallback, source metadata, and broadcast back into the live experience.
 
 ## The 18-Minute Spine
 

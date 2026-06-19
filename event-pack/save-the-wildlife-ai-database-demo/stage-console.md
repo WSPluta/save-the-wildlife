@@ -2,6 +2,9 @@
 
 Use this as the one-page operator card while presenting. It is designed for the messy reality of a live room: phones, Wi-Fi, one browser window, one terminal, and AI engineers who will ask what is actually proven.
 
+For full rehearsal, use [18-minute-stage-script.md](18-minute-stage-script.md). This card is the short stage-side version.
+For the technical proof ladder, use [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md).
+
 ## Screen Setup
 
 Keep three things ready:
@@ -11,6 +14,23 @@ Keep three things ready:
 3. Optional browser tab: `https://145.241.196.162:8080/agentFactory/`
 
 The game is the emotional entry point. The terminal is the proof. Canvas is the business-facing surface. Do not make Canvas carry the whole engineering argument.
+
+## Current Verified Posture
+
+Use these as the latest receipts, not as promises about future runs:
+
+- Public game: `http://130.162.174.167/` returns `200 OK`.
+- Latest deployed app proof: commit `71dd1f1`, deployment `prod-conference-demo-71dd1f1`.
+- Public game smoke: `ready`.
+- Public mobile smoke: `RUNNING`, joystick `134x134`, nearest trash `12.207` units from start, boat `seatDepth=0.06`.
+- Public desktop smoke: `RUNNING`, wake ripples visible, nearest trash `10.474`, boat `seatDepth=0.06`.
+- Conference preflight: `ready_with_caveats`.
+- PAF health: Oracle, GenAI, Canvas, Select AI, in-db agent, graph/replay/vector retrieval, and model router configured.
+- Current caveats: smoke replay/vector rows are empty; the exact smoke commentary line reports `canvas:null`, `in_db_agent:null`, and behavior-adapter model runtime.
+
+Stage wording:
+
+> The game path is green. The AI path is green with honest caveats. That is the posture we want for engineers: proof first, claim second.
 
 ## Opening Move
 

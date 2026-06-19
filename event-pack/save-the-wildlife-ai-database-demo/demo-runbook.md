@@ -4,10 +4,29 @@
 
 Use this as the crisp framing before the architecture slide:
 
-> In some cases, AI engineers should let business users build the agent experience in Canvas. The engineering job is to add the harness: connect that Canvas agent to live systems, SQL evidence, deterministic tools, memory, identity, tracing, and policy. In this demo, the harness is the endpoint service connected to the live 3D game. It turns SQL gameplay telemetry into bounded natural-language commentary and broadcasts the result back into the experience.
+> In some cases, AI engineers should let business users shape the agent experience in Canvas. The engineering job is to add the harness: connect that experience to live systems, SQL evidence, deterministic tools, memory, identity, tracing, fallback, and policy. In this demo, the harness is the endpoint service connected to the live 3D game. It turns SQL gameplay telemetry into bounded natural-language commentary, records which path produced the line, and broadcasts the result back into the experience.
 
 For the shortest stage-ready operator view, use
 [stage-console.md](stage-console.md). It is the browser-plus-terminal card for the live room.
+
+For the proof ladder to use when AI engineers challenge the architecture, keep
+[ai-engineer-presenter-card.md](ai-engineer-presenter-card.md) open. It maps each live receipt to what it proves and what it does not prove yet.
+
+## Current Verified Posture
+
+Use these as the latest receipts before walking on stage:
+
+- Public game endpoint: `http://130.162.174.167/`
+- Deployed proof: commit `71dd1f1`, deployment `prod-conference-demo-71dd1f1`
+- Public game smoke: `ready`
+- Mobile proof: `RUNNING`, joystick visible, nearest trash over `12` units from start, boat seated at waterline
+- Public conference preflight: `ready_with_caveats`
+- PAF health: Oracle, GenAI, Canvas, Select AI, in-db agent, graph/replay/vector retrieval, and model router configured
+- Current claim boundary: smoke replay/vector rows may be empty; the exact smoke commentary line can report `canvas:null`, `in_db_agent:null`, and behavior-adapter runtime
+
+Stage line:
+
+> The game path is green. The AI path is green with boundaries. That is how this earns trust with engineers: proof first, claim second.
 
 ## Preflight Five Minutes Before
 
@@ -225,7 +244,7 @@ Then run the commentary API command above.
 
 Explain the fallback chain:
 
-> The harness is designed not to collapse when one layer is slow. It can use PAF Canvas, Select AI, or deterministic SQL commentary. The source of truth stays the database, and the live game connection remains owned by the harness.
+> The harness is designed not to collapse when one layer is slow. It can use Canvas when selected, in-database agents, Select AI, model-router adapters, or deterministic SQL commentary. The source of truth stays Oracle AI Database, and the live game connection remains owned by the harness.
 
 ## If The Game Is Unavailable
 
@@ -240,7 +259,8 @@ Use the architecture and API proof:
 - Do not say the LLM "watched" the game.
 - Do not say Select AI is blindly generating SQL for the runtime path.
 - Do not say PAF is an external manual dependency.
-- Do not imply Canvas replaces the harness. Canvas is where the agent experience is assembled; the harness keeps it connected and governed.
+- Do not imply Canvas replaces the harness. Canvas is where the agent experience is shaped; the harness keeps it connected and governed.
+- Do not say Canvas produced a specific line unless the response metadata proves it.
 - Do not describe generic score commentary. The differentiator is mechanics-aware commentary grounded in SQL events.
 - Do not say the model watched raw footage. The production pattern is event-aligned clip manifests plus governed telemetry.
 - Do not say two live LLMs are running until the strict upstream readiness gate passes.

@@ -85,6 +85,10 @@ function makeCheck(name, status, details = {}) {
   return { name, status, ...details };
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function repoPath(filePath) {
   return path.isAbsolute(filePath) ? filePath : path.join(REPO_ROOT, filePath);
 }
@@ -269,6 +273,19 @@ function runKubectl(args, config) {
   return result.stdout.trim();
 }
 
+function summarizeDeployments(data) {
+  const deployments = data.items.map((item) => ({
+    name: item.metadata.name,
+    ready: item.status.readyReplicas || 0,
+    replicas: item.status.replicas || 0,
+    available: item.status.availableReplicas || 0,
+  }));
+  const failures = deployments
+    .filter((item) => item.ready < item.replicas || item.available < item.replicas)
+    .map((item) => `${item.name} ready=${item.ready}/${item.replicas} available=${item.available}/${item.replicas}`);
+  return { deployments, failures };
+}
+
 async function checkKubernetes(config) {
   if (config.skipKube) {
     return makeCheck("kubernetes-deployments", "warn", { skipped: true });
@@ -279,27 +296,39 @@ async function checkKubernetes(config) {
       reason: `missing ${config.kubeconfig}`,
     });
   }
+  const startedAt = Date.now();
+  const waitMs = Math.max(0, Number(config.kubeWaitMs) || 0);
+  const intervalMs = Math.max(1000, Number(config.kubePollMs) || 5000);
+  let attempts = 0;
+  let lastResult = null;
   try {
-    const json = runKubectl([
-      "get",
-      "deploy",
-      ...REQUIRED_DEPLOYS,
-      "-o",
-      "json",
-    ], config);
-    const data = JSON.parse(json);
-    const deployments = data.items.map((item) => ({
-      name: item.metadata.name,
-      ready: item.status.readyReplicas || 0,
-      replicas: item.status.replicas || 0,
-      available: item.status.availableReplicas || 0,
-    }));
-    const failures = deployments
-      .filter((item) => item.ready < item.replicas || item.available < item.replicas)
-      .map((item) => `${item.name} ${item.ready}/${item.replicas}`);
-    return makeCheck("kubernetes-deployments", failures.length ? "fail" : "pass", {
-      deployments,
-      failures,
+    do {
+      attempts += 1;
+      const json = runKubectl([
+        "get",
+        "deploy",
+        ...REQUIRED_DEPLOYS,
+        "-o",
+        "json",
+      ], config);
+      lastResult = summarizeDeployments(JSON.parse(json));
+      if (!lastResult.failures.length) {
+        return makeCheck("kubernetes-deployments", "pass", {
+          deployments: lastResult.deployments,
+          failures: [],
+          attempts,
+          waitedMs: Date.now() - startedAt,
+        });
+      }
+      if (Date.now() - startedAt >= waitMs) break;
+      await sleep(intervalMs);
+    } while (true);
+
+    return makeCheck("kubernetes-deployments", "fail", {
+      deployments: lastResult?.deployments || [],
+      failures: lastResult?.failures || ["deployment availability check did not complete"],
+      attempts,
+      waitedMs: Date.now() - startedAt,
     });
   } catch (error) {
     return makeCheck("kubernetes-deployments", "warn", { error: compactError(error) });
@@ -464,6 +493,8 @@ async function main() {
     namespace: argValue("namespace", process.env.STWL_DEMO_NAMESPACE || "default"),
     skipKube: hasFlag("skip-kube") || envBool("STWL_DEMO_SKIP_KUBE", false),
     requireUpstreamLlm: hasFlag("require-upstream-llm") || envBool("STWL_DEMO_REQUIRE_UPSTREAM_LLM", false),
+    kubeWaitMs: Number(argValue("kube-wait-ms", process.env.STWL_DEMO_KUBE_WAIT_MS || "130000")),
+    kubePollMs: Number(argValue("kube-poll-ms", process.env.STWL_DEMO_KUBE_POLL_MS || "5000")),
   };
 
   const checks = [];

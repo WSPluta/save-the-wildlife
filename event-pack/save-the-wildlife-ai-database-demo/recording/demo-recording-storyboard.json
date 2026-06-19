@@ -173,7 +173,7 @@
         "file": "private-agent-factory/test/commentary.test.js",
         "start": 34,
         "end": 48,
-        "caption": "Tests prove the Canvas prompt is grounded in recorded telemetry."
+        "caption": "Tests prove the PAF harness grounds commentary in recorded telemetry."
       },
       "talkTrack": "The model emits tokens. The harness owns context, tools, memory, fallbacks, and policy. This repo now tests the claims we make on stage."
     },

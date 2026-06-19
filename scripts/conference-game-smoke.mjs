@@ -282,6 +282,14 @@ function finalVerdict(checks) {
   return "ready";
 }
 
+function nearestTrashDistance(state) {
+  const distances = (state?.trashSamples || [])
+    .map((sample) => Number(sample?.distance))
+    .filter((distance) => Number.isFinite(distance));
+  if (!distances.length) return null;
+  return Math.min(...distances);
+}
+
 function renderCheckDetails(check) {
   const lines = [];
   if (check.url) lines.push(`- URL: ${check.url}`);
@@ -289,6 +297,8 @@ function renderCheckDetails(check) {
   if (check.state) {
     lines.push(`- Mode: ${check.state.mode}`);
     lines.push(`- Items: ${check.state.itemsVisible || 0}, trash ${check.state.trashInstances || 0}, powerups ${check.state.powerupInstances || 0}`);
+    const nearestTrash = nearestTrashDistance(check.state);
+    if (nearestTrash !== null) lines.push(`- Nearest trash distance: ${nearestTrash}`);
     lines.push(`- Boat feel: ${JSON.stringify(check.state.boatFeel || {})}`);
     lines.push(`- Waterline contact: ${JSON.stringify(check.state.waterlineContact || {})}`);
     lines.push(`- Wake ripples: ${JSON.stringify(check.state.wakeRipples || {})}`);

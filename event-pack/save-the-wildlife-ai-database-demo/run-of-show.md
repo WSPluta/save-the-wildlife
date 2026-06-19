@@ -12,8 +12,8 @@
 | 0:45-2:30 | Audience play | Make the data real | Players join on mobile and move |
 | 2:30-4:00 | Reveal the telemetry | Reframe game actions as events | Event timeline slide |
 | 4:00-5:45 | Why Oracle AI Database | Ground match intelligence in governed data | SQL/JSON/graph/vector lenses |
-| 5:45-7:30 | Live commentary and replay | Prove the Canvas agent path | PAF context + commentary API result |
-| 7:30-9:30 | Architecture | Explain business-built agent plus engineering harness | Game -> evidence -> Select AI -> Canvas |
+| 5:45-7:30 | Live commentary and replay | Prove the PAF/harness evidence path | PAF context + commentary API result |
+| 7:30-9:30 | Architecture | Explain business-shaped agent plus engineering harness | Game -> evidence -> Select AI/in-db agent -> PAF/Canvas/harness |
 | 9:30-12:00 | Agent construction | Explain harness vs model | Agent = Model + Harness |
 | 12:00-14:30 | Harness patterns | Give AI developers reusable ideas | memory, tool retrieval, offload, identity |
 | 14:30-16:30 | Notebook CTAs | Turn demo into learning path | three notebooks and what each proves |
@@ -33,19 +33,22 @@ For the fuller limbic opening and proof ladder, use
 For the live terminal and source-metadata flow, keep
 [stage-console.md](stage-console.md) open next to the browser.
 
+For full rehearsal, read
+[18-minute-stage-script.md](18-minute-stage-script.md) out loud once. It is the timing-safe script with proof boundaries and rescue lines.
+
 ## Core Narrative Arc
 
 1. **Play:** The room creates telemetry.
 2. **Prove:** Oracle AI Database stores and summarizes the telemetry.
-3. **Agent:** Oracle Private Agent Factory Canvas turns bounded evidence into commentary.
-4. **Harness:** The endpoint harness connects Canvas to SQL evidence, Select AI or in-database agent drafts, replay context, and the live 3D game.
+3. **Agent:** Oracle Private Agent Factory is deployed with Canvas configured, while response metadata decides which runtime path produced a specific line.
+4. **Harness:** The endpoint harness connects SQL evidence, Select AI or in-database agent drafts, replay context, model-router adapters, Canvas configuration, deterministic fallback, and the live 3D game.
 5. **Generalize:** Business users can shape agents in Canvas while AI engineers own the governed harness around live systems.
 
 ## Canvas Plus Harness Beat
 
 Use this as the transition into architecture:
 
-> Here is the enterprise pattern hiding inside the game. The agent experience can be assembled in Canvas by the people closest to the business language. The AI engineering work is the harness: connect it to the live system, build the SQL evidence package, route bounded drafts through Select AI or in-database agents, enforce policy, and broadcast only grounded commentary back into the experience.
+> Here is the enterprise pattern hiding inside the game. The agent experience can be shaped in Canvas by the people closest to the business language. The AI engineering work is the harness: connect it to the live system, build the SQL evidence package, route bounded drafts through Select AI, in-database agents, model adapters, or deterministic fallback, enforce policy, and broadcast only grounded commentary back into the experience.
 
 ## Time Discipline
 
