@@ -14,7 +14,7 @@ Open with the URL. Ask people to join on mobile. Say the data they generate will
 **On-slide text:**
 `http://130.162.174.167/`
 
-**Proof cue:** Public mobile smoke is `ready`: `RUNNING`, joystick visible, safe opening spawn, boat seated at waterline.
+**Proof cue:** Use `.codex_tmp/conference-stage-brief/latest.md`. Public mobile smoke must be `ready`, or [manual-visual-proof.md](manual-visual-proof.md) must be completed from a normal browser.
 
 ## Slide 2 - "A Game That Emits Match Intelligence"
 

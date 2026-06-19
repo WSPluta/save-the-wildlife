@@ -4,7 +4,10 @@
 
 - [ ] Open the game from laptop and phone.
 - [ ] Run `npm run check:conference-demo`.
+- [ ] Run `npm run check:conference-demo:transport`.
 - [ ] Run `npm run check:conference-demo:game`.
+- [ ] Run `npm run check:conference-demo:stage`.
+- [ ] Open `.codex_tmp/conference-stage-brief/latest.md` and treat it as the live receipt authority.
 - [ ] Open [conference-readiness-scorecard.md](conference-readiness-scorecard.md) and confirm the current posture is still GO with honest caveats.
 - [ ] Verify the phone joystick appears during gameplay from the smoke receipt.
 - [ ] Verify the mobile smoke shows a safe opening spawn buffer.
@@ -24,13 +27,18 @@ Run:
 
 ```bash
 npm run check:conference-demo
+npm run check:conference-demo:transport
 npm run check:conference-demo:game
+npm run check:conference-demo:stage
 ```
 
 Check:
 
 - [ ] Preflight verdict is `ready_with_caveats` or better.
+- [ ] Transport smoke verdict is `ready`.
 - [ ] Game smoke verdict is `ready`.
+- [ ] Stage brief verdict is `go`, `go_with_caveats`, or `go_with_local_proof_blocker`.
+- [ ] If game smoke cannot launch Chromium, complete [manual-visual-proof.md](manual-visual-proof.md) from a normal browser before stage.
 - [ ] Scorecard go/no-go rules are satisfied.
 - [ ] Game returns `200`.
 - [ ] Mobile game smoke reaches `RUNNING`.

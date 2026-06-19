@@ -89,6 +89,7 @@ const SPAWN_MAX_PER_TICK_TRASH = parseInt(process.env.SPAWN_MAX_PER_TICK_TRASH ?
 const SPAWN_MAX_PER_TICK_MARINE = parseInt(process.env.SPAWN_MAX_PER_TICK_MARINE ?? "50");
 const POWERUP_REFRESH_MS = parseInt(process.env.POWERUP_REFRESH_MS ?? "1500");
 const METRICS_BROADCAST_MS = parseInt(process.env.METRICS_BROADCAST_MS ?? (isProduction ? "1000" : "300"));
+const COHERENCE_SCAN_TIMEOUT_MS = parseInt(process.env.COHERENCE_SCAN_TIMEOUT_MS ?? "2500");
 const DEMO_ADMIN_TOKEN = process.env.DEMO_ADMIN_TOKEN || process.env.ADMIN_DEMO_TOKEN || "";
 const SPAWN_PLAYER_CLEAR_RADIUS = process.env.SPAWN_PLAYER_CLEAR_RADIUS
   ? parseFloat(process.env.SPAWN_PLAYER_CLEAR_RADIUS)
@@ -2335,16 +2336,33 @@ async function deleteCache(cache, id) {
 }
 
 async function readCacheEntries(cache) {
-  try {
+  const fallback = () => {
+    if (cache === mapPlayersInfo) return { ...localPlayersInfo };
+    if (cache === mapPlayersTraces) return { ...localPlayerTraces };
+    return {};
+  };
+  const scan = async () => {
     const response = await cache.entries();
     let data = {};
     for await (const entry of response) {
       data[entry.key] = entry.value;
     }
     return data;
+  };
+  let timeoutId;
+  try {
+    if (!COHERENCE_SCAN_TIMEOUT_MS || COHERENCE_SCAN_TIMEOUT_MS <= 0) return await scan();
+    return await Promise.race([
+      scan(),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`coherence_scan_timeout:${COHERENCE_SCAN_TIMEOUT_MS}`)), COHERENCE_SCAN_TIMEOUT_MS);
+      }),
+    ]);
   } catch (error) {
-    logger.error(`Error reading all entries. ${error.message}`);
-    return {};
+    logger.warn(`Error reading all entries. ${error.message}`);
+    return fallback();
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 

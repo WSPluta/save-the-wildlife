@@ -34,16 +34,18 @@ The line to land:
 
 Use this when someone asks, "what is actually live right now?"
 
-- Deployed commit: `71dd1f1`
+- Deployed commit: `e7d4543`
+- Generated stage receipt: `.codex_tmp/conference-stage-brief/latest.md`
 - Game endpoint: `http://130.162.174.167/`
-- Game smoke: `ready`
-- Mobile proof: joystick visible, `RUNNING`, safe nearest-trash buffer, boat seated at waterline
+- Game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
+- Transport smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
+- Mobile proof: joystick visible, `RUNNING`, safe nearest-trash buffer, boat seated at waterline when game smoke or manual visual proof is current
 - PAF proof: Oracle, GenAI, Canvas, Select AI, in-db agent, graph/replay/vector retrieval, and model router configured
 - Conference preflight: `ready_with_caveats`
 
 Say:
 
-> The game path is green. The AI path is green with boundaries. That is the point: the harness is allowed to say "this part is proven" and "this part is configured but not the source of this exact line."
+> The stage brief is the authority. Transport can be green, visual proof can be separate, and the AI path can be green with boundaries. That is the point: the harness is allowed to say "this part is proven" and "this part is configured but not the source of this exact line."
 
 ## The Proof Ladder
 

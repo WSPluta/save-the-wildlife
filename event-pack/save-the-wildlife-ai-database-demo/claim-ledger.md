@@ -6,13 +6,17 @@ Run these before rehearsal or stage time:
 
 ```bash
 npm run check:conference-demo
+npm run check:conference-demo:transport
 npm run check:conference-demo:game
+npm run check:conference-demo:stage
 npm run check:model-ai-demo:proof
 ```
 
 Open these receipts:
 
 - `.codex_tmp/conference-game-smoke/latest.md`
+- `.codex_tmp/conference-transport-smoke/latest.md`
+- `.codex_tmp/conference-stage-brief/latest.md`
 - `.codex_tmp/conference-preflight/latest.md`
 - `.codex_tmp/model-ai-readiness/proof-bundle.md`
 - [source-map.md](source-map.md)
@@ -21,7 +25,7 @@ Open these receipts:
 
 The short version:
 
-> The game path is green. The AI path is ready with honest caveats. The app is live, the Oracle AI Database evidence path is wired, the harness is traceable, and the two-live-LLM claim remains gated until strict upstream runtime passes.
+> The stage brief is the authority. Transport only proves the deployed app and Socket.IO lifecycle when its receipt is ready. The visual game claim needs game-smoke or manual visual proof. The AI path is ready with honest caveats, and the two-live-LLM claim remains gated until strict upstream runtime passes.
 
 Do not turn `ready_with_caveats` into a problem. For AI engineers, the caveat is part of the trust story.
 
@@ -29,8 +33,8 @@ Do not turn `ready_with_caveats` into a problem. For AI engineers, the caveat is
 
 | Claim | What proves it | Safe sentence | Do not say |
 |---|---|---|---|
-| A modern interactive app is running on Oracle infrastructure | `npm run check:conference-demo:game`; game endpoint `200`; `.codex_tmp/conference-game-smoke/latest.md`; deployment receipt in [README.md](README.md) | "This is a mobile-playable browser 3D game running on OCI and OKE, not a form over a table." | "The AI quality is proven because the game loads." |
-| The mobile opening works | Mobile section of `.codex_tmp/conference-game-smoke/latest.md`: `RUNNING`, joystick visible, healthy item counts, safe nearest-trash buffer, boat-waterline contact | "The phone path is part of the demo, and the smoke test checks it directly." | "Every phone and network condition is guaranteed." |
+| A modern interactive app is running on Oracle infrastructure | `npm run check:conference-demo:transport`; game endpoint `200`; `.codex_tmp/conference-transport-smoke/latest.md`; deployment receipt in [README.md](README.md) | "This is a real-time browser 3D app running on OCI and OKE, not a form over a table." | "The AI quality is proven because the game loads." |
+| The mobile opening works | Mobile section of `.codex_tmp/conference-game-smoke/latest.md` or [manual-visual-proof.md](manual-visual-proof.md): `RUNNING`, joystick visible, healthy item counts, safe nearest-trash buffer, boat-waterline contact | "The phone path is part of the demo, and I only claim it when the visual receipt or manual browser check proves it." | "Every phone and network condition is guaranteed." |
 | The game creates real telemetry | `/paf/api/context`; `server/lib/gameEvents.js`; `deploy/db/stwl_game_events.sql`; [source-map.md](source-map.md) | "The audience creates coordinates, collisions, powerups, trail crossings, freezes, and scores." | "The model watched raw gameplay footage." |
 | Oracle AI Database is the match-intelligence layer | `.codex_tmp/conference-preflight/latest.md`; `/paf/api/context`; `deploy/db/stwl_match_intelligence.sql`; `deploy/db/stwl_commentary_pkg.sql` | "SQL gives the facts, JSON carries flexible payloads, graph explains relationships, and vector memory is available when similar moments exist." | "Replay or vector evidence exists for this smoke call when the receipt says `0`." |
 | Commentary is grounded and bounded | `/paf/api/commentary`; `.codex_tmp/conference-preflight/latest.md`: length, warning, source, fallback, runtime mode, trace persisted | "The sentence is short because the harness applies policy and evidence boundaries." | "The line is safe because the model promised it." |
@@ -45,9 +49,9 @@ Do not turn `ready_with_caveats` into a problem. For AI engineers, the caveat is
 
 **"Is this actually live?"**
 
-Open `.codex_tmp/conference-game-smoke/latest.md`.
+Open `.codex_tmp/conference-stage-brief/latest.md`.
 
-> The public smoke reaches `RUNNING` on mobile and desktop. It checks the joystick, item counts, waterline contact, and the public endpoint.
+> The transport receipt proves the public app and Socket.IO lifecycle. The visual receipt proves mobile/desktop play when the game smoke is ready. If browser automation is blocked, I use manual visual proof and say that explicitly.
 
 **"Where is the data coming from?"**
 

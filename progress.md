@@ -258,6 +258,19 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Reduced boat visual Y motion so the hull sticks near the Three.js water plane instead of riding the full CPU wave sample.
   - Added `verticalWaveStrength` to damp waterline bob while keeping pitch/roll wave feel and wake emission.
   - Tightened visual Y clamps and set the baseline slightly into the waterline; latest desktop smoke shows `boatFeel.y` around `-0.003` with visible wake ripples.
+- Conference proof hardening on 2026-06-19:
+  - Added `scripts/conference-stage-brief.mjs` and `npm run check:conference-demo:stage` to generate one live operator receipt from public game smoke, PAF preflight, and model proof state.
+  - Updated event-pack references from stale deployed proof `71dd1f1` to `e7d4543` / `prod-conference-demo-e7d4543`.
+  - Hardened `scripts/conference-game-smoke.mjs` so passing runs preserve `.codex_tmp/conference-game-smoke/last-ready.*`.
+  - Added local Chromium/Mach-port blocker detection so sandboxed browser-launch failures can be reported as proof-environment blockers instead of silently overwriting a previous ready receipt.
+  - Added `scripts/conference-transport-smoke.mjs` and `npm run check:conference-demo:transport` to test deployed HTTP + Socket.IO room lifecycle without launching a browser.
+  - Public transport smoke passed earlier, then exposed instability: later runs returned HTTP 200 but failed Socket.IO lifecycle proof (`xhr poll error`, missing `room.joined`, or rooms stuck in `STARTING`). Treat `.codex_tmp/conference-transport-smoke/latest.md` as the authority.
+  - Investigated deployed `ws-server` logs and found repeated Coherence `DEADLINE_EXCEEDED` errors from broad `cache.entries()` scans.
+  - Added bounded Coherence scan timeout/fallback in `server/server.js` so room start and item/list reads do not block the live loop indefinitely when Coherence scans are slow.
+  - Bumped `server` package version to `0.0.29`; validation passed with `node --check server/server.js` and `npm --prefix server run test:unit`.
+  - Added `event-pack/save-the-wildlife-ai-database-demo/manual-visual-proof.md` for normal-browser visual QA when browser automation is blocked.
+  - Updated stage, speaker, scorecard, and claim-ledger language so the generated stage brief is the proof authority and visual/mobile claims are only made after game-smoke or manual visual proof.
+  - Current Codex sandbox cannot launch Playwright/Chromium (`bootstrap_check_in` permission failure), so `npm run check:conference-demo:stage -- --skip-refresh` currently emits `stage_verdict=no_go` until a normal terminal run creates a preserved `last-ready` game smoke receipt.
 - Boat water-contact correction on 2026-06-19:
   - Lowered the visual hull waterline slightly below the surface and damped vertical wave following further, keeping pitch/roll feel without changing the gameplay root, controls, trails, collisions, or server movement.
   - Wired the pooled `wakeRipples` visual adapter into local boat feel, so moving boats now emit cheap depth-tested stern ripples instead of relying on hull bob alone.

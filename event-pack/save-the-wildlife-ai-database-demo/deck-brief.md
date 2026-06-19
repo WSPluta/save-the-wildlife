@@ -9,9 +9,11 @@ The message to land: sometimes AI engineers should let business users shape the 
 ## Current Verified Receipts
 
 - Public game endpoint: `http://130.162.174.167/`
-- Deployed proof: commit `71dd1f1`, deployment `prod-conference-demo-71dd1f1`
-- Public game smoke: `ready`
-- Mobile proof: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at waterline
+- Deployed proof: commit `e7d4543`, deployment `prod-conference-demo-e7d4543`
+- Generated live receipt: `.codex_tmp/conference-stage-brief/latest.md` from `npm run check:conference-demo:stage`
+- Public game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
+- Public transport smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
+- Mobile proof: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at waterline when game smoke or manual visual proof is current
 - Public conference preflight: `ready_with_caveats`
 - PAF health: Oracle, GenAI, Canvas, Select AI, in-db agent, graph/replay/vector retrieval, and model router configured
 - Current claim boundary: smoke replay/vector rows may be empty; the exact smoke commentary line can report `canvas:null`, `in_db_agent:null`, and behavior-adapter runtime

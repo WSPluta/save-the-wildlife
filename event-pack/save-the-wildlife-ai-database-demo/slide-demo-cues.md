@@ -9,7 +9,7 @@ Use this as the on-stage cheat sheet.
 **Say:**
 Open this on your phone. You are about to generate the telemetry that the agent will use.
 
-**Proof anchor:** Public mobile smoke is currently `ready`: joystick visible, `RUNNING`, safe nearest-trash buffer, and boat seated at the waterline.
+**Proof anchor:** Use `.codex_tmp/conference-stage-brief/latest.md`. Public mobile smoke must be `ready`, or [manual-visual-proof.md](manual-visual-proof.md) must be completed from a normal browser before making the visual/mobile claim.
 
 **Do not explain yet:** PAF, Select AI, harness. Let the room play first.
 
@@ -60,6 +60,12 @@ Look at the fields, not just the sentence. `source`, `fallback_source`, `model_r
 
 ```bash
 curl -sS http://130.162.174.167/paf/healthz
+```
+
+For browser-free deployed proof, also show:
+
+```bash
+npm run check:conference-demo:transport
 ```
 
 **Say:**

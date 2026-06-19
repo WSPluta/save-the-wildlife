@@ -23,8 +23,9 @@ The game is the emotional entry point. The terminal is the proof. Canvas is the 
 Use these as the latest receipts, not as promises about future runs:
 
 - Public game: `http://130.162.174.167/` returns `200 OK`.
-- Latest deployed app proof: commit `71dd1f1`, deployment `prod-conference-demo-71dd1f1`.
-- Public game smoke: `ready`.
+- Latest deployed app proof: commit `e7d4543`, deployment `prod-conference-demo-e7d4543`.
+- Generated stage brief: `.codex_tmp/conference-stage-brief/latest.md` from `npm run check:conference-demo:stage`.
+- Public game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority.
 - Public mobile smoke: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at the waterline.
 - Public desktop smoke: `RUNNING`, wake ripples visible, healthy item counts, boat seated at the waterline.
 - Conference preflight: `ready_with_caveats`.
@@ -33,7 +34,7 @@ Use these as the latest receipts, not as promises about future runs:
 
 Stage wording:
 
-> The game path is green. The AI path is green with honest caveats. That is the posture we want for engineers: proof first, claim second.
+> The stage brief is the authority. Transport can be green while visual proof still needs a normal browser. That is the posture we want for engineers: proof first, claim second.
 
 ## Opening Move
 
@@ -55,6 +56,7 @@ Run:
 
 ```bash
 npm run check:conference-demo
+npm run check:conference-demo:transport
 npm run check:conference-demo:game
 ```
 
@@ -68,6 +70,9 @@ WARN commentary
 PASS model-proof-bundle
 verdict=ready_with_caveats
 summary=.codex_tmp/conference-preflight/latest.md
+PASS http-game-url
+PASS socket-room-lifecycle
+summary=.codex_tmp/conference-transport-smoke/latest.md
 PASS mobile-gameplay
 PASS desktop-gameplay
 summary=.codex_tmp/conference-game-smoke/latest.md
@@ -76,6 +81,9 @@ summary=.codex_tmp/conference-game-smoke/latest.md
 `ready_with_caveats` is expected while the smoke response has no replay clips/vector memories and still reports `runtime_mode=behavior-adapter`. That is not a demo failure. It is the honest presenter boundary.
 
 The game smoke is the playable-experience receipt. It checks public mobile joystick visibility, `RUNNING` state, healthy item counts, boat-waterline contact, and desktop wake/ripple movement.
+When the game smoke passes it also preserves `.codex_tmp/conference-game-smoke/last-ready.md`.
+If a sandboxed shell cannot launch Chromium, the generated stage brief will call that out as a local proof-browser blocker rather than silently overwriting good game evidence.
+The transport smoke is the browser-free receipt. It proves the public endpoint, Socket.IO connection, presenter start, countdown-to-running lifecycle, item payloads, and presenter end.
 
 If you want to show the raw live probes, run:
 

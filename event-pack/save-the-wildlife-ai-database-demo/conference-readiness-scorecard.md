@@ -4,11 +4,13 @@ Use this as the final go/no-go document for the AI engineer conference. It is de
 
 ## Current Decision
 
-**GO for stage with honest caveats.**
+**GO only when the generated stage brief is green or caveated-green.**
 
 The demo is ready when these commands return the expected posture:
 
 ```bash
+npm run check:conference-demo:stage
+npm run check:conference-demo:transport
 npm run check:conference-demo:game
 npm run check:conference-demo
 npm run check:model-ai-demo:proof
@@ -16,19 +18,21 @@ npm run check:model-ai-demo:proof
 
 Expected:
 
+- Stage brief: `go`, `go_with_caveats`, or `go_with_local_proof_blocker`
+- Transport smoke: `ready` when using it as live transport proof
 - Game smoke: `ready`
 - Conference preflight: `ready_with_caveats` or better
 - Model proof: `adapter_verdict=ready_with_upstream_llm_blocker`
 - Strict upstream: `failed`, with the blocker expected until both private routes report `runtime_mode=upstream-llm`
 
-That is the right stage posture. The game works. The Oracle AI Database evidence path works. The harness is traceable. The strict two-live-LLM claim remains gated.
+That is the right stage posture. The transport path works, the visual/mobile game path is proven by game smoke or manual visual proof, the Oracle AI Database evidence path works, the harness is traceable, and the strict two-live-LLM claim remains gated.
 
 ## Readiness Matrix
 
 | Area | Status | Evidence | Stage use |
 |---|---|---|---|
-| Limbic opening | GO | `.codex_tmp/conference-game-smoke/latest.md` shows mobile and desktop `RUNNING`, joystick visible, healthy item counts, safe start buffer, and boat-waterline contact | Start with phones. Let the audience create the data before showing architecture. |
-| Modern app on Oracle | GO | Public game endpoint, OKE deployment receipts, [architecture.md](architecture.md), [source-map.md](source-map.md) | Say this is a mobile-playable browser 3D app on OCI/OKE with Socket.IO, Coherence, and services. |
+| Limbic opening | GO WHEN VISUAL PROOF IS CURRENT | `.codex_tmp/conference-game-smoke/latest.md` or [manual-visual-proof.md](manual-visual-proof.md) shows mobile `RUNNING`, joystick visible, healthy item counts, safe start buffer, and boat-waterline contact | Start with phones only after visual proof is current. Let the audience create the data before showing architecture. |
+| Modern app on Oracle | GO WITH TRANSPORT PROOF | Public game endpoint, `.codex_tmp/conference-transport-smoke/latest.md`, OKE deployment receipts, [architecture.md](architecture.md), [source-map.md](source-map.md) | Say this is a browser 3D app on OCI/OKE with Socket.IO, Coherence, and services. Say mobile-playable when visual proof is current. |
 | Oracle AI Database match intelligence | GO | `.codex_tmp/conference-preflight/latest.md`, `/paf/api/context`, SQL/JSON/graph/vector/replay assets in [source-map.md](source-map.md) | Say SQL gives facts, JSON carries flexible events, graph explains relationships, and vector memory is available when history exists. |
 | PAF and Canvas story | GO WITH BOUNDARY | `/paf/healthz`, PAF deployment manifests, `canvas_configured=true`, response metadata in preflight | Say Canvas is configured as the business-facing agent surface. Do not say Canvas produced a specific line unless metadata proves it. |
 | Commentary and safety | GO | `/paf/api/commentary`, preflight length/source/fallback/trace checks | Say the harness constrains the line: under 200 characters, source metadata, SQL fallback, trace persisted. |
@@ -41,14 +45,18 @@ That is the right stage posture. The game works. The Oracle AI Database evidence
 **Go** if:
 
 - `check:conference-demo:game` is `ready`.
+- `check:conference-demo:transport` is `ready`.
 - `check:conference-demo` is `ready_with_caveats` or better.
+- `check:conference-demo:stage` is `go`, `go_with_caveats`, or `go_with_local_proof_blocker`.
 - `/paf/healthz` is healthy.
 - Commentary response has `warning:null`, is under 200 characters, and includes source metadata.
 - You are comfortable saying the current caveats out loud.
 
 **Do not go live-first** if:
 
-- The game endpoint fails or mobile smoke does not reach `RUNNING`.
+- The game endpoint fails.
+- The transport smoke fails.
+- Mobile smoke does not reach `RUNNING` and you have not completed [manual-visual-proof.md](manual-visual-proof.md) from a normal browser.
 - PAF health fails.
 - Commentary response has no trace/source metadata.
 - The smoke line contradicts recorded SQL facts.

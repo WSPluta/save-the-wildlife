@@ -11,10 +11,10 @@ This game is a signal generator. Every powerup, trail crossing, freeze, coordina
 ## Current Proof Posture
 
 **15-second version**
-The game path is green: public mobile and desktop smoke both pass. The AI path is ready with caveats: PAF health, Oracle AI Database evidence, Select AI, in-db agent configuration, model routing, trace persistence, and adapter proof pass; replay/vector rows and exact Canvas generation are claim-boundary items for the smoke response.
+Use `.codex_tmp/conference-stage-brief/latest.md` as the authority. The transport path proves public HTTP and Socket.IO room lifecycle only when its receipt is ready. The visual/mobile game claim requires a passing game smoke or manual visual proof from a normal browser. The AI path is ready with caveats: PAF health, Oracle AI Database evidence, Select AI, in-db agent configuration, model routing, trace persistence, and adapter proof pass; replay/vector rows and exact Canvas generation are claim-boundary items for the smoke response.
 
 **What to say if challenged**
-The honest answer is better than the polished one. The game is live, PAF is live, and the harness is proving the path. For a specific commentary line, I trust the metadata: if `canvas:null`, I do not claim Canvas generated it.
+The honest answer is better than the polished one. PAF is live, transport is live when the receipt says so, and the visual game path is a separate browser proof. For a specific commentary line, I trust the metadata: if `canvas:null`, I do not claim Canvas generated it.
 
 ## Transition: Game To Data
 

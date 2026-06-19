@@ -39,6 +39,14 @@ async function pathExists(filePath) {
   }
 }
 
+async function readJsonIfExists(filePath) {
+  try {
+    return JSON.parse(await fs.readFile(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
 async function resolvePlaywrightImport() {
   const explicit = process.env.PLAYWRIGHT_IMPORT_PATH;
   const candidates = [
@@ -296,6 +304,21 @@ function finalVerdict(checks) {
   return "ready";
 }
 
+function isBrowserLaunchBlocked(errorText) {
+  const text = String(errorText || "");
+  return text.includes("browserType.launch")
+    && (
+      text.includes("bootstrap_check_in")
+      || text.includes("MachPortRendezvous")
+      || text.includes("Permission denied")
+    );
+}
+
+function isLocalProofBrowserBlocked(report) {
+  const failed = (report.checks || []).filter((check) => check.status === "fail");
+  return failed.length > 0 && failed.every((check) => isBrowserLaunchBlocked(check.error));
+}
+
 function nearestTrashDistance(state) {
   const distances = (state?.trashSamples || [])
     .map((sample) => Number(sample?.distance))
@@ -386,15 +409,43 @@ async function main() {
   };
   const jsonPath = path.join(outputDir, "latest.json");
   const mdPath = path.join(outputDir, "latest.md");
-  await fs.writeFile(jsonPath, JSON.stringify(report, null, 2), "utf8");
-  await fs.writeFile(mdPath, renderMarkdown(report), "utf8");
+  const readyJsonPath = path.join(outputDir, "last-ready.json");
+  const readyMdPath = path.join(outputDir, "last-ready.md");
+  const blockedJsonPath = path.join(outputDir, "last-browser-blocked.json");
+  const blockedMdPath = path.join(outputDir, "last-browser-blocked.md");
+  const previousLatest = await readJsonIfExists(jsonPath);
+  const preserveLatest = report.verdict === "failed"
+    && isLocalProofBrowserBlocked(report)
+    && previousLatest?.verdict === "ready";
+
+  if (preserveLatest) {
+    await fs.writeFile(blockedJsonPath, JSON.stringify(report, null, 2), "utf8");
+    await fs.writeFile(blockedMdPath, renderMarkdown(report), "utf8");
+  } else {
+    await fs.writeFile(jsonPath, JSON.stringify(report, null, 2), "utf8");
+    await fs.writeFile(mdPath, renderMarkdown(report), "utf8");
+  }
+
+  if (report.verdict === "ready") {
+    await fs.writeFile(readyJsonPath, JSON.stringify(report, null, 2), "utf8");
+    await fs.writeFile(readyMdPath, renderMarkdown(report), "utf8");
+  }
 
   for (const check of checks) {
     console.log(`${statusIcon(check.status)} ${check.name}`);
   }
   console.log(`verdict=${report.verdict}`);
-  console.log(`json=${jsonPath}`);
-  console.log(`summary=${mdPath}`);
+  console.log(`json=${preserveLatest ? blockedJsonPath : jsonPath}`);
+  console.log(`summary=${preserveLatest ? blockedMdPath : mdPath}`);
+  if (report.verdict === "ready") {
+    console.log(`last_ready_json=${readyJsonPath}`);
+    console.log(`last_ready_summary=${readyMdPath}`);
+  }
+  if (preserveLatest) {
+    console.log(`latest_preserved=${jsonPath}`);
+    console.log(`browser_blocked_json=${blockedJsonPath}`);
+    console.log(`browser_blocked_summary=${blockedMdPath}`);
+  }
 
   if (report.verdict === "failed") process.exitCode = 1;
 }

@@ -29,6 +29,7 @@ By the end, AI developers should understand four things:
 - [slide-outline.md](slide-outline.md): 10-slide deck spine with visual direction and speaker notes.
 - [demo-runbook.md](demo-runbook.md): live commands, smoke checks, fallback path, and recovery cues.
 - [stage-console.md](stage-console.md): one-page operator card for the browser, terminal proof, source metadata, and fallback lines.
+- [manual-visual-proof.md](manual-visual-proof.md): human visual QA checklist when browser automation cannot launch from the current shell.
 - [stage-entry.html](stage-entry.html): 16:9 audience-entry slide with game URL, QR code, and opening cue.
 - [conference-readiness-scorecard.md](conference-readiness-scorecard.md): final go/no-go scorecard for stage readiness, proof posture, and fallback rules.
 - [claim-ledger.md](claim-ledger.md): stage-safe claim matrix that maps every major statement to a receipt and boundary.
@@ -53,9 +54,12 @@ The larger lesson is Canvas plus harness. Canvas is where business users can sha
 
 ## Proof Points To Show
 
-- Latest deployed commit: `71dd1f1`
-- Latest deployment receipt: `prod-conference-demo-71dd1f1`
-- Current public game smoke: `ready`
+- Latest deployed commit: `e7d4543`
+- Latest deployment receipt: `prod-conference-demo-e7d4543`
+- One-command stage brief:
+  - `npm run check:conference-demo:stage`
+  - receipt: `.codex_tmp/conference-stage-brief/latest.md`
+- Current public game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
 - Current public conference preflight: `ready_with_caveats`
 - One-command preflight:
   - `npm run check:conference-demo`
@@ -63,8 +67,12 @@ The larger lesson is Canvas plus harness. Canvas is where business users can sha
 - Playable game smoke:
   - `npm run check:conference-demo:game`
   - receipt: `.codex_tmp/conference-game-smoke/latest.md`
-- The game works on mobile and desktop.
-- Mobile proof now includes joystick visibility, `RUNNING` state, healthy item counts, boat-waterline contact, and a safe opening spawn buffer.
+  - preserved passing receipt: `.codex_tmp/conference-game-smoke/last-ready.md`
+- Browser-free transport smoke:
+  - `npm run check:conference-demo:transport`
+  - receipt: `.codex_tmp/conference-transport-smoke/latest.md`
+- The game works on mobile and desktop when the game smoke is `ready` or [manual-visual-proof.md](manual-visual-proof.md) has been completed from a normal browser.
+- Mobile proof should include joystick visibility, `RUNNING` state, healthy item counts, boat-waterline contact, and a safe opening spawn buffer.
 - PAF health reports Oracle, GenAI, Canvas, in-db agent, and Select AI configured.
 - PAF context reports SQL/JSON/graph/vector/replay evidence counts.
 - Commentary API returns `warning: null` and source metadata. In the current no-spend proof, expect `source: "oci-base"` with `fallback_source: "oracle-sql"` and `runtime_mode: "behavior-adapter"`; only say Canvas produced a line when the response's `canvas` or `source` fields prove it.

@@ -8,6 +8,12 @@ Use this as the crisp framing before the architecture slide:
 
 For the shortest stage-ready operator view, use
 [stage-console.md](stage-console.md). It is the browser-plus-terminal card for the live room.
+For the freshest generated receipt, run `npm run check:conference-demo:stage`
+and open `.codex_tmp/conference-stage-brief/latest.md`.
+Successful public game smokes preserve `.codex_tmp/conference-game-smoke/last-ready.md`,
+which is useful when a local sandbox blocks Chromium before the page opens.
+The browser-free transport receipt is `.codex_tmp/conference-transport-smoke/latest.md`;
+it proves deployed HTTP and Socket.IO room lifecycle only when its verdict is `ready`, and it does not replace mobile visual proof.
 
 For the proof ladder to use when AI engineers challenge the architecture, keep
 [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md) open. It maps each live receipt to what it proves and what it does not prove yet.
@@ -17,16 +23,17 @@ For the proof ladder to use when AI engineers challenge the architecture, keep
 Use these as the latest receipts before walking on stage:
 
 - Public game endpoint: `http://130.162.174.167/`
-- Deployed proof: commit `71dd1f1`, deployment `prod-conference-demo-71dd1f1`
-- Public game smoke: `ready`
-- Mobile proof: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at waterline
+- Deployed proof: commit `e7d4543`, deployment `prod-conference-demo-e7d4543`
+- Public game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
+- Public transport smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
+- Mobile proof: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at waterline when game smoke or manual visual proof is current
 - Public conference preflight: `ready_with_caveats`
 - PAF health: Oracle, GenAI, Canvas, Select AI, in-db agent, graph/replay/vector retrieval, and model router configured
 - Current claim boundary: smoke replay/vector rows may be empty; the exact smoke commentary line can report `canvas:null`, `in_db_agent:null`, and behavior-adapter runtime
 
 Stage line:
 
-> The game path is green. The AI path is green with boundaries. That is how this earns trust with engineers: proof first, claim second.
+> The stage brief is the authority. The transport path can be green while the visual path still needs browser proof. That is how this earns trust with engineers: proof first, claim second.
 
 ## Preflight Five Minutes Before
 
