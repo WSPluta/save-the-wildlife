@@ -153,6 +153,7 @@ let wakeRippleEffect = null;
 let latestWakeRippleDebug = { visible: 0, capacity: 0 };
 let localWaterlineContact = null;
 let latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0, seatDepth: 0 };
+let latestCameraCompositionDebug = { mobile: false, distanceToPlayer: 0, relativeY: 0, lookHeight: 0 };
 let latestEffectiveSpeed = 0;
 let latestAuthLagMs = 0;
 let latestPoolMetrics = null;
@@ -208,10 +209,83 @@ const ARCADE_ENVIRONMENT = Object.freeze({
   fillColor: 0x86d7ff,
   fillIntensity: 0.55,
 });
+const FOLLOW_CAMERA_COMPOSITION = Object.freeze({
+  desktop: {
+    mobile: false,
+    distance: 2,
+    height: 0.5,
+    lookHeight: 0,
+    lookForward: 0,
+    spring: 0.1,
+    fov: 75,
+  },
+  mobile: {
+    mobile: true,
+    distance: 2.65,
+    height: 1.05,
+    lookHeight: 0.24,
+    lookForward: 0.32,
+    spring: 0.14,
+    fov: 70,
+  },
+});
 const ENVIRONMENT_PROP_LIMITS = Object.freeze({
   desktop: 14,
   mobile: 8,
 });
+const followCameraSpherical = new THREE.Spherical();
+const followCameraTargetPosition = new THREE.Vector3();
+const followCameraLookTarget = new THREE.Vector3();
+
+function isMobileGameViewport() {
+  const width = Number(window.innerWidth) || 1024;
+  const height = Number(window.innerHeight) || 768;
+  const coarsePointer = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+  return width < 800 || (coarsePointer && width <= 980 && height <= 540);
+}
+
+function getFollowCameraComposition() {
+  return isMobileGameViewport()
+    ? FOLLOW_CAMERA_COMPOSITION.mobile
+    : FOLLOW_CAMERA_COMPOSITION.desktop;
+}
+
+function applyFollowCamera(root, yaw) {
+  if (!camera || !root) return;
+  const composition = getFollowCameraComposition();
+  if (Math.abs(camera.fov - composition.fov) > 0.001) {
+    camera.fov = composition.fov;
+    camera.updateProjectionMatrix();
+  }
+
+  const rootYaw = Number.isFinite(yaw) ? yaw : (root.rotation?.y || 0);
+  followCameraSpherical.set(
+    composition.distance,
+    Math.PI / 2,
+    rootYaw + Math.PI
+  );
+  followCameraTargetPosition.setFromSpherical(followCameraSpherical);
+  followCameraTargetPosition.y += composition.height;
+  followCameraTargetPosition.add(root.position);
+  camera.position.lerp(followCameraTargetPosition, composition.spring);
+
+  followCameraLookTarget.copy(root.position);
+  if (composition.lookForward) {
+    followCameraLookTarget.x += Math.sin(rootYaw) * composition.lookForward;
+    followCameraLookTarget.z += Math.cos(rootYaw) * composition.lookForward;
+  }
+  followCameraLookTarget.y += composition.lookHeight;
+  camera.lookAt(followCameraLookTarget);
+
+  latestCameraCompositionDebug = {
+    mobile: !!composition.mobile,
+    distanceToPlayer: Number(camera.position.distanceTo(root.position).toFixed(3)),
+    relativeY: Number((camera.position.y - root.position.y).toFixed(3)),
+    lookHeight: Number(composition.lookHeight.toFixed(3)),
+    lookForward: Number(composition.lookForward.toFixed(3)),
+    fov: Number(camera.fov.toFixed(1)),
+  };
+}
 function resetTurtleFloatState(object3d) {
   if (!object3d || !object3d.userData) return;
   object3d.userData.floatOffset = Math.random() * Math.PI * 2;
@@ -4565,17 +4639,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
     // Freeze controls during synchronized STARTING countdown (authoritative)
     if (gameState === "STARTING") {
-      const targetCameraPosition = new THREE.Vector3();
-      const sphericalCoords = new THREE.Spherical(
-        2,
-        Math.PI / 2,
-        player.rotation.y + Math.PI
-      );
-      targetCameraPosition.setFromSpherical(sphericalCoords);
-      targetCameraPosition.y += 0.5;
-      targetCameraPosition.add(player.position);
-      camera.position.lerp(targetCameraPosition, 0.1);
-      camera.lookAt(player.position);
+      applyFollowCamera(player, player.rotation.y);
       if (statusBadge) { setSpriteText(statusBadge, ""); statusBadge.visible = false; }
       playerSpeed = 0;
       return;
@@ -4688,10 +4752,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       player.quaternion
     );
 
-    const CAMERA_DISTANCE = 2;
-    const CAMERA_HEIGHT = 0.5;
-    const SPRING_STRENGTH = 0.1;
-
     const lastPosition = player.position.clone();
     if (!serverAuthEnabled || !authFreshForYou) {
       player.position.addScaledVector(direction, playerSpeed * dt);
@@ -4707,17 +4767,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       player.position.copy(lastPosition);
     }
 
-    const targetCameraPosition = new THREE.Vector3();
-    const sphericalCoords = new THREE.Spherical(
-      CAMERA_DISTANCE,
-      Math.PI / 2,
-      player.rotation.y + Math.PI
-    );
-    targetCameraPosition.setFromSpherical(sphericalCoords);
-    targetCameraPosition.y += CAMERA_HEIGHT;
-    targetCameraPosition.add(player.position);
-    camera.position.lerp(targetCameraPosition, SPRING_STRENGTH);
-    camera.lookAt(player.position);
+    applyFollowCamera(player, player.rotation.y);
 
     // Reconcile local player to authoritative server state (smoothly)
     if (authFreshForYou) {
@@ -5080,6 +5130,7 @@ function renderGameToText() {
     environmentPropsVisible: environmentPropStats.total || 0,
     turtlesVisible: turtleSamples.length,
     turtleSamples,
+    camera: latestCameraCompositionDebug,
     boatFeel: getBoatFeelDebug(localBoatFeelState) || latestBoatFeelDebug,
     wakeRipples: latestWakeRippleDebug,
     waterlineContact: latestWaterlineContactDebug,

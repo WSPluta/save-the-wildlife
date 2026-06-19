@@ -518,3 +518,7 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Tightened the local waterline contact ring so it hugs the hull instead of reading like a large hover platform under the boat.
   - Verified focused boat/gameplay polish tests, full web unit tests, production web build, desktop Playwright smoke, and mobile viewport smoke.
   - Latest local proof artifacts: `output/boat-waterline-running-current/`, `output/boat-waterline-moving-current/`, and `output/mobile-polish-smoke/`.
+- Mobile boat waterline/camera correction on 2026-06-19:
+  - Added shared follow-camera composition with mobile-only higher eye line, slight forward look target, and narrower FOV so the hull/water contact reads properly on phones.
+  - Lowered the visual-only boat feel pivot to sit the hull deeper in the waterline while preserving root movement, collisions, trails, joystick controls, and server movement.
+  - Verified node syntax, focused boat/camera tests, full web unit tests, web production build, required develop-web-game Playwright loop, and local mobile conference smoke (`ready`, `boatFeel.y=-0.068`, `seatDepth=0.071`, joystick visible).
