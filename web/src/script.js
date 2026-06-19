@@ -238,16 +238,19 @@ function disableGameplayInteraction(object3d) {
 }
 
 function createBoatWaterlineContact() {
-  const geometry = new THREE.RingGeometry(0.34, 0.56, 44, 1);
+  const geometry = new THREE.RingGeometry(0.41, 0.5, 48, 1);
   geometry.rotateX(-Math.PI / 2);
   const material = new THREE.MeshBasicMaterial({
     color: 0xdafcff,
     transparent: true,
-    opacity: 0.12,
+    opacity: 0.08,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true,
     blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = "localBoatWaterlineContact";
@@ -255,18 +258,21 @@ function createBoatWaterlineContact() {
   mesh.renderOrder = 24;
   mesh.userData.noCollision = true;
   mesh.userData.visualOnly = true;
-  mesh.scale.set(0.5, 1, 1.08);
+  mesh.scale.set(0.38, 1, 1.06);
   mesh.position.y = BOAT_FEEL_DEFAULTS.waterSurfaceY + BOAT_FEEL_DEFAULTS.surfaceRippleY;
 
-  const shadowGeometry = new THREE.CircleGeometry(0.43, 44);
+  const shadowGeometry = new THREE.CircleGeometry(0.44, 44);
   shadowGeometry.rotateX(-Math.PI / 2);
   const shadowMaterial = new THREE.MeshBasicMaterial({
     color: 0x084f7a,
     transparent: true,
-    opacity: 0.1,
+    opacity: 0.08,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true,
     side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
   });
   const shadow = new THREE.Mesh(shadowGeometry, shadowMaterial);
   shadow.name = "localBoatWaterlineContactShadow";
@@ -288,11 +294,11 @@ function updateBoatWaterlineContact(root, speed, wake, maxSpeed = 3, visualY = 0
   const contactY = waterY + BOAT_FEEL_DEFAULTS.surfaceRippleY;
   localWaterlineContact.visible = gameState === "RUNNING" || gameState === "STARTING";
   localWaterlineContact.position.y = contactY;
-  localWaterlineContact.material.opacity = 0.11 + wakeStrength * 0.07 + speedRatio * 0.03;
-  localWaterlineContact.scale.set(0.58 + wakeStrength * 0.06, 1, 1.16 + speedRatio * 0.1);
+  localWaterlineContact.material.opacity = 0.075 + wakeStrength * 0.055 + speedRatio * 0.018;
+  localWaterlineContact.scale.set(0.38 + wakeStrength * 0.035, 1, 1.06 + speedRatio * 0.08);
   const shadow = localWaterlineContact.userData && localWaterlineContact.userData.contactShadow;
   if (shadow && shadow.material) {
-    shadow.material.opacity = 0.1 + wakeStrength * 0.045 + speedRatio * 0.02;
+    shadow.material.opacity = 0.075 + wakeStrength * 0.035 + speedRatio * 0.015;
   }
   const seatDepth = contactY - (Number.isFinite(Number(visualY)) ? Number(visualY) : 0);
   latestWaterlineContactDebug = {

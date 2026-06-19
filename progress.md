@@ -500,3 +500,8 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
 - Conference game smoke hardening on 2026-06-19:
   - A public desktop smoke reached `RUNNING` but failed because the moving smoke player sampled only one visible powerup; all other gameplay checks were healthy.
   - Updated `scripts/conference-game-smoke.mjs` to validate visible-or-active powerup evidence instead of requiring two visible powerup instances at one sample frame.
+- Boat waterline contact polish on 2026-06-19:
+  - Tuned the visual-only boat feel layer so the hull sits slightly deeper into the water plane while keeping the gameplay root, yaw, collisions, trails, scoring, and controls unchanged.
+  - Tightened the local waterline contact ring so it hugs the hull instead of reading like a large hover platform under the boat.
+  - Verified focused boat/gameplay polish tests, full web unit tests, production web build, desktop Playwright smoke, and mobile viewport smoke.
+  - Latest local proof artifacts: `output/boat-waterline-running-current/`, `output/boat-waterline-moving-current/`, and `output/mobile-polish-smoke/`.

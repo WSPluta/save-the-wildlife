@@ -82,6 +82,9 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/localBoatFeelState = createBoatFeelState\(\);/);
     expect(script).toMatch(/installBoatFeelPivot\(player, \[boat\]\);/);
     expect(script).toMatch(/localWaterlineContact = createBoatWaterlineContact\(\);/);
+    expect(script).toMatch(/new THREE\.RingGeometry\(0\.41, 0\.5, 48, 1\);/);
+    expect(script).toMatch(/depthTest: true,/);
+    expect(script).toMatch(/localWaterlineContact\.scale\.set\(0\.38 \+ wakeStrength \* 0\.035, 1, 1\.06 \+ speedRatio \* 0\.08\);/);
     expect(script).toMatch(/player\.add\(localWaterlineContact\);/);
     expect(script).toMatch(/const playerBox = getPlayerCollisionBox\(\);/);
     expect(script).toMatch(/latestBoatFeelDebug = updateBoatFeel\(player, localBoatFeelState,/);
