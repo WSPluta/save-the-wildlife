@@ -36,6 +36,11 @@ For the fuller limbic opening and proof ladder, use
 For the live terminal and source-metadata flow, keep
 [stage-console.md](stage-console.md) open next to the browser.
 
+For the editable slide deck, use
+[save-the-wildlife-ai-engineer-demo-deck.pptx](../../outputs/save-the-wildlife-ai-engineer-demo-deck.pptx).
+The deck is intentionally sparse; use this run-of-show and
+[ai-engineer-demo-master-card.md](ai-engineer-demo-master-card.md) as the speaker-note source.
+
 For full rehearsal, read
 [18-minute-stage-script.md](18-minute-stage-script.md) out loud once. It is the timing-safe script with proof boundaries and rescue lines.
 

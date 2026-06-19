@@ -1,6 +1,6 @@
 # Current Proof Snapshot
 
-Last verified from the generated stage receipts on **2026-06-19 20:15 UTC**.
+Last verified from the generated stage receipts on **2026-06-19 22:09 UTC**.
 
 Use this file as the quick "what is live right now?" anchor. The generated
 receipt remains the authority:
@@ -48,8 +48,8 @@ public smoke receipts, and the `stwl-deploy-codex-3f26f08` rollout.
 
 ## Latest Playability Receipt
 
-- Mobile: `RUNNING`, joystick `134x134`, boat visual `y=-0.068`, seat depth `0.071`, mobile camera `fov=70`
-- Desktop: `RUNNING`, wake ripples `10`, boat visual `y=-0.070`, seat depth `0.073`
+- Mobile: `RUNNING`, joystick `134x134`, boat visual `y=-0.069`, seat depth `0.072`
+- Desktop: `RUNNING`, wake ripples `10`, boat visual `y=-0.069`, seat depth `0.072`
 - Transport: public HTTP `200`, Socket.IO room lifecycle `pass`
 - Recent `ws-server` logs after `server:0.0.31`: no `Session ID unknown`, no Coherence scan timeout burst
 

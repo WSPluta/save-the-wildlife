@@ -28,6 +28,7 @@ By the end, AI developers should understand four things:
 - [18-minute-stage-script.md](18-minute-stage-script.md): read-aloud rehearsal script with stage actions, proof boundaries, and timing rescue.
 - [architecture.md](architecture.md): current post-Redis runtime topology and commentary sequence.
 - [slide-outline.md](slide-outline.md): 10-slide deck spine with visual direction and speaker notes.
+- [save-the-wildlife-ai-engineer-demo-deck.pptx](../../outputs/save-the-wildlife-ai-engineer-demo-deck.pptx): editable 10-slide stage deck generated from this event pack.
 - [demo-runbook.md](demo-runbook.md): live commands, smoke checks, fallback path, and recovery cues.
 - [stage-console.md](stage-console.md): one-page operator card for the browser, terminal proof, source metadata, and fallback lines.
 - [ai-engineer-demo-master-card.md](ai-engineer-demo-master-card.md): one rehearsal surface with opening line, proof commands, claim boundaries, failure pivots, and notebook CTAs.
