@@ -143,8 +143,9 @@ function receiptFailureText(game = {}) {
     });
 }
 
-function isReceiptBrowserBlocked(game = {}) {
-  const failed = (game.checks || []).filter((check) => check.status === "fail");
+function isReceiptBrowserBlocked(game) {
+  const checks = Array.isArray(game?.checks) ? game.checks : [];
+  const failed = checks.filter((check) => check.status === "fail");
   return failed.length > 0 && failed.every((check) => {
     const error = String(check.error || "");
     return error.includes("browserType.launch")

@@ -28,22 +28,12 @@ export function createCoherenceEntryReader(options = {}) {
   const logger = options.logger;
   const states = new WeakMap();
 
-  return {
-    async readEntries(cache, { fallback, label = "unknown" } = {}) {
-      if (!cache || typeof cache.entries !== "function") {
-        return fallbackValue(fallback);
-      }
+  function startScan(cache, label) {
+    let timeoutId;
+    const scanPromise = scanEntries(cache);
+    scanPromise.catch(() => {});
 
-      const state = states.get(cache);
-      const current = now();
-      if (state && state.retryAfter > current) {
-        return fallbackValue(fallback);
-      }
-
-      let timeoutId;
-      const scanPromise = scanEntries(cache);
-      scanPromise.catch(() => {});
-
+    return (async () => {
       try {
         const result = timeoutMs > 0
           ? await Promise.race([
@@ -57,10 +47,10 @@ export function createCoherenceEntryReader(options = {}) {
             ])
           : await scanPromise;
         states.delete(cache);
-        return result;
+        return { ok: true, result };
       } catch (error) {
         states.set(cache, {
-          retryAfter: current + backoffMs,
+          retryAfter: now() + backoffMs,
           lastError: error?.message || String(error),
         });
         warn(
@@ -77,10 +67,33 @@ export function createCoherenceEntryReader(options = {}) {
           },
           "Coherence entry scan failed; using local fallback"
         );
-        return fallbackValue(fallback);
+        return { ok: false, error };
       } finally {
         if (timeoutId) clearTimeout(timeoutId);
       }
+    })();
+  }
+
+  return {
+    async readEntries(cache, { fallback, label = "unknown" } = {}) {
+      if (!cache || typeof cache.entries !== "function") {
+        return fallbackValue(fallback);
+      }
+
+      const state = states.get(cache);
+      const current = now();
+      if (state && state.retryAfter > current) {
+        return fallbackValue(fallback);
+      }
+      if (state?.inFlight) {
+        const outcome = await state.inFlight;
+        return outcome.ok ? outcome.result : fallbackValue(fallback);
+      }
+
+      const inFlight = startScan(cache, label);
+      states.set(cache, { retryAfter: 0, inFlight });
+      const outcome = await inFlight;
+      return outcome.ok ? outcome.result : fallbackValue(fallback);
     },
 
     reset(cache) {

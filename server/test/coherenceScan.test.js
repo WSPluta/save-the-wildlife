@@ -83,4 +83,32 @@ describe("Coherence entry scan fallback", () => {
     expect(cache.entries).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledTimes(1);
   });
+
+  it("shares one slow in-flight scan across concurrent readers", async () => {
+    vi.useFakeTimers();
+    const logger = { warn: vi.fn() };
+    const cache = {
+      entries: vi.fn(async function* entries() {
+        await new Promise(() => {});
+      }),
+    };
+    const reader = createCoherenceEntryReader({
+      timeoutMs: 10,
+      backoffMs: 1000,
+      now: () => 0,
+      logger,
+    });
+
+    const first = reader.readEntries(cache, { fallback: () => ({ fallback: 1 }), label: "trash" });
+    const second = reader.readEntries(cache, { fallback: () => ({ fallback: 2 }), label: "trash" });
+    const third = reader.readEntries(cache, { fallback: () => ({ fallback: 3 }), label: "trash" });
+
+    await vi.advanceTimersByTimeAsync(11);
+
+    await expect(first).resolves.toEqual({ fallback: 1 });
+    await expect(second).resolves.toEqual({ fallback: 2 });
+    await expect(third).resolves.toEqual({ fallback: 3 });
+    expect(cache.entries).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
 });
