@@ -16,7 +16,7 @@ Current healthy stage posture:
 - Game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
 - Transport smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
 - AI preflight: `ready_with_caveats`
-- Latest runtime deployment proof: commit `307cc06`, deployment `stwl-deploy-codex-307cc06`, `web:0.0.22`, `ws-server:0.0.31`, `private-agent-factory:0.0.4`
+- Latest runtime deployment proof: commit `3f26f08`, deployment `stwl-deploy-codex-3f26f08`, `web:0.0.23`, `ws-server:0.0.31`, `private-agent-factory:0.0.4`
 - Generated stage receipt: `.codex_tmp/conference-stage-brief/latest.md`; static snapshot: [current-proof-snapshot.md](current-proof-snapshot.md)
 - Latest mobile smoke proof: `RUNNING`, joystick visible, healthy item counts, boat seated at waterline when game smoke or manual visual proof is current
 - Safe caveats: smoke replay/vector rows may be empty, and current commentary metadata can report `canvas:null`, `in_db_agent:null`, and `runtime_mode=behavior-adapter`

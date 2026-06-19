@@ -1,6 +1,6 @@
 # Current Proof Snapshot
 
-Last verified from the generated stage receipts on **2026-06-19 19:26 UTC**.
+Last verified from the generated stage receipts on **2026-06-19 20:15 UTC**.
 
 Use this file as the quick "what is live right now?" anchor. The generated
 receipt remains the authority:
@@ -20,9 +20,9 @@ cat .codex_tmp/conference-stage-brief/latest.md
 
 ## Current Runtime Deployment Proof
 
-- Latest runtime-changing deploy commit: `307cc06`
-- Build run: `stwl-build-codex-307cc06`
-- Deploy run: `stwl-deploy-codex-307cc06`
+- Latest runtime-changing deploy commit: `3f26f08`
+- Build run: `stwl-build-codex-3f26f08`
+- Deploy run: `stwl-deploy-codex-3f26f08`
 - Stage verdict: `go_with_caveats`
 - Game smoke: `ready`
 - Transport smoke: `ready`
@@ -31,15 +31,15 @@ cat .codex_tmp/conference-stage-brief/latest.md
 - Strict upstream proof: `failed`, expected while both model routes report `behavior-adapter`
 
 Note: the generated stage brief's `Verified commit` is the current repository
-commit when the receipt is generated. It can be newer than `307cc06` after
+commit when the receipt is generated. It can be newer than `3f26f08` after
 docs-only event-pack commits. The runtime proof is the deployed image tags,
-public smoke receipts, and the `stwl-deploy-codex-307cc06` rollout.
+public smoke receipts, and the `stwl-deploy-codex-3f26f08` rollout.
 
 ## Live Images
 
 | Service | Current image tag |
 |---|---|
-| `web` | `0.0.22` |
+| `web` | `0.0.23` |
 | `ws-server` | `0.0.31` |
 | `private-agent-factory` | `0.0.4` |
 | `score` | `0.0.7` |
@@ -48,8 +48,8 @@ public smoke receipts, and the `stwl-deploy-codex-307cc06` rollout.
 
 ## Latest Playability Receipt
 
-- Mobile: `RUNNING`, joystick `134x134`, boat visual `y=-0.063`, seat depth `0.066`
-- Desktop: `RUNNING`, wake ripples `10`, boat visual `y=-0.063`, seat depth `0.066`
+- Mobile: `RUNNING`, joystick `134x134`, boat visual `y=-0.068`, seat depth `0.071`, mobile camera `fov=70`
+- Desktop: `RUNNING`, wake ripples `10`, boat visual `y=-0.070`, seat depth `0.073`
 - Transport: public HTTP `200`, Socket.IO room lifecycle `pass`
 - Recent `ws-server` logs after `server:0.0.31`: no `Session ID unknown`, no Coherence scan timeout burst
 

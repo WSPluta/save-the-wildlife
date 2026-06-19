@@ -25,7 +25,7 @@ For the current runtime deployment, image tags, and proof posture, keep
 Use these as the latest receipts before walking on stage:
 
 - Public game endpoint: `http://130.162.174.167/`
-- Runtime deployment proof: commit `307cc06`, deployment `stwl-deploy-codex-307cc06`, `web:0.0.22`, `ws-server:0.0.31`, `private-agent-factory:0.0.4`
+- Runtime deployment proof: commit `3f26f08`, deployment `stwl-deploy-codex-3f26f08`, `web:0.0.23`, `ws-server:0.0.31`, `private-agent-factory:0.0.4`
 - Public game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
 - Public transport smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
 - Mobile proof: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at waterline when game smoke or manual visual proof is current

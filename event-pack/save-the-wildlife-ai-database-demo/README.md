@@ -55,8 +55,8 @@ The larger lesson is Canvas plus harness. Canvas is where business users can sha
 
 ## Proof Points To Show
 
-- Latest runtime-changing deploy commit: `307cc06`
-- Latest runtime deployment receipt: `stwl-deploy-codex-307cc06`
+- Latest runtime-changing deploy commit: `3f26f08`
+- Latest runtime deployment receipt: `stwl-deploy-codex-3f26f08`
 - Current proof snapshot: [current-proof-snapshot.md](current-proof-snapshot.md)
 - One-command stage brief:
   - `npm run check:conference-demo:stage`

@@ -24,7 +24,7 @@ The game is the emotional entry point. The terminal is the proof. Canvas is the 
 Use these as the latest receipts, not as promises about future runs:
 
 - Public game: `http://130.162.174.167/` returns `200 OK`.
-- Latest runtime app proof: commit `307cc06`, deployment `stwl-deploy-codex-307cc06`, `web:0.0.22`, `ws-server:0.0.31`, `private-agent-factory:0.0.4`.
+- Latest runtime app proof: commit `3f26f08`, deployment `stwl-deploy-codex-3f26f08`, `web:0.0.23`, `ws-server:0.0.31`, `private-agent-factory:0.0.4`.
 - Generated stage brief: `.codex_tmp/conference-stage-brief/latest.md` from `npm run check:conference-demo:stage`.
 - Public game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority.
 - Public mobile smoke: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at the waterline.

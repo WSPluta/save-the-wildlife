@@ -34,7 +34,7 @@ The line to land:
 
 Use this when someone asks, "what is actually live right now?"
 
-- Runtime deployment commit: `307cc06`
+- Runtime deployment commit: `3f26f08`
 - Current proof snapshot: [current-proof-snapshot.md](current-proof-snapshot.md)
 - Generated stage receipt: `.codex_tmp/conference-stage-brief/latest.md`
 - Game endpoint: `http://130.162.174.167/`
