@@ -42,9 +42,10 @@ Healthy signals:
   - `"graph_facts"` with player/item/trail/freeze relationships
   - `"capabilities"` showing which evidence lenses were available
 - Commentary returns:
-  - `"source": "paf-canvas"`
-  - `"fallback_source": "select-ai"`
   - `"warning": null`
+  - `summary` fields that match recorded SQL evidence
+  - source metadata such as `source`, `fallback_source`, `model_route`, `canvas`, and `in_db_agent`
+  - for the current no-spend proof, `source` may be `"oci-base"` with `fallback_source` `"oracle-sql"` and model-route `runtime_mode` `"behavior-adapter"`
 
 ## Live Audience Play
 
@@ -83,7 +84,7 @@ curl -sS -X POST http://130.162.174.167/paf/api/commentary \
 
 Talk track:
 
-> This line is short because the agent has a policy. It mentions a shield, a trail crossing, a freeze, and coordinates because those were in SQL. Canvas is shaping the final line, but the harness decides what evidence exists and what can be said. If the event is not in the database, the runtime path should not invent it.
+> This line is short because the agent has a policy. It mentions a shield, a trail crossing, a freeze, and coordinates because those were in SQL. The metadata tells us which runtime path produced this specific line. Canvas is configured as the agent-building surface, and the harness decides what evidence exists, what path is allowed, and what can be said. If the event is not in the database, the runtime path should not invent it.
 
 For replay-caption proof when a replay document exists:
 
@@ -165,7 +166,7 @@ Talk track:
 4. Tries in-database agent team via `DBMS_CLOUD_AI_AGENT.RUN_TEAM`.
 5. Falls back to Select AI via `DBMS_CLOUD_AI.GENERATE`.
 6. Falls back to deterministic SQL text if generation is unavailable.
-7. Sends the bounded evidence package into the published PAF Canvas agent for final phrasing.
+7. Routes the bounded evidence package through the configured PAF path: Canvas when selected and proven by metadata, otherwise in-database agent, Select AI, model-router adapter, or SQL fallback.
 8. Enforces length and profanity guard.
 9. Broadcasts the grounded commentary back into the live game experience.
 

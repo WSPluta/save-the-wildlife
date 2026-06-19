@@ -10,6 +10,7 @@
 - [ ] Decide whether to use live audience events or the smoke session for the commentary proof.
 - [ ] Put the game URL on a QR slide.
 - [ ] Put the three notebook filenames on the CTA slide.
+- [ ] Read [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md) out loud once and make the opening land in under 45 seconds.
 
 ## Thirty Minutes Before
 
@@ -76,11 +77,12 @@ Point to:
 1. The story: **Play -> Prove -> Agent -> Harness -> CTA**.
 2. The phrase: **SQL first. LLM last.**
 3. The model: **Agent = Model + Harness**.
-4. The proof: `source=paf-canvas`, `fallback_source=select-ai`, `warning=null`.
+4. The proof: `warning=null`, `summary` matches recorded SQL evidence, and source metadata tells you the actual path: Canvas, Select AI, in-db agent, model-router adapter, or SQL fallback.
 5. The Canvas message: **Business users shape the agent; engineers own the harness.**
 6. The Model AI proof: **facts in memory, behavior in weights.**
 7. The boundary: **OpenAI-compatible handoff is live; upstream LLM runtime is still pending.**
 8. The CTA: game demo is the front door; notebooks are the developer path.
+9. The stage line: **Modern AI apps are not one giant prompt. They are live systems with memory, tools, traces, policy, and a model inside a harness.**
 
 ## Backup Talk Track
 

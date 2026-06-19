@@ -2,12 +2,12 @@ import * as THREE from "three";
 import { getHeightAndNormalInto } from "./buoyancy";
 
 export const BOAT_FEEL_DEFAULTS = Object.freeze({
-  waterlineOffset: -0.002,
-  minVisualY: -0.02,
-  maxVisualY: 0.026,
+  waterlineOffset: -0.014,
+  minVisualY: -0.035,
+  maxVisualY: 0.014,
   sampleForward: 0.82,
   sampleSide: 0.34,
-  verticalWaveStrength: 0.24,
+  verticalWaveStrength: 0.16,
   maxPitch: 0.075,
   maxRoll: 0.14,
   wavePitchStrength: 1.45,
@@ -138,7 +138,7 @@ function estimateSpeed(root, state, dt, providedSpeed) {
   return Math.hypot(dx, dz) / dt;
 }
 
-function maybeEmitWake(root, state, dt, isMobile, speed, maxSpeed) {
+function maybeEmitWake(root, state, dt, isMobile, speed, maxSpeed, wakeRipples) {
   const opts = state.options;
   const speedAbs = Math.abs(speed || 0);
   const targetWake = speedAbs < opts.wakeMinSpeed
@@ -151,7 +151,10 @@ function maybeEmitWake(root, state, dt, isMobile, speed, maxSpeed) {
   if (state.wake <= 0.08 || state.wakeCooldown > 0) return;
   const interval = isMobile ? opts.wakeIntervalMobile : opts.wakeIntervalDesktop;
   state.stern.copy(state.forward).multiplyScalar(-0.72).add(root.position);
-  state.stern.y = root.position.y + state.y + 0.006;
+  state.stern.y = root.position.y + state.y + 0.008;
+  if (wakeRipples && typeof wakeRipples.emit === "function") {
+    wakeRipples.emit(state.stern, root.rotation?.y || 0, state.wake);
+  }
   state.wakeCooldown = interval;
 }
 
@@ -212,7 +215,7 @@ export function updateBoatFeel(root, state, input = {}) {
   pivot.rotation.z = state.roll;
   pivot.rotation.y = 0;
 
-  maybeEmitWake(root, state, dt, !!input.isMobile, speed, maxSpeed);
+  maybeEmitWake(root, state, dt, !!input.isMobile, speed, maxSpeed, input.wakeRipples);
 
   state.debug.y = Number(state.y.toFixed(3));
   state.debug.pitch = Number(state.pitch.toFixed(3));

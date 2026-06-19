@@ -2,7 +2,7 @@
 
 This pack is the source-of-truth for an 18-minute AI developer presentation and a demo-scale gaming industry template:
 
-**A live multiplayer game creates real telemetry and replay clips. Oracle AI Database turns that evidence into governed match intelligence. Oracle Private Agent Factory and Select AI turn it into live commentary, replay captions, post-match recap, and a natural path toward production gaming workflows.**
+**A live multiplayer game creates real telemetry and replay clips. Oracle AI Database turns that evidence into governed match intelligence. Oracle Private Agent Factory, Select AI, and the deployed harness turn it into live commentary, replay captions, post-match recap, and a natural path toward production gaming workflows.**
 
 ## Audience Promise
 
@@ -27,19 +27,20 @@ By the end, AI developers should understand three things:
 - [architecture.md](architecture.md): current post-Redis runtime topology and commentary sequence.
 - [slide-outline.md](slide-outline.md): 10-slide deck spine with visual direction and speaker notes.
 - [demo-runbook.md](demo-runbook.md): live commands, smoke checks, fallback path, and recovery cues.
+- [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md): limbic opening, AI engineer proof ladder, and stage-ready language.
 - [speaker-cards.md](speaker-cards.md): short talk tracks, transitions, and objection handling.
 - [notebook-cta-map.md](notebook-cta-map.md): how the three notebooks become CTAs and follow-up learning paths.
 - [recording/](recording/): 7:30 rehearsal recording kit with source-backed slides, script, subtitles, and MP4 builder.
 
 ## One-Sentence Version
 
-We let the audience generate gameplay telemetry and replay clips on mobile, store the evidence in Oracle AI Database, retrieve SQL/JSON/graph/vector context, send bounded evidence into an Oracle Private Agent Factory Canvas agent, and use the result to teach live match intelligence as a modern agent harness pattern.
+We let the audience generate gameplay telemetry and replay clips on mobile, store the evidence in Oracle AI Database, retrieve SQL/JSON/graph/vector context, route bounded evidence through the deployed Private Agent Factory harness, and use the result to teach live match intelligence as a modern agent pattern. Canvas is the business-facing agent surface; the response metadata is the authority for which path produced a specific line.
 
 ## Three-Minute Version
 
 This is not a score-only game demo. The game emits a structured event timeline: `game_started`, `position_sample`, `trash_collected`, `marine_hit`, `powerup_collected`, `trail_crossed`, `player_frozen`, and `game_over`.
 
-Those events land in Oracle AI Database with session, room, player, time, score, coordinates, related player/item IDs, and JSON metadata. Replay clips are captured around key moments and stored as JSON clip payloads plus a clip manifest. The match-intelligence path reads SQL-backed history, graph facts, replay clip metadata, and vector-ready memory, then lets Oracle Private Agent Factory Canvas produce conference-safe outputs such as `live_line`, `replay_caption`, `post_match_recap`, and `clip_title`.
+Those events land in Oracle AI Database with session, room, player, time, score, coordinates, related player/item IDs, and JSON metadata. Replay clips are captured around key moments and stored as JSON clip payloads plus a clip manifest. The match-intelligence path reads SQL-backed history, graph facts, replay clip metadata, and vector-ready memory, then the deployed Private Agent Factory harness produces conference-safe outputs such as `live_line`, `replay_caption`, `post_match_recap`, and `clip_title` through the configured path: Canvas, Select AI, in-database agent, model-router adapter, or deterministic SQL fallback.
 
 The larger lesson is Canvas plus harness. Canvas is where business users can shape the agent language and workflow. The harness decides what data is retrieved, which tools are exposed, how memory is scoped, how large outputs are offloaded, how identities are enforced, how the trace can be audited, and how grounded commentary is broadcast back into the live game.
 
@@ -48,7 +49,7 @@ The larger lesson is Canvas plus harness. Canvas is where business users can sha
 - The game works on mobile and desktop.
 - PAF health reports Oracle, GenAI, Canvas, in-db agent, and Select AI configured.
 - PAF context reports SQL/JSON/graph/vector/replay evidence counts.
-- Commentary API returns `source: "paf-canvas"` and `fallback_source: "select-ai"` when Canvas polishes the SQL/Select AI draft.
+- Commentary API returns `warning: null` and source metadata. In the current no-spend proof, expect `source: "oci-base"` with `fallback_source: "oracle-sql"` and `runtime_mode: "behavior-adapter"`; only say Canvas produced a line when the response's `canvas` or `source` fields prove it.
 - The endpoint harness remains the connection between Canvas, Oracle AI Database, Select AI or in-database agents, and the live 3D experience.
 - The summary includes real game mechanics: powerups, trail crossings, freeze events, coordinates, and prior history when present.
 - Replay captions only mention clip/timecode evidence when a replay document exists.

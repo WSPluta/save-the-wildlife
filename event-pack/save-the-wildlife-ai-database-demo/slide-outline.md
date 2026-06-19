@@ -39,7 +39,7 @@ This is the gaming template. Telemetry explains what happened. Replay shows it. 
 **Claim:** The demo uses deterministic context before creative phrasing.
 
 **Visual:** Flow:
-Browser -> ingress -> `ws-server` -> Coherence fanout -> score/replay -> Oracle AI Database -> `private-agent-factory` -> Select AI/in-db agents -> PAF Canvas -> `commentary.ready`.
+Browser -> ingress -> `ws-server` -> Coherence fanout -> score/replay -> Oracle AI Database -> `private-agent-factory` -> Select AI/in-db agents/model route/Canvas when selected -> `commentary.ready`.
 
 **Speaker notes:**
 Emphasize that Redis is no longer in the runtime path. Coherence handles Socket.IO fanout; Oracle AI Database holds the evidence; generation remains bounded with live output under 200 characters, profanity guard, and no invented events or unrecorded replay moments.
@@ -49,7 +49,7 @@ Emphasize that Redis is no longer in the runtime path. Coherence handles Socket.
 **Claim:** The commentator line is grounded in recorded events.
 
 **Visual:** Terminal/API response callout with fields:
-`source: paf-canvas`, `fallback_source: select-ai`, `evidence.replay_clip_count`, `capabilities.graph_facts`.
+`source`, `fallback_source`, `model_route.runtime_mode`, `canvas`, `in_db_agent`, `summary`, `capabilities.graph_facts`.
 
 **Speaker notes:**
 Show `/paf/api/context` and `/paf/api/commentary`. Read the summary fields aloud: shield, trail crossing, freeze, coordinates, replay clip evidence when present.

@@ -2,11 +2,11 @@
 
 ## 15-Second Core
 
-We turned a live mobile game into a match-intelligence template: real events and replay clips go into Oracle AI Database, SQL/JSON/graph/vector context grounds the agent, Oracle Private Agent Factory Canvas shapes the final commentary, and the harness broadcasts it back into the live experience.
+We turned a live mobile game into a match-intelligence template: real events and replay clips go into Oracle AI Database, SQL/JSON/graph/vector context grounds the agent, Oracle Private Agent Factory Canvas shapes the agent experience, and the harness records which runtime path produced the final commentary before broadcasting it back into the live game.
 
 ## 45-Second Core
 
-This game is a signal generator. Every powerup, trail crossing, freeze, coordinate, score, and replay clip becomes evidence in Oracle AI Database. The agent does not guess from raw footage; it reads the event timeline, replay manifest, graph facts, and memory. The in-database package summarizes the session, Select AI can generate a short draft from grounded context, and Oracle Private Agent Factory Canvas polishes live commentary, replay captions, or recap text. The broader lesson is Canvas plus harness: business users can shape the agent experience, and AI engineers keep it grounded, governed, and connected to the live 3D environment.
+This game is a signal generator. Every powerup, trail crossing, freeze, coordinate, score, and replay clip becomes evidence in Oracle AI Database. The agent does not guess from raw footage; it reads the event timeline, replay manifest, graph facts, and memory. The in-database package summarizes the session, Select AI can generate a short draft from grounded context, Canvas gives business users the agent-building surface, and the harness records whether a specific line came from Canvas, an in-database agent, Select AI, the model router, or SQL fallback. The broader lesson is Canvas plus harness: business users can shape the agent experience, and AI engineers keep it grounded, governed, and connected to the live 3D environment.
 
 ## Transition: Game To Data
 

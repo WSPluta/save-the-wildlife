@@ -33,7 +33,7 @@ This is the trust boundary. If the event or replay clip is not recorded here, th
 **Action:** Show architecture flow.
 
 **Say:**
-Evidence first. Model last. The runtime starts with explicit SQL/JSON/graph/vector context, uses Select AI or an in-database agent for a bounded draft, and sends that package to the Canvas agent for final phrasing.
+Evidence first. Model last. The runtime starts with explicit SQL/JSON/graph/vector context, can use Select AI or an in-database agent for a bounded draft, and routes that package through the deployed PAF harness. Canvas is configured as the business-facing agent surface, but the response metadata tells us which exact path produced a line.
 
 ## Slide 5 - Live Commentary
 
@@ -46,7 +46,7 @@ curl -sS -X POST http://130.162.174.167/paf/api/commentary \
 ```
 
 **Say:**
-Look at the fields, not just the sentence. `source` shows the published PAF Canvas agent produced the line, `fallback_source` shows the Oracle AI Database draft path, and `evidence` shows actual events, graph facts, replay clips, and memory.
+Look at the fields, not just the sentence. `source`, `fallback_source`, `model_route`, `canvas`, and `in_db_agent` show which runtime path actually produced the line. `summary` and `evidence` show the recorded events, graph facts, replay clips, and memory the line was allowed to use.
 
 ## Slide 6 - Canvas Agent, Production Harness
 

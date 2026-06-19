@@ -100,9 +100,9 @@ sequenceDiagram
   PAF->>DB: Build SQL/JSON/graph/vector evidence
   PAF->>SelectAI: Optional bounded SQL-grounded draft
   SelectAI-->>PAF: Draft or warning
-  PAF->>Canvas: Bounded evidence package for final phrasing
-  Canvas-->>PAF: Short governed commentary
-  PAF-->>WS: source=paf-canvas, fallback_source=select-ai
+  PAF->>Canvas: Optional bounded evidence package when Canvas path is selected
+  Canvas-->>PAF: Short governed commentary or skip metadata
+  PAF-->>WS: source/fallback/model_route/canvas metadata
   WS-->>Client: commentary.ready
 ```
 

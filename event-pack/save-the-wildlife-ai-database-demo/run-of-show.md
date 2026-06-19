@@ -27,6 +27,9 @@ Say:
 
 Keep it playful but controlled. You do not need everyone to play. You need enough motion to make the room feel that the data is live.
 
+For the fuller limbic opening and proof ladder, use
+[ai-engineer-presenter-card.md](ai-engineer-presenter-card.md).
+
 ## Core Narrative Arc
 
 1. **Play:** The room creates telemetry.
@@ -55,9 +58,9 @@ curl -sS -X POST http://130.162.174.167/paf/api/commentary \
 
 Expected proof:
 
-- `source` is `paf-canvas`
-- `fallback_source` is `select-ai`
 - `warning` is `null`
+- `source`, `fallback_source`, `model_route`, `canvas`, and `in_db_agent` identify the actual runtime path
+- current no-spend proof can show `source=oci-base`, `fallback_source=oracle-sql`, and `runtime_mode=behavior-adapter`
 - `summary` includes `powerup_shield`, `trail_crosses`, `freezes`, and coordinates
 
 ## Closing Line
