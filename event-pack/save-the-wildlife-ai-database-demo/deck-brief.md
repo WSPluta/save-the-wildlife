@@ -11,7 +11,7 @@ The message to land: sometimes AI engineers should let business users shape the 
 - Public game endpoint: `http://130.162.174.167/`
 - Deployed proof: commit `71dd1f1`, deployment `prod-conference-demo-71dd1f1`
 - Public game smoke: `ready`
-- Mobile proof: `RUNNING`, joystick visible, nearest trash over `12` units from start, boat seated at waterline
+- Mobile proof: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at waterline
 - Public conference preflight: `ready_with_caveats`
 - PAF health: Oracle, GenAI, Canvas, Select AI, in-db agent, graph/replay/vector retrieval, and model router configured
 - Current claim boundary: smoke replay/vector rows may be empty; the exact smoke commentary line can report `canvas:null`, `in_db_agent:null`, and behavior-adapter runtime

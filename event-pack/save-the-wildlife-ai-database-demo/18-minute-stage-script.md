@@ -14,7 +14,7 @@ Current healthy stage posture:
 - Game smoke: `ready`
 - AI preflight: `ready_with_caveats`
 - Latest deployed proof: commit `71dd1f1`, deployment `prod-conference-demo-71dd1f1`, server image `0.0.28`
-- Latest mobile smoke proof: `RUNNING`, joystick visible, nearest trash over `12` units from start, boat seated at waterline
+- Latest mobile smoke proof: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at waterline
 - Safe caveats: smoke replay/vector rows may be empty, and current commentary metadata can report `canvas:null`, `in_db_agent:null`, and `runtime_mode=behavior-adapter`
 - Safe claim: live game, OKE deployment, PAF health, Oracle AI Database evidence path, Select AI/in-db agent configuration, model-router trace persistence, mobile playability, and grounded commentary constraints
 - Gated claim: two live private upstream LLM runtimes

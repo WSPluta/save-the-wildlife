@@ -29,6 +29,7 @@ By the end, AI developers should understand four things:
 - [slide-outline.md](slide-outline.md): 10-slide deck spine with visual direction and speaker notes.
 - [demo-runbook.md](demo-runbook.md): live commands, smoke checks, fallback path, and recovery cues.
 - [stage-console.md](stage-console.md): one-page operator card for the browser, terminal proof, source metadata, and fallback lines.
+- [claim-ledger.md](claim-ledger.md): stage-safe claim matrix that maps every major statement to a receipt and boundary.
 - [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md): limbic opening, AI engineer proof ladder, and stage-ready language.
 - [speaker-cards.md](speaker-cards.md): short talk tracks, transitions, and objection handling.
 - [notebook-cta-map.md](notebook-cta-map.md): how the three notebooks become CTAs and follow-up learning paths.

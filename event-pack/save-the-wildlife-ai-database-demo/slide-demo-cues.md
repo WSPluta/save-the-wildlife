@@ -9,7 +9,7 @@ Use this as the on-stage cheat sheet.
 **Say:**
 Open this on your phone. You are about to generate the telemetry that the agent will use.
 
-**Proof anchor:** Public mobile smoke is currently `ready`: joystick visible, `RUNNING`, nearest trash over `12` units from start, boat seated at the waterline.
+**Proof anchor:** Public mobile smoke is currently `ready`: joystick visible, `RUNNING`, safe nearest-trash buffer, and boat seated at the waterline.
 
 **Do not explain yet:** PAF, Select AI, harness. Let the room play first.
 

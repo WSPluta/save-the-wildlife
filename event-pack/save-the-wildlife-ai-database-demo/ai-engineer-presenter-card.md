@@ -37,7 +37,7 @@ Use this when someone asks, "what is actually live right now?"
 - Deployed commit: `71dd1f1`
 - Game endpoint: `http://130.162.174.167/`
 - Game smoke: `ready`
-- Mobile proof: joystick visible, `RUNNING`, nearest trash over `12` units from start, boat seated at waterline
+- Mobile proof: joystick visible, `RUNNING`, safe nearest-trash buffer, boat seated at waterline
 - PAF proof: Oracle, GenAI, Canvas, Select AI, in-db agent, graph/replay/vector retrieval, and model router configured
 - Conference preflight: `ready_with_caveats`
 

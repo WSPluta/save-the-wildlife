@@ -473,3 +473,15 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - Public game smoke passed mobile and desktop at `.codex_tmp/conference-game-smoke/latest.md`; mobile nearest trash is now over 12 units from start, joystick visible, and boat `seatDepth=0.058`.
     - Public conference preflight passed as `ready_with_caveats` at `.codex_tmp/conference-preflight/latest.md`; expected caveats remain no replay/vector rows in the smoke context, exact `canvas:null`/`in_db_agent:null` metadata for the smoke line, and behavior-adapter model runtime mode.
     - Model proof bundle passed as `ready_with_upstream_llm_blocker`; strict upstream remains `failed`, which is the expected claim boundary.
+- AI engineer presenter-pack push on 2026-06-19:
+  - Committed and pushed `56f2e25` (`Refresh AI engineer demo presenter pack`) to `main`.
+  - Public checks before push:
+    - `npm run check:conference-demo:game` returned `ready` for mobile and desktop.
+    - `npm run check:conference-demo` returned `ready_with_caveats`.
+    - `npm run check:model-ai-demo:proof` returned `adapter_verdict=ready_with_upstream_llm_blocker` and expected `strict_verdict=failed`.
+  - Latest receipts at the time of push showed mobile/desktop gameplay `RUNNING`, joystick visible, safe nearest-trash distance, waterline contact, PAF health configured, match context with shield/trail/freeze evidence, and the same honest Canvas/in-db/model-runtime caveats.
+- Stage claim-ledger pass on 2026-06-19:
+  - Added `event-pack/save-the-wildlife-ai-database-demo/claim-ledger.md` as a stage-safe matrix mapping each major AI-engineer claim to a live receipt, safe sentence, and "do not say" boundary.
+  - Linked the claim ledger from the event-pack README and stage console so it is easy to open when challenged during Q&A.
+  - Replaced brittle exact smoke-distance values in presenter docs with threshold-style proof language: mobile `RUNNING`, joystick visible, safe nearest-trash buffer, and boat seated at the waterline.
+  - Scanned the event-pack docs for stale smoke values and overclaim trigger phrases; remaining Canvas/raw-footage/two-LLM hits are explicit boundary or "do not say" guidance.

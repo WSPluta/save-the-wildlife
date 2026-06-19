@@ -4,6 +4,7 @@ Use this as the one-page operator card while presenting. It is designed for the 
 
 For full rehearsal, use [18-minute-stage-script.md](18-minute-stage-script.md). This card is the short stage-side version.
 For the technical proof ladder, use [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md).
+For challenge handling, use [claim-ledger.md](claim-ledger.md).
 
 ## Screen Setup
 
@@ -22,8 +23,8 @@ Use these as the latest receipts, not as promises about future runs:
 - Public game: `http://130.162.174.167/` returns `200 OK`.
 - Latest deployed app proof: commit `71dd1f1`, deployment `prod-conference-demo-71dd1f1`.
 - Public game smoke: `ready`.
-- Public mobile smoke: `RUNNING`, joystick `134x134`, nearest trash `12.207` units from start, boat `seatDepth=0.06`.
-- Public desktop smoke: `RUNNING`, wake ripples visible, nearest trash `10.474`, boat `seatDepth=0.06`.
+- Public mobile smoke: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at the waterline.
+- Public desktop smoke: `RUNNING`, wake ripples visible, healthy item counts, boat seated at the waterline.
 - Conference preflight: `ready_with_caveats`.
 - PAF health: Oracle, GenAI, Canvas, Select AI, in-db agent, graph/replay/vector retrieval, and model router configured.
 - Current caveats: smoke replay/vector rows are empty; the exact smoke commentary line reports `canvas:null`, `in_db_agent:null`, and behavior-adapter model runtime.
