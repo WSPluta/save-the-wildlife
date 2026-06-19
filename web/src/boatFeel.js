@@ -2,13 +2,13 @@ import * as THREE from "three";
 import { getHeightAndNormalInto } from "./buoyancy";
 
 export const BOAT_FEEL_DEFAULTS = Object.freeze({
-  waterlineOffset: -0.018,
-  minVisualY: -0.034,
-  maxVisualY: -0.008,
+  waterlineOffset: -0.044,
+  minVisualY: -0.064,
+  maxVisualY: -0.034,
   surfaceRippleY: 0.006,
   sampleForward: 0.82,
   sampleSide: 0.34,
-  verticalWaveStrength: 0.05,
+  verticalWaveStrength: 0.035,
   maxPitch: 0.075,
   maxRoll: 0.14,
   wavePitchStrength: 1.45,

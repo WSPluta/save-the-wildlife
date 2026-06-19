@@ -29,6 +29,8 @@ describe("boat feel layer", () => {
     expect(debug.y).toBeLessThanOrEqual(BOAT_FEEL_DEFAULTS.maxVisualY);
     expect(debug.y).toBeGreaterThanOrEqual(BOAT_FEEL_DEFAULTS.minVisualY);
     expect(debug.y).toBe(Number(BOAT_FEEL_DEFAULTS.waterlineOffset.toFixed(3)));
+    expect(BOAT_FEEL_DEFAULTS.maxVisualY).toBeLessThanOrEqual(-0.034);
+    expect(BOAT_FEEL_DEFAULTS.surfaceRippleY - BOAT_FEEL_DEFAULTS.maxVisualY).toBeGreaterThanOrEqual(0.04);
   });
 
   it("samples water into reusable objects with finite normals", () => {

@@ -85,7 +85,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const playerBox = getPlayerCollisionBox\(\);/);
     expect(script).toMatch(/latestBoatFeelDebug = updateBoatFeel\(player, localBoatFeelState,/);
     expect(script).toMatch(/wakeRipples: wakeRippleEffect,/);
-    expect(script).toMatch(/updateBoatWaterlineContact\(player, effectiveSignedSpeed, latestBoatFeelDebug\.wake, MAX_SPEED\);/);
+    expect(script).toMatch(/updateBoatWaterlineContact\(player, effectiveSignedSpeed, latestBoatFeelDebug\.wake, MAX_SPEED, latestBoatFeelDebug\.y\);/);
     expect(script).toMatch(/updateBoatFeel\(m, m\.userData && m\.userData\.boatFeel,/);
     expect(script).toMatch(/boatFeel: getBoatFeelDebug\(localBoatFeelState\) \|\| latestBoatFeelDebug,/);
     expect(script).toMatch(/import \{ createWakeRippleEffect \} from "\.\/wakeRipples";/);

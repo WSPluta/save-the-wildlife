@@ -151,7 +151,7 @@ let latestBoatFeelDebug = { y: 0, pitch: 0, roll: 0, wake: 0 };
 let wakeRippleEffect = null;
 let latestWakeRippleDebug = { visible: 0, capacity: 0 };
 let localWaterlineContact = null;
-let latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0 };
+let latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0, seatDepth: 0 };
 let latestEffectiveSpeed = 0;
 let latestAuthLagMs = 0;
 let latestPoolMetrics = null;
@@ -237,12 +237,12 @@ function disableGameplayInteraction(object3d) {
 }
 
 function createBoatWaterlineContact() {
-  const geometry = new THREE.RingGeometry(0.36, 0.46, 44, 1);
+  const geometry = new THREE.RingGeometry(0.34, 0.56, 44, 1);
   geometry.rotateX(-Math.PI / 2);
   const material = new THREE.MeshBasicMaterial({
     color: 0xdafcff,
     transparent: true,
-    opacity: 0.06,
+    opacity: 0.075,
     depthWrite: false,
     depthTest: true,
     blending: THREE.AdditiveBlending,
@@ -256,21 +256,47 @@ function createBoatWaterlineContact() {
   mesh.userData.visualOnly = true;
   mesh.scale.set(0.5, 1, 1.08);
   mesh.position.y = 0.006;
+
+  const shadowGeometry = new THREE.CircleGeometry(0.43, 44);
+  shadowGeometry.rotateX(-Math.PI / 2);
+  const shadowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x084f7a,
+    transparent: true,
+    opacity: 0.07,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+  });
+  const shadow = new THREE.Mesh(shadowGeometry, shadowMaterial);
+  shadow.name = "localBoatWaterlineContactShadow";
+  shadow.position.y = -0.001;
+  shadow.renderOrder = 23;
+  shadow.frustumCulled = false;
+  shadow.userData.noCollision = true;
+  shadow.userData.visualOnly = true;
+  mesh.add(shadow);
+  mesh.userData.contactShadow = shadow;
   return mesh;
 }
 
-function updateBoatWaterlineContact(root, speed, wake, maxSpeed = 3) {
+function updateBoatWaterlineContact(root, speed, wake, maxSpeed = 3, visualY = 0) {
   if (!localWaterlineContact || !root) return;
   const speedRatio = Math.max(0, Math.min(1, Math.abs(Number(speed) || 0) / Math.max(1, Number(maxSpeed) || 3)));
   const wakeStrength = Math.max(0, Math.min(1, Number(wake) || 0));
   localWaterlineContact.visible = gameState === "RUNNING" || gameState === "STARTING";
   localWaterlineContact.position.y = 0.006;
-  localWaterlineContact.material.opacity = 0.055 + wakeStrength * 0.045 + speedRatio * 0.025;
+  localWaterlineContact.material.opacity = 0.07 + wakeStrength * 0.055 + speedRatio * 0.025;
   localWaterlineContact.scale.set(0.5 + wakeStrength * 0.05, 1, 1.08 + speedRatio * 0.08);
+  const shadow = localWaterlineContact.userData && localWaterlineContact.userData.contactShadow;
+  if (shadow && shadow.material) {
+    shadow.material.opacity = 0.06 + wakeStrength * 0.035 + speedRatio * 0.018;
+  }
+  const seatDepth = localWaterlineContact.position.y - (Number.isFinite(Number(visualY)) ? Number(visualY) : 0);
   latestWaterlineContactDebug = {
     visible: !!localWaterlineContact.visible,
     y: Number(localWaterlineContact.position.y.toFixed(3)),
     opacity: Number(localWaterlineContact.material.opacity.toFixed(3)),
+    seatDepth: Number(seatDepth.toFixed(3)),
   };
 }
 
@@ -1425,11 +1451,13 @@ function prepareExistingSceneForMatch(nextStartPosition = null) {
   latestWakeRippleDebug = wakeRippleEffect && typeof wakeRippleEffect.stats === "function"
     ? wakeRippleEffect.stats()
     : { visible: 0, capacity: 0 };
-  latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0 };
+  latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0, seatDepth: 0 };
   try { if (localBoatFeelState) resetBoatFeel(localBoatFeelState); } catch (_) {}
   if (localWaterlineContact) {
     localWaterlineContact.visible = false;
-    localWaterlineContact.material.opacity = 0.055;
+    localWaterlineContact.material.opacity = 0.07;
+    const shadow = localWaterlineContact.userData && localWaterlineContact.userData.contactShadow;
+    if (shadow && shadow.material) shadow.material.opacity = 0.06;
   }
   if (player) {
     const p = nextStartPosition || startPosition || { x: 0, y: 0, z: 0 };
@@ -4700,7 +4728,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       isMobile: window.innerWidth < 800,
       wakeRipples: wakeRippleEffect,
     }) || getBoatFeelDebug(localBoatFeelState);
-    updateBoatWaterlineContact(player, effectiveSignedSpeed, latestBoatFeelDebug.wake, MAX_SPEED);
+    updateBoatWaterlineContact(player, effectiveSignedSpeed, latestBoatFeelDebug.wake, MAX_SPEED, latestBoatFeelDebug.y);
     // Leave a trail point for the local player
     addTrailPoint(yourId, player.position);
     // Emit engine particles based on speed
