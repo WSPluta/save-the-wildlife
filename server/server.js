@@ -881,10 +881,6 @@ function startRoomMatch(room) {
     }));
     const startX = startPosition.x;
     const startZ = startPosition.z;
-    await clearOpeningItemsNearStart(room, { x: startX, y: 0, z: startZ })
-      .catch((error) => logAsyncFailure("room.start.openingItemSweep", error));
-    rs.startTime = startTime;
-    rs.startingAt = null;
     if (SERVER_AUTH_ENABLED) {
       const players = await listHumansInRoom(room).catch(() => []);
       for (const playerId of players) {
@@ -902,6 +898,10 @@ function startRoomMatch(room) {
         playersInput.set(playerId, { throttle: 0, steer: 0, brake: false, lastSeq: -1 });
       }
     }
+    await clearOpeningItemsNearStart(room, { x: startX, y: 0, z: startZ })
+      .catch((error) => logAsyncFailure("room.start.openingItemSweep", error));
+    rs.startTime = startTime;
+    rs.startingAt = null;
     broadcastRoomState(room, 'RUNNING', { startPosition: { x: startX, y: 0, z: startZ } });
 
     if (rs.timerId) clearInterval(rs.timerId);
