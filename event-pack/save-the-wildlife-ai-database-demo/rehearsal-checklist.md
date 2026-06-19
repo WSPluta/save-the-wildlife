@@ -8,6 +8,7 @@
 - [ ] Run `npm run check:conference-demo:game`.
 - [ ] Run `npm run check:conference-demo:stage`.
 - [ ] Open `.codex_tmp/conference-stage-brief/latest.md` and treat it as the live receipt authority.
+- [ ] Open [stage-launch-card.md](stage-launch-card.md) and keep it next to the deck.
 - [ ] Open [conference-readiness-scorecard.md](conference-readiness-scorecard.md) and confirm the current posture is still GO with honest caveats.
 - [ ] Verify the phone joystick appears during gameplay from the smoke receipt.
 - [ ] Verify the mobile smoke shows a safe opening spawn buffer.
@@ -52,6 +53,7 @@ Check:
 - [ ] Commentary has `"warning": null`.
 - [ ] Commentary summary includes at least one powerup, one trail crossing, one freeze, and coordinates.
 - [ ] You can say the caveat cleanly: **Canvas is configured, but this exact smoke line is only a Canvas line if the response metadata proves it.**
+- [ ] [stage-launch-card.md](stage-launch-card.md) is open with the first 90 seconds and fallback command visible.
 
 ## Model AI Phase Preflight
 

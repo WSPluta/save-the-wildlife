@@ -30,6 +30,7 @@ By the end, AI developers should understand four things:
 - [slide-outline.md](slide-outline.md): 10-slide deck spine with visual direction and speaker notes.
 - [save-the-wildlife-ai-engineer-demo-deck.pptx](../../outputs/save-the-wildlife-ai-engineer-demo-deck.pptx): editable 10-slide stage deck generated from this event pack.
 - [demo-runbook.md](demo-runbook.md): live commands, smoke checks, fallback path, and recovery cues.
+- [stage-launch-card.md](stage-launch-card.md): final operator surface with tabs, commands, first 90 seconds, proof ladder, and claim boundaries.
 - [stage-console.md](stage-console.md): one-page operator card for the browser, terminal proof, source metadata, and fallback lines.
 - [ai-engineer-demo-master-card.md](ai-engineer-demo-master-card.md): one rehearsal surface with opening line, proof commands, claim boundaries, failure pivots, and notebook CTAs.
 - [manual-visual-proof.md](manual-visual-proof.md): human visual QA checklist when browser automation cannot launch from the current shell.
