@@ -27,6 +27,9 @@ Say:
 
 Keep it playful but controlled. You do not need everyone to play. You need enough motion to make the room feel that the data is live.
 
+For the one-file rehearsal surface, use
+[ai-engineer-demo-master-card.md](ai-engineer-demo-master-card.md).
+
 For the fuller limbic opening and proof ladder, use
 [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md).
 

@@ -30,6 +30,7 @@ By the end, AI developers should understand four things:
 - [slide-outline.md](slide-outline.md): 10-slide deck spine with visual direction and speaker notes.
 - [demo-runbook.md](demo-runbook.md): live commands, smoke checks, fallback path, and recovery cues.
 - [stage-console.md](stage-console.md): one-page operator card for the browser, terminal proof, source metadata, and fallback lines.
+- [ai-engineer-demo-master-card.md](ai-engineer-demo-master-card.md): one rehearsal surface with opening line, proof commands, claim boundaries, failure pivots, and notebook CTAs.
 - [manual-visual-proof.md](manual-visual-proof.md): human visual QA checklist when browser automation cannot launch from the current shell.
 - [stage-entry.html](stage-entry.html): 16:9 audience-entry slide with game URL, QR code, and opening cue.
 - [conference-readiness-scorecard.md](conference-readiness-scorecard.md): final go/no-go scorecard for stage readiness, proof posture, and fallback rules.
