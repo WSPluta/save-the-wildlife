@@ -122,6 +122,7 @@ steps:
       kubectl -n default rollout status deploy/ws-server --timeout=300s
       kubectl -n default rollout status deploy/web --timeout=300s
       kubectl -n default rollout status deploy/replay --timeout=300s
+      kubectl -n default rollout status deploy/bots --timeout=300s
       kubectl -n default rollout status deploy/stwl-base-commentary --timeout=300s
       kubectl -n default rollout status deploy/stwl-ft-commentary --timeout=300s
       kubectl -n default rollout status deploy/private-agent-factory --timeout=300s

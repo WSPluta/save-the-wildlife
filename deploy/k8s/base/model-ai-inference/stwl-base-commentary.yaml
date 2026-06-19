@@ -39,6 +39,8 @@ spec:
               value: facts-in-memory-behavior-in-weights
             - name: STWL_ADAPTER_RUNTIME_MODE
               value: behavior-adapter
+            - name: STWL_UPSTREAM_FORMAT
+              value: ollama
             - name: STWL_STRICT_UPSTREAM_WARNINGS
               value: "false"
           readinessProbe:

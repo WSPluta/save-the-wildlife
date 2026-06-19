@@ -30,6 +30,8 @@ Expected stage posture:
 - Stage brief: `go_with_caveats` or better
 - Mobile: `RUNNING`, joystick visible, boat seated at the waterline
 - PAF health: pass
+- Bots: deployed as the `bots` OKE workload; expect non-zero bot presence when
+  the room is quiet
 - Current strict model boundary: adapter mode until upstream proof passes
 
 ## First 90 Seconds
@@ -63,7 +65,9 @@ Use this order if someone technical challenges the demo:
 4. **Agent proof:** PAF exposes health, context, and commentary endpoints.
 5. **Harness proof:** commentary includes source metadata, guardrails, fallback
    path, and persisted trace.
-6. **Boundary proof:** Canvas and in-db agents are configured, but a specific
+6. **Training proof:** bot-warmed sessions can export accepted behavior traces
+   from Oracle AI Database for behavior-only retraining.
+7. **Boundary proof:** Canvas and in-db agents are configured, but a specific
    line is only a Canvas or in-db line when response metadata says so.
 
 ## Lines To Land

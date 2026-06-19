@@ -87,6 +87,10 @@ resource "oci_devops_build_pipeline_stage" "deliver_artifact_stage" {
       artifact_name = "private-agent-factory"
     }
     items {
+      artifact_id   = oci_devops_deploy_artifact.bots_image.id
+      artifact_name = "bots"
+    }
+    items {
       artifact_id   = oci_devops_deploy_artifact.model_ai_training_image.id
       artifact_name = "model-ai-training"
     }
@@ -203,6 +207,23 @@ resource "oci_devops_deploy_artifact" "model_ai_training_image" {
   project_id           = oci_devops_project.devops_project.id
 
   display_name = "Container Image Model AI Training"
+}
+
+resource "oci_devops_deploy_artifact" "bots_image" {
+
+  argument_substitution_mode = "SUBSTITUTE_PLACEHOLDERS"
+
+  deploy_artifact_source {
+    deploy_artifact_source_type = "OCIR"
+
+    image_uri     = "${var.region_key}.ocir.io/${var.namespace}/${local.repo_name}/bots:$${BOTS_VERSION}"
+    repository_id = oci_devops_repository.github_mirrored_repository.id
+  }
+
+  deploy_artifact_type = "DOCKER_IMAGE"
+  project_id           = oci_devops_project.devops_project.id
+
+  display_name = "Container Image Bots"
 }
 
 resource "oci_devops_deploy_artifact" "model_ai_inference_image" {

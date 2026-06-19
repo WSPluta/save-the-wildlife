@@ -7,3 +7,9 @@ github_token          = "GITHUB_TOKEN"
 
 # Model AI is intentionally opt-in because GPU/Data Science resources are bill-impacting.
 model_ai_enabled      = false
+model_ai_shape        = "VM.GPU.A10.1"
+
+# Secure OCI A10 Ollama path. Keep URLs private, e.g.
+# http://<private-a10-ollama-ip>:11434/api/chat.
+model_ai_base_upstream_format = "ollama"
+model_ai_ft_upstream_format   = "ollama"

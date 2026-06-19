@@ -35,6 +35,11 @@ if (action === "private-agent-factory") {
   process.exit(0);
 }
 
+if (action === "bots") {
+  await releaseNpm("bots");
+  process.exit(0);
+}
+
 if (action === "model-ai-training") {
   await releaseStaticImage("model-ai/training", "model-ai-training", process.env.MODEL_AI_TRAINING_VERSION || "latest");
   process.exit(0);
@@ -61,6 +66,7 @@ if (a || action === "all") {
   await releaseGradle("score");
   await releaseGradle("replay");
   await releaseNpm("private-agent-factory", process.env.PAF_VERSION || "latest");
+  await releaseNpm("bots");
   process.exit(0);
 }
 
@@ -72,6 +78,7 @@ console.log("\tnpx zx scripts/build.mjs web");
 console.log("\tnpx zx scripts/build.mjs score");
 console.log("\tnpx zx scripts/build.mjs replay");
 console.log("\tnpx zx scripts/build.mjs private-agent-factory");
+console.log("\tnpx zx scripts/build.mjs bots");
 console.log("\tnpx zx scripts/build.mjs model-ai-training");
 console.log("\tnpx zx scripts/build.mjs model-ai-training-gpu");
 console.log("\tnpx zx scripts/build.mjs model-ai-inference");

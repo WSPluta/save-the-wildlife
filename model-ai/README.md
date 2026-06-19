@@ -33,6 +33,20 @@ STWL_UPSTREAM_FORMAT=openai
 STWL_UPSTREAM_URL=https://<private-endpoint>/v1/chat/completions
 ```
 
+For a secure OCI A10 GPU host running Ollama, use the native Ollama chat
+contract:
+
+```bash
+STWL_UPSTREAM_FORMAT=ollama
+STWL_UPSTREAM_URL=http://<private-a10-ollama-ip>:11434/api/chat
+STWL_MODEL_ID=llama3.1:8b-stwl
+```
+
+The endpoint should stay private to the OKE worker subnet or Data Science job
+network security group. PAF talks to the adapter; the adapter talks to Ollama
+with the runtime evidence packet. Durable gameplay facts still stay in Oracle
+AI Database and are not trained into weights.
+
 The OpenAI-compatible payload includes the prompt plus a runtime evidence packet containing the trace ID, Oracle AI Database evidence references, route context, and facts policy. That packet is inference context only; it is not training data and it does not move durable facts into model weights.
 
 If the upstream model service already exposes the same internal PAF contract, use:

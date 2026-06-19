@@ -14,6 +14,7 @@ UPSTREAM_FORMAT = os.environ.get("STWL_UPSTREAM_FORMAT", "openai").strip().lower
 REQUIRED_BEARER = os.environ.get("STWL_REQUIRED_BEARER", "")
 FACTS_POLICY = os.environ.get("STWL_FACTS_POLICY", "facts-in-memory-behavior-in-weights")
 TIMEOUT_SECONDS = float(os.environ.get("STWL_UPSTREAM_TIMEOUT_SECONDS", "7.5"))
+OLLAMA_KEEP_ALIVE = os.environ.get("STWL_OLLAMA_KEEP_ALIVE", "10m")
 RUNTIME_MODE = os.environ.get("STWL_ADAPTER_RUNTIME_MODE") or ("upstream-llm" if UPSTREAM_URL else "behavior-adapter")
 STRICT_UPSTREAM_WARNINGS = os.environ.get("STWL_STRICT_UPSTREAM_WARNINGS", "true").lower() not in {
     "0",
@@ -47,6 +48,29 @@ def _extract_openai_text(payload):
     return payload.get("text") or payload.get("output") or payload.get("message") or ""
 
 
+def _extract_ollama_text(payload):
+    message = payload.get("message") or {}
+    if isinstance(message, dict) and message.get("content"):
+        return message.get("content") or ""
+    return payload.get("response") or payload.get("text") or payload.get("output") or ""
+
+
+def _extract_upstream_text(payload):
+    if UPSTREAM_FORMAT in {"ollama", "ollama-chat", "ollama-native"}:
+        return _extract_ollama_text(payload)
+    return _extract_openai_text(payload)
+
+
+def _usage_tokens(payload, text):
+    usage = payload.get("usage") or {}
+    if usage.get("total_tokens") is not None:
+        return usage.get("total_tokens")
+    ollama_total = payload.get("prompt_eval_count", 0) + payload.get("eval_count", 0)
+    if ollama_total:
+        return ollama_total
+    return max(1, len(text.split()))
+
+
 def _runtime_evidence_packet(request):
     return {
         "trace_id": request.get("trace_id"),
@@ -75,6 +99,26 @@ def _upstream_payload(request):
             "max_tokens": request.get("max_tokens", 120),
             "temperature": request.get("temperature", 0.2),
             "route_context": request.get("route_context") or {},
+        }
+    if UPSTREAM_FORMAT in {"ollama", "ollama-chat", "ollama-native"}:
+        return {
+            "model": MODEL_ID,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": request.get("system", "Save the Wildlife commentary model."),
+                },
+                {
+                    "role": "user",
+                    "content": _openai_user_message(request),
+                },
+            ],
+            "stream": False,
+            "keep_alive": OLLAMA_KEEP_ALIVE,
+            "options": {
+                "temperature": request.get("temperature", 0.2),
+                "num_predict": request.get("max_tokens", 120),
+            },
         }
     return {
         "model": MODEL_ID,
@@ -148,8 +192,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             request = _read_json(self)
             upstream = _call_upstream(request)
-            text = _extract_openai_text(upstream) if upstream else _fallback_commentary(request)
-            usage = (upstream or {}).get("usage") or {}
+            text = _extract_upstream_text(upstream) if upstream else _fallback_commentary(request)
             latency_ms = int((time.time() - started) * 1000)
             runtime_mode = "upstream-llm" if upstream else RUNTIME_MODE
             warnings = []
@@ -160,7 +203,7 @@ class Handler(BaseHTTPRequestHandler):
                 "text": text,
                 "model_id": MODEL_ID,
                 "provider": PROVIDER,
-                "tokens": usage.get("total_tokens") or max(1, len(text.split())),
+                "tokens": _usage_tokens(upstream or {}, text),
                 "latency_ms": latency_ms,
                 "finish_reason": "stop",
                 "warnings": warnings,

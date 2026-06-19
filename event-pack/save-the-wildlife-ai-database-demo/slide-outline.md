@@ -80,6 +80,8 @@ From the heavyweight notebook: the model emits tokens; the harness owns state, d
 
 Use this as the bridge into production continual learning: token space is what the model reads and writes now; structured space is what Oracle AI Database can organize, query, govern, and test; weight space is stable behavior learned before the turn; skill space is where repeated workflows become programmatic skills or playbooks only after tests and authorization boundaries.
 
+Add the bot data point: deployed bots keep the event stream warm when the room is quiet, but they are clearly marked as `bot_simulation` evidence. The model improvement path learns commentary behavior from accepted traces, not unrecorded facts.
+
 ## Slide 8 - "Harness Pattern In This Demo"
 
 **Claim:** The game is a compact enterprise agent pattern.
@@ -113,6 +115,8 @@ For gaming, this becomes live action commentary, instant replay captions, post-m
 
 **Speaker notes:**
 CTA each notebook: build the harness, engineer memory/context, prove scoped retrieval and long conversation continuity. The game is the front door; the notebooks are the runnable developer path. Tie the CTA back to the learning surfaces: keep facts in structured space, keep current reasoning bounded in token space, train only stable behavior into weights, and use programmatic skill induction only when traces show a repeated workflow that the harness can test.
+
+Point advanced builders to [bot-data-and-ollama-training-runbook.md](bot-data-and-ollama-training-runbook.md) for the secure OCI A10/Ollama retraining path.
 
 ## Slide 10 - "CTA: Build Agents Around Truth"
 

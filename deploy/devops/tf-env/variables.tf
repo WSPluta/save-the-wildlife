@@ -136,3 +136,15 @@ variable "model_ai_ft_upstream_url" {
   default     = ""
   description = "Optional upstream model server URL used by the fine-tuned private inference adapter."
 }
+
+variable "model_ai_base_upstream_format" {
+  type        = string
+  default     = "ollama"
+  description = "Upstream contract for the base private model adapter: ollama, openai, or internal."
+}
+
+variable "model_ai_ft_upstream_format" {
+  type        = string
+  default     = "ollama"
+  description = "Upstream contract for the fine-tuned private model adapter: ollama, openai, or internal."
+}

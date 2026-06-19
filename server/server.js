@@ -666,20 +666,26 @@ export async function start(
     }
     return Math.max(0, humans);
   }
-  // Admin helpers
-  async function listHumansInRoom(room) {
+  // Admin/gameplay helpers. Admin selection remains human-only, but the
+  // authoritative simulation must include bots so deployed demo bots can
+  // create real collision, powerup, trail, freeze, and game_over telemetry.
+  async function listPlayersInRoom(room, { includeBots = true } = {}) {
     const info = await getPlayersInfoObject();
     const ids = Object.keys(info || {});
     const want = room || GLOBAL_ROOM;
-    const humans = [];
+    const players = [];
     for (const id of ids) {
       const r = playerRooms.get(id) || GLOBAL_ROOM;
       if (r !== want) continue;
       const name = (info[id] && info[id].name) ? String(info[id].name) : "";
-      if (!name.toLowerCase().startsWith("bot ")) humans.push(id);
+      if (!includeBots && name.toLowerCase().startsWith("bot ")) continue;
+      players.push(id);
     }
-    humans.sort(); // deterministic next-admin selection
-    return humans;
+    players.sort(); // deterministic next-admin / spawn initialization
+    return players;
+  }
+  async function listHumansInRoom(room) {
+    return listPlayersInRoom(room, { includeBots: false });
   }
   async function pickNextAdmin(room) {
     const list = await listHumansInRoom(room);
@@ -894,7 +900,7 @@ function startRoomMatch(room) {
     const startX = startPosition.x;
     const startZ = startPosition.z;
     if (SERVER_AUTH_ENABLED) {
-      const players = await listHumansInRoom(room).catch(() => []);
+      const players = await listPlayersInRoom(room, { includeBots: true }).catch(() => []);
       for (const playerId of players) {
         playersState.set(playerId, {
           x: startX,

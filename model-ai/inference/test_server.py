@@ -69,6 +69,32 @@ class UpstreamPayloadTests(unittest.TestCase):
         self.assertEqual(payload["max_tokens"], 96)
         self.assertEqual(payload["temperature"], 0.15)
 
+    def test_ollama_payload_uses_native_chat_contract(self):
+        self.server.UPSTREAM_FORMAT = "ollama"
+        self.server.MODEL_ID = "llama3.1:8b-stwl"
+
+        payload = self.server._upstream_payload(self.request)
+
+        self.assertEqual(payload["model"], "llama3.1:8b-stwl")
+        self.assertEqual(payload["stream"], False)
+        self.assertEqual(payload["options"]["temperature"], 0.15)
+        self.assertEqual(payload["options"]["num_predict"], 96)
+        self.assertEqual(payload["messages"][0]["role"], "system")
+        user_message = payload["messages"][1]["content"]
+        self.assertIn("Runtime evidence packet", user_message)
+        self.assertIn("facts-in-memory-behavior-in-weights", user_message)
+
+    def test_extracts_native_ollama_text_and_token_counts(self):
+        self.server.UPSTREAM_FORMAT = "ollama"
+        payload = {
+            "message": {"content": "Ada kept the line grounded."},
+            "prompt_eval_count": 12,
+            "eval_count": 7,
+        }
+
+        self.assertEqual(self.server._extract_upstream_text(payload), "Ada kept the line grounded.")
+        self.assertEqual(self.server._usage_tokens(payload, "fallback"), 19)
+
 
 if __name__ == "__main__":
     unittest.main()

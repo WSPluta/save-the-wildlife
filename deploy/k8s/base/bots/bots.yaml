@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: bots
+    component: demo-data
+  name: bots
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bots
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: bots
+        component: demo-data
+    spec:
+      containers:
+        - image: bots
+          imagePullPolicy: Always
+          name: bots
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: WS_SERVER_SERVICE_HOST
+              value: ws-server
+            - name: WS_SERVER_SERVICE_PORT
+              value: "3000"
+            - name: BOT_ROOM_ID
+              value: ROOM-0001
+            - name: BOT_TARGET_PLAYERS
+              value: "8"
+            - name: BOT_MIN_BOTS
+              value: "4"
+            - name: BOT_MAX_BOTS
+              value: "12"
+            - name: BOT_GENERATE_GAME_EVENTS
+              value: "true"
+            - name: BOT_SYNTHETIC_MECHANICS_EVENTS
+              value: "true"
+            - name: BOT_TRACE_RATE_MS
+              value: "50"
+            - name: BOT_POSITION_EVENT_INTERVAL_MS
+              value: "2500"
+            - name: BOT_MECHANICS_EVENT_INTERVAL_MS
+              value: "6500"
+            - name: BOT_NAME_PREFIX
+              value: "Bot Data"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      imagePullSecrets:
+        - name: ocir-secret

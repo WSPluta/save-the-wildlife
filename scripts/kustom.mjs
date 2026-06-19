@@ -30,6 +30,8 @@ async function createKustomizationYaml(regionKey, namespace) {
   const scoreVersion = await getVersionGradle();
   await cd(`${pwdOutput}/replay`);
   const replayVersion = await getVersionGradle();
+  await cd(`${pwdOutput}/bots`);
+  const botsVersion = await getNpmVersion();
   await cd(pwdOutput);
   const pafVersion = process.env.PAF_VERSION || "latest";
   const modelAiInferenceVersion = process.env.MODEL_AI_INFERENCE_VERSION || "latest";
@@ -42,6 +44,7 @@ async function createKustomizationYaml(regionKey, namespace) {
   console.log(`web v${webVersion}`);
   console.log(`score v${scoreVersion}`);
   console.log(`replay v${replayVersion}`);
+  console.log(`bots v${botsVersion}`);
   console.log(`private-agent-factory v${pafVersion}`);
   console.log(`private-agent-factory image ${pafImageRepository}`);
   console.log(`model-ai-inference v${modelAiInferenceVersion}`);
@@ -55,6 +58,7 @@ async function createKustomizationYaml(regionKey, namespace) {
     | sed 's/WS_SERVER_VERSION/${wsServerVersion}/' \
     | sed 's/SCORE_VERSION/${scoreVersion}/' \
     | sed 's/REPLAY_VERSION/${replayVersion}/' \
+    | sed 's/BOTS_VERSION/${botsVersion}/' \
     | sed 's|PAF_IMAGE_REPOSITORY|${pafImageRepository}|' \
     | sed 's/PAF_VERSION/${pafVersion}/' \
     | sed 's|MODEL_AI_INFERENCE_IMAGE_REPOSITORY|${modelAiInferenceImageRepository}|' \

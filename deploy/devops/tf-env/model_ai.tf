@@ -194,6 +194,7 @@ resource "oci_datascience_model_deployment" "base_commentary" {
       environment_variables = {
         STWL_PROVIDER        = "oci-base"
         STWL_UPSTREAM_URL    = var.model_ai_base_upstream_url
+        STWL_UPSTREAM_FORMAT = var.model_ai_base_upstream_format
         STWL_REQUIRED_BEARER = random_password.model_endpoint_auth_secret[0].result
         STWL_FACTS_POLICY    = "facts-in-memory-behavior-in-weights"
       }
@@ -239,6 +240,7 @@ resource "oci_datascience_model_deployment" "ft_commentary" {
       environment_variables = {
         STWL_PROVIDER        = "oci-fine-tuned"
         STWL_UPSTREAM_URL    = var.model_ai_ft_upstream_url
+        STWL_UPSTREAM_FORMAT = var.model_ai_ft_upstream_format
         STWL_REQUIRED_BEARER = random_password.model_endpoint_auth_secret[0].result
         STWL_FACTS_POLICY    = "facts-in-memory-behavior-in-weights"
       }
@@ -276,6 +278,7 @@ resource "oci_container_instances_container_instance" "base_inference" {
       STWL_PROVIDER        = "oci-base"
       STWL_MODEL_ID        = local.model_ai_base_model_id
       STWL_UPSTREAM_URL    = var.model_ai_base_upstream_url
+      STWL_UPSTREAM_FORMAT = var.model_ai_base_upstream_format
       STWL_REQUIRED_BEARER = random_password.model_endpoint_auth_secret[0].result
       STWL_FACTS_POLICY    = "facts-in-memory-behavior-in-weights"
       PORT                 = tostring(var.model_ai_endpoint_port)
@@ -326,6 +329,7 @@ resource "oci_container_instances_container_instance" "ft_inference" {
       STWL_PROVIDER        = "oci-fine-tuned"
       STWL_MODEL_ID        = local.model_ai_ft_model_id
       STWL_UPSTREAM_URL    = var.model_ai_ft_upstream_url
+      STWL_UPSTREAM_FORMAT = var.model_ai_ft_upstream_format
       STWL_ADAPTER_URI     = var.model_ai_adapter_uri
       STWL_REQUIRED_BEARER = random_password.model_endpoint_auth_secret[0].result
       STWL_FACTS_POLICY    = "facts-in-memory-behavior-in-weights"
