@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Save the Wildlife - Audience Entry</title>
+  <style>
+    :root {
+      --slate: #2A2F2F;
+      --ivory: #FBF9F8;
+      --neutral: #F1EFED;
+      --teal: #467173;
+      --teal-dark: #1E3133;
+      --sky: #00688C;
+      --pine: #5C926D;
+      --gold: #F0CC72;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--slate);
+      color: var(--ivory);
+      font-family: "Oracle Sans", "Inter", "Aptos", Arial, sans-serif;
+      letter-spacing: 0;
+      display: grid;
+      place-items: center;
+    }
+
+    main {
+      width: min(100vw, 177.78vh);
+      aspect-ratio: 16 / 9;
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 82% 20%, rgba(95, 162, 186, 0.18), transparent 28%),
+        linear-gradient(135deg, var(--slate) 0%, var(--teal-dark) 100%);
+      padding: clamp(36px, 5vw, 84px);
+      display: grid;
+      grid-template-columns: 1.12fr 0.88fr;
+      gap: clamp(28px, 5vw, 72px);
+      align-items: center;
+    }
+
+    .orbit {
+      position: absolute;
+      inset: auto auto 5% -10%;
+      width: 56%;
+      aspect-ratio: 1;
+      border: 2px solid rgba(98, 143, 141, 0.25);
+      border-radius: 50%;
+      transform: rotate(-18deg);
+    }
+
+    .orbit::before,
+    .orbit::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+      border: 1px solid rgba(95, 162, 186, 0.28);
+    }
+
+    .orbit::before {
+      inset: 12%;
+    }
+
+    .orbit::after {
+      inset: 26%;
+      border-color: rgba(240, 204, 114, 0.22);
+    }
+
+    .content,
+    .qr-panel {
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      color: var(--gold);
+      font-size: clamp(18px, 1.45vw, 26px);
+      font-weight: 700;
+      margin: 0 0 24px;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 860px;
+      font-size: clamp(54px, 6.5vw, 116px);
+      line-height: 0.94;
+      font-weight: 800;
+    }
+
+    .subhead {
+      max-width: 820px;
+      margin: clamp(24px, 3vw, 42px) 0 0;
+      color: #DCE7E7;
+      font-size: clamp(24px, 2.35vw, 42px);
+      line-height: 1.18;
+      font-weight: 600;
+    }
+
+    .proof-line {
+      margin-top: clamp(30px, 3.5vw, 50px);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      color: var(--neutral);
+      font-size: clamp(18px, 1.45vw, 25px);
+    }
+
+    .chip {
+      border: 1px solid rgba(194, 212, 212, 0.34);
+      background: rgba(251, 249, 248, 0.06);
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+
+    .qr-panel {
+      background: var(--ivory);
+      color: var(--slate);
+      border-radius: 8px;
+      padding: clamp(20px, 2.5vw, 38px);
+      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.32);
+    }
+
+    .qr-panel img {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1;
+    }
+
+    .url {
+      margin: 18px 0 0;
+      color: var(--teal-dark);
+      font-size: clamp(21px, 1.75vw, 31px);
+      font-weight: 800;
+      text-align: center;
+      word-break: break-word;
+    }
+
+    .caption {
+      margin: 12px 0 0;
+      color: #3C4545;
+      font-size: clamp(16px, 1.2vw, 21px);
+      line-height: 1.25;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    footer {
+      position: absolute;
+      left: clamp(36px, 5vw, 84px);
+      right: clamp(36px, 5vw, 84px);
+      bottom: clamp(24px, 3vw, 42px);
+      z-index: 1;
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      color: rgba(251, 249, 248, 0.66);
+      font-size: clamp(14px, 1vw, 18px);
+    }
+
+    @media (max-aspect-ratio: 4 / 3) {
+      body {
+        place-items: start center;
+      }
+
+      main {
+        width: 100vw;
+        min-height: 100vh;
+        aspect-ratio: auto;
+        grid-template-columns: 1fr;
+        align-content: start;
+      }
+
+      .qr-panel {
+        max-width: 520px;
+      }
+
+      footer {
+        position: relative;
+        left: auto;
+        right: auto;
+        bottom: auto;
+        margin-top: 36px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main aria-label="Save the Wildlife audience entry slide">
+    <div class="orbit" aria-hidden="true"></div>
+
+    <section class="content">
+      <p class="eyebrow">Save the Wildlife</p>
+      <h1>Open the game. Create the data.</h1>
+      <p class="subhead">In two minutes, your movement, powerups, trail crossings, freezes, and scores become the evidence for live match intelligence.</p>
+      <div class="proof-line" aria-label="gameplay mechanics">
+        <span class="chip">mobile playable</span>
+        <span class="chip">real-time telemetry</span>
+        <span class="chip">Oracle AI Database</span>
+        <span class="chip">agent harness</span>
+      </div>
+    </section>
+
+    <aside class="qr-panel" aria-label="game QR code and URL">
+      <img src="assets/game-url-qr.svg" alt="QR code for http://130.162.174.167/">
+      <p class="url">http://130.162.174.167/</p>
+      <p class="caption">Use your phone. Pick a name. Join the room.</p>
+    </aside>
+
+    <footer>
+      <span>SQL decides what happened.</span>
+      <span>The model decides how to say it.</span>
+    </footer>
+  </main>
+</body>
+</html>

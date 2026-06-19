@@ -11,7 +11,7 @@ For challenge handling, use [claim-ledger.md](claim-ledger.md).
 
 Keep three things ready:
 
-1. Browser tab: `http://130.162.174.167/`
+1. Browser tab: [stage-entry.html](stage-entry.html) for audience join, then `http://130.162.174.167/`
 2. Terminal tab: live proof commands below
 3. Optional browser tab: `https://145.241.196.162:8080/agentFactory/`
 

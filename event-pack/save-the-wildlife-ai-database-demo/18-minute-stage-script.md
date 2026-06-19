@@ -21,7 +21,7 @@ Current healthy stage posture:
 
 ## 0:00-0:45 - Limbic Opening
 
-**Screen:** Game URL or QR.
+**Screen:** [stage-entry.html](stage-entry.html) with the game URL and QR.
 
 **Say:**
 

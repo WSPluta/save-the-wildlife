@@ -41,7 +41,7 @@ The message to land: sometimes AI engineers should let business users shape the 
 
 ## Required Proof Objects
 
-- Game URL / QR.
+- Game URL / QR from [stage-entry.html](stage-entry.html) and `assets/game-url-qr.svg`.
 - Event timeline.
 - `STWL_GAME_EVENTS` simplified schema.
 - `/paf/api/context` evidence excerpt.

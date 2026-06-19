@@ -6,7 +6,7 @@ Use a teal-led Oracle technical style: ivory or charcoal canvas, sparse headline
 
 **Claim:** The audience is about to generate the data the agent will use.
 
-**Visual:** Full-screen game screenshot or QR/URL over a dark charcoal background. Use the verified mobile game screenshot if available.
+**Visual:** Use [stage-entry.html](stage-entry.html) or a full-screen QR/URL over a dark charcoal background. Use the verified mobile game screenshot if available.
 
 **Speaker notes:**
 Open with the URL. Ask people to join on mobile. Say the data they generate will become the agent context. Keep the opening under 45 seconds; the first emotional beat is play, not architecture.

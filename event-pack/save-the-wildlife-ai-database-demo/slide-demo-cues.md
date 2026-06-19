@@ -4,7 +4,7 @@ Use this as the on-stage cheat sheet.
 
 ## Slide 1 - Play First
 
-**Action:** Show game URL / QR.
+**Action:** Show [stage-entry.html](stage-entry.html) or the game URL / QR.
 
 **Say:**
 Open this on your phone. You are about to generate the telemetry that the agent will use.

@@ -489,3 +489,7 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Added `event-pack/save-the-wildlife-ai-database-demo/conference-readiness-scorecard.md` as the final go/no-go artifact for the AI engineer conference.
   - The scorecard maps the objective to current proof areas: limbic mobile opening, modern app on OCI/OKE, Oracle AI Database match intelligence, PAF/Canvas boundary, commentary safety, agent harness proof, model AI proof, and notebook CTA.
   - Linked the scorecard from the README, stage console, and rehearsal checklist so it becomes part of the day-of operator flow.
+- Audience entry asset pass on 2026-06-19:
+  - Added QR assets for `http://130.162.174.167/` under `event-pack/save-the-wildlife-ai-database-demo/assets/`.
+  - Added `event-pack/save-the-wildlife-ai-database-demo/stage-entry.html`, a 16:9 teal-orbit audience-entry slide for the limbic opening.
+  - Linked the entry slide from the README, stage console, rehearsal checklist, slide cues, slide outline, deck brief, and 18-minute stage script.

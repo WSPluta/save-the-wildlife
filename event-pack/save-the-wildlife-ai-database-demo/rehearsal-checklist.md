@@ -12,7 +12,7 @@
 - [ ] Verify PAF health and commentary metadata from `.codex_tmp/conference-preflight/latest.md`.
 - [ ] Confirm PAF Canvas UI opens.
 - [ ] Decide whether to use live audience events or the smoke session for the commentary proof.
-- [ ] Put the game URL on a QR slide.
+- [ ] Open [stage-entry.html](stage-entry.html) and verify the QR/URL are readable from the back of the room.
 - [ ] Put the three notebook filenames on the CTA slide.
 - [ ] Read [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md) out loud once and make the opening land in under 45 seconds.
 - [ ] Read [18-minute-stage-script.md](18-minute-stage-script.md) out loud once and decide which section you will cut if audience play runs long.
