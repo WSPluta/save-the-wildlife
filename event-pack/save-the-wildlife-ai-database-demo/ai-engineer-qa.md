@@ -33,6 +33,132 @@ Use this shape:
 | Why Coherence? | It keeps the realtime backend Oracle-aligned after Redis removal and handles Socket.IO fanout for multi-pod `ws-server`. | [architecture.md](architecture.md), Coherence fanout notes | Do not frame it as a generic cache swap. It is runtime coordination. |
 | Why should AI engineers care? | Because this is how AI apps become inspectable: events, memory, tools, policy, traces, model routing, and a live UX. | [claim-ledger.md](claim-ledger.md), [conference-readiness-scorecard.md](conference-readiness-scorecard.md) | The game is the wrapper; the pattern is the point. |
 
+## Hard-Room Drill
+
+Use these when a senior AI engineer compresses the question into one sharp
+sentence. Answer directly, name the proof, then move back to the pattern.
+
+### "What is the Oracle-specific insight here?"
+
+> The Oracle-specific insight is not "put a game on cloud." The useful bit is
+> keeping match truth, JSON event payloads, graph relationships, vector-ready
+> memory, traces, evals, and deterministic fallback close to governed
+> operational data. That reduces the number of places where an agent can lose
+> provenance.
+
+Proof handle:
+
+- `.codex_tmp/conference-preflight/latest.md`
+- [current-proof-snapshot.md](current-proof-snapshot.md)
+- [source-map.md](source-map.md)
+
+Boundary:
+
+> I am not claiming one product magically replaces all AI engineering. I am
+> claiming the database can carry more of the agent memory and evidence layer
+> than people often assume.
+
+### "Why not just build the whole thing in code?"
+
+> You can. The point is deciding what belongs where. The harness stays in code
+> because it owns live-system integration, evidence retrieval, fallback, trace,
+> and policy. Canvas is useful when the business-facing agent experience needs
+> to be shaped without bypassing that harness.
+
+Proof handle:
+
+- `/paf/healthz`
+- [stage-launch-card.md](stage-launch-card.md)
+- [architecture.md](architecture.md)
+
+Boundary:
+
+> Canvas is not the proof by itself. The metadata is the proof of which path
+> produced a specific line.
+
+### "What happens if the model route is slow or unavailable?"
+
+> The harness degrades. It can use in-database paths, Select AI, model-router
+> adapters, or deterministic SQL fallback. The live game should not depend on a
+> single model call behaving perfectly.
+
+Proof handle:
+
+- `.codex_tmp/conference-preflight/latest.md`
+- `fallback_source: oracle-sql`
+- `trace_persisted: yes`
+
+Boundary:
+
+> This receipt proves fallback behavior and source metadata. It does not prove
+> every production latency SLO.
+
+### "Is this really agent memory, or just a database schema?"
+
+> A schema is not memory by itself. It becomes memory when the harness uses it
+> with scope, retrieval rules, provenance, deletion, and tests. This demo shows
+> the pieces: session facts, player history, JSON events, graph causality,
+> vector-ready memories, traces, evals, and training examples.
+
+Proof handle:
+
+- `STWL_GAME_EVENTS`
+- `STWL_AGENT_MEMORIES`
+- `.codex_tmp/model-ai-readiness/proof-bundle.md`
+- [notebook-cta-map.md](notebook-cta-map.md)
+
+Boundary:
+
+> If the smoke receipt says `Vector memories: 0`, say vector memory is enabled,
+> not returned for that exact call.
+
+### "Is the AI line impressive enough?"
+
+> It is intentionally conservative. For a live conference, grounded and boring
+> beats stylish and invented. Style can improve; the non-negotiable part is that
+> the line stays inside recorded evidence and tells us which path produced it.
+
+Proof handle:
+
+- `/paf/api/commentary`
+- `.codex_tmp/conference-preflight/latest.md`
+
+Boundary:
+
+> Do not optimize the demo by letting the model invent better drama.
+
+### "What would make this production-grade for a gaming studio?"
+
+> Normalize the event SDK for Unity, Unreal, and web. Store clip manifests in
+> object storage with event ids and timecodes. Add moderation, observability,
+> cache policy, tenant isolation, human override, replay review, and promotion
+> gates. The demo proves the architecture shape, not the whole studio platform.
+
+Proof handle:
+
+- [architecture.md](architecture.md)
+- [conference-readiness-scorecard.md](conference-readiness-scorecard.md)
+
+Boundary:
+
+> Demo scale uses telemetry plus replay JSON. It does not claim full broadcast
+> video ingestion.
+
+### "What is the most honest caveat today?"
+
+> The game path is green. The AI evidence path is green with boundaries. The
+> two-live-private-LLM claim is still gated because both routes currently report
+> `runtime_mode=behavior-adapter`.
+
+Proof handle:
+
+- `.codex_tmp/model-ai-readiness/proof-bundle.md`
+- `.codex_tmp/conference-stage-brief/latest.md`
+
+Boundary:
+
+> Say the caveat out loud. AI engineers trust systems that refuse to overclaim.
+
 ## Deeper Answers
 
 ### "What exactly is the agent?"
