@@ -4,6 +4,7 @@ Use this as the one-page operator card while presenting. It is designed for the 
 
 For full rehearsal, use [18-minute-stage-script.md](18-minute-stage-script.md). This card is the short stage-side version.
 For final go/no-go, use [conference-readiness-scorecard.md](conference-readiness-scorecard.md).
+For the current deployed commit, image tags, and proof posture, use [current-proof-snapshot.md](current-proof-snapshot.md).
 For the technical proof ladder, use [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md).
 For challenge handling, use [claim-ledger.md](claim-ledger.md).
 For deeper technical questions, use [ai-engineer-qa.md](ai-engineer-qa.md).
@@ -23,7 +24,7 @@ The game is the emotional entry point. The terminal is the proof. Canvas is the 
 Use these as the latest receipts, not as promises about future runs:
 
 - Public game: `http://130.162.174.167/` returns `200 OK`.
-- Latest deployed app proof: commit `e7d4543`, deployment `prod-conference-demo-e7d4543`.
+- Latest deployed app proof: commit `307cc06`, deployment `stwl-deploy-codex-307cc06`, `web:0.0.22`, `ws-server:0.0.31`, `private-agent-factory:0.0.4`.
 - Generated stage brief: `.codex_tmp/conference-stage-brief/latest.md` from `npm run check:conference-demo:stage`.
 - Public game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority.
 - Public mobile smoke: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at the waterline.

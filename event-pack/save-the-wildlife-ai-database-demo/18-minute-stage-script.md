@@ -16,9 +16,9 @@ Current healthy stage posture:
 - Game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
 - Transport smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
 - AI preflight: `ready_with_caveats`
-- Latest deployed proof: commit `e7d4543`, deployment `prod-conference-demo-e7d4543`, server image `0.0.28`
-- Generated stage receipt: `.codex_tmp/conference-stage-brief/latest.md`
-- Latest mobile smoke proof: `RUNNING`, joystick visible, safe nearest-trash buffer, boat seated at waterline when game smoke or manual visual proof is current
+- Latest deployed proof: commit `307cc06`, deployment `stwl-deploy-codex-307cc06`, `web:0.0.22`, `ws-server:0.0.31`, `private-agent-factory:0.0.4`
+- Generated stage receipt: `.codex_tmp/conference-stage-brief/latest.md`; static snapshot: [current-proof-snapshot.md](current-proof-snapshot.md)
+- Latest mobile smoke proof: `RUNNING`, joystick visible, healthy item counts, boat seated at waterline when game smoke or manual visual proof is current
 - Safe caveats: smoke replay/vector rows may be empty, and current commentary metadata can report `canvas:null`, `in_db_agent:null`, and `runtime_mode=behavior-adapter`
 - Safe claim: live game, OKE deployment, PAF health, Oracle AI Database evidence path, Select AI/in-db agent configuration, model-router trace persistence, mobile playability, and grounded commentary constraints
 - Gated claim: two live private upstream LLM runtimes

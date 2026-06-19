@@ -9,7 +9,8 @@ The message to land: sometimes AI engineers should let business users shape the 
 ## Current Verified Receipts
 
 - Public game endpoint: `http://130.162.174.167/`
-- Deployed proof: commit `e7d4543`, deployment `prod-conference-demo-e7d4543`
+- Deployed proof: commit `307cc06`, deployment `stwl-deploy-codex-307cc06`
+- Current proof snapshot: [current-proof-snapshot.md](current-proof-snapshot.md)
 - Generated live receipt: `.codex_tmp/conference-stage-brief/latest.md` from `npm run check:conference-demo:stage`
 - Public game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
 - Public transport smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
