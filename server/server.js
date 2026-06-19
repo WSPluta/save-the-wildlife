@@ -13,6 +13,7 @@ import {
   shouldUseCoherence,
   socketBusConfigFromEnv,
 } from "./lib/realtimeBackend.js";
+import { createCoherenceEntryReader } from "./lib/coherenceScan.js";
 import { reinitializeItemForSpawn, snapshotItemForEvent } from "./lib/itemLifecycle.js";
 import {
   buildPlayerSessionProfile,
@@ -90,6 +91,7 @@ const SPAWN_MAX_PER_TICK_MARINE = parseInt(process.env.SPAWN_MAX_PER_TICK_MARINE
 const POWERUP_REFRESH_MS = parseInt(process.env.POWERUP_REFRESH_MS ?? "1500");
 const METRICS_BROADCAST_MS = parseInt(process.env.METRICS_BROADCAST_MS ?? (isProduction ? "1000" : "300"));
 const COHERENCE_SCAN_TIMEOUT_MS = parseInt(process.env.COHERENCE_SCAN_TIMEOUT_MS ?? "2500");
+const COHERENCE_SCAN_BACKOFF_MS = parseInt(process.env.COHERENCE_SCAN_BACKOFF_MS ?? "60000");
 const DEMO_ADMIN_TOKEN = process.env.DEMO_ADMIN_TOKEN || process.env.ADMIN_DEMO_TOKEN || "";
 const SPAWN_PLAYER_CLEAR_RADIUS = process.env.SPAWN_PLAYER_CLEAR_RADIUS
   ? parseFloat(process.env.SPAWN_PLAYER_CLEAR_RADIUS)
@@ -400,6 +402,15 @@ let mapRooms;
 let mapPlayerSockets;
 const localPlayersInfo = {};
 const localPlayerTraces = {};
+const localTrash = {};
+const localMarineLife = {};
+const localPowerUps = {};
+const localRooms = {};
+const coherenceEntryReader = createCoherenceEntryReader({
+  timeoutMs: COHERENCE_SCAN_TIMEOUT_MS,
+  backoffMs: COHERENCE_SCAN_BACKOFF_MS,
+  logger,
+});
 
 const adminCmdSeen = new Map();
 const ADMIN_CMD_TTL_MS = 2 * 60 * 1000;
@@ -2308,6 +2319,10 @@ async function writeCache(cache, id, value) {
   try {
     if (cache === mapPlayersInfo) localPlayersInfo[id] = value;
     if (cache === mapPlayersTraces) localPlayerTraces[id] = value;
+    if (cache === mapTrash) localTrash[id] = value;
+    if (cache === mapMarineLife) localMarineLife[id] = value;
+    if (cache === mapPowerUps) localPowerUps[id] = value;
+    if (cache === mapRooms) localRooms[id] = value;
     await cache.set(id, value);
   } catch (error) {
     logger.error(
@@ -2321,6 +2336,8 @@ async function readCache(cache, id) {
     return await cache.get(id);
   } catch (error) {
     logger.error(`Error reading ${id}. ${error.message}`);
+    const mirror = localMirrorForCache(cache);
+    if (mirror && id) return mirror[id];
   }
 }
 
@@ -2329,41 +2346,46 @@ async function deleteCache(cache, id) {
   try {
     if (cache === mapPlayersInfo) delete localPlayersInfo[id];
     if (cache === mapPlayersTraces) delete localPlayerTraces[id];
+    if (cache === mapTrash) delete localTrash[id];
+    if (cache === mapMarineLife) delete localMarineLife[id];
+    if (cache === mapPowerUps) delete localPowerUps[id];
+    if (cache === mapRooms) delete localRooms[id];
     await cache.delete(id);
   } catch (error) {
     logger.error(`Error deleting ${id}. ${error.message}`);
   }
 }
 
+function localMirrorForCache(cache) {
+  if (cache === mapPlayersInfo) return localPlayersInfo;
+  if (cache === mapPlayersTraces) return localPlayerTraces;
+  if (cache === mapTrash) return localTrash;
+  if (cache === mapMarineLife) return localMarineLife;
+  if (cache === mapPowerUps) return localPowerUps;
+  if (cache === mapRooms) return localRooms;
+  return null;
+}
+
+function cacheLabel(cache) {
+  if (cache === mapPlayersInfo) return "playersInfo";
+  if (cache === mapPlayersTraces) return "playerTraces";
+  if (cache === mapTrash) return "trash";
+  if (cache === mapMarineLife) return "marineLife";
+  if (cache === mapPowerUps) return "powerUps";
+  if (cache === mapRooms) return "rooms";
+  return "unknown";
+}
+
 async function readCacheEntries(cache) {
   const fallback = () => {
-    if (cache === mapPlayersInfo) return { ...localPlayersInfo };
-    if (cache === mapPlayersTraces) return { ...localPlayerTraces };
+    const mirror = localMirrorForCache(cache);
+    if (mirror) return { ...mirror };
     return {};
   };
-  const scan = async () => {
-    const response = await cache.entries();
-    let data = {};
-    for await (const entry of response) {
-      data[entry.key] = entry.value;
-    }
-    return data;
-  };
-  let timeoutId;
-  try {
-    if (!COHERENCE_SCAN_TIMEOUT_MS || COHERENCE_SCAN_TIMEOUT_MS <= 0) return await scan();
-    return await Promise.race([
-      scan(),
-      new Promise((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error(`coherence_scan_timeout:${COHERENCE_SCAN_TIMEOUT_MS}`)), COHERENCE_SCAN_TIMEOUT_MS);
-      }),
-    ]);
-  } catch (error) {
-    logger.warn(`Error reading all entries. ${error.message}`);
-    return fallback();
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
+  return coherenceEntryReader.readEntries(cache, {
+    fallback,
+    label: cacheLabel(cache),
+  });
 }
 
 async function mapEntryCount(mapLike) {
