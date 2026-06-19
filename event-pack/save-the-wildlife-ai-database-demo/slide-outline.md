@@ -78,6 +78,8 @@ memory, tools, retrieval, SQL, identity, budgets, trace, safety.
 **Speaker notes:**
 From the heavyweight notebook: the model emits tokens; the harness owns state, dispatch, memory, context, retries, policy, traces, and deterministic work. A vector database is not a memory system; production memory needs scope, provenance, deletion, retrieval, and governance.
 
+Use this as the bridge into production continual learning: token space is what the model reads and writes now; structured space is what Oracle AI Database can organize, query, govern, and test; weight space is stable behavior learned before the turn; skill space is where repeated workflows become programmatic skills or playbooks only after tests and authorization boundaries.
+
 ## Slide 8 - "Harness Pattern In This Demo"
 
 **Claim:** The game is a compact enterprise agent pattern.
@@ -110,7 +112,7 @@ For gaming, this becomes live action commentary, instant replay captions, post-m
 3. Long Conversation Memory
 
 **Speaker notes:**
-CTA each notebook: build the harness, engineer memory/context, prove scoped retrieval and long conversation continuity. The game is the front door; the notebooks are the runnable developer path.
+CTA each notebook: build the harness, engineer memory/context, prove scoped retrieval and long conversation continuity. The game is the front door; the notebooks are the runnable developer path. Tie the CTA back to the learning surfaces: keep facts in structured space, keep current reasoning bounded in token space, train only stable behavior into weights, and use programmatic skill induction only when traces show a repeated workflow that the harness can test.
 
 ## Slide 10 - "CTA: Build Agents Around Truth"
 
