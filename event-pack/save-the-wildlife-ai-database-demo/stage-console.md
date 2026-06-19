@@ -3,6 +3,7 @@
 Use this as the one-page operator card while presenting. It is designed for the messy reality of a live room: phones, Wi-Fi, one browser window, one terminal, and AI engineers who will ask what is actually proven.
 
 For full rehearsal, use [18-minute-stage-script.md](18-minute-stage-script.md). This card is the short stage-side version.
+For final go/no-go, use [conference-readiness-scorecard.md](conference-readiness-scorecard.md).
 For the technical proof ladder, use [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md).
 For challenge handling, use [claim-ledger.md](claim-ledger.md).
 

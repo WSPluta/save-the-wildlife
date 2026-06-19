@@ -5,6 +5,7 @@
 - [ ] Open the game from laptop and phone.
 - [ ] Run `npm run check:conference-demo`.
 - [ ] Run `npm run check:conference-demo:game`.
+- [ ] Open [conference-readiness-scorecard.md](conference-readiness-scorecard.md) and confirm the current posture is still GO with honest caveats.
 - [ ] Verify the phone joystick appears during gameplay from the smoke receipt.
 - [ ] Verify the mobile smoke shows a safe opening spawn buffer.
 - [ ] Verify the boat-waterline contact remains visible in the smoke receipt.
@@ -29,6 +30,7 @@ Check:
 
 - [ ] Preflight verdict is `ready_with_caveats` or better.
 - [ ] Game smoke verdict is `ready`.
+- [ ] Scorecard go/no-go rules are satisfied.
 - [ ] Game returns `200`.
 - [ ] Mobile game smoke reaches `RUNNING`.
 - [ ] Mobile joystick is visible.

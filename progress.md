@@ -485,3 +485,7 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Linked the claim ledger from the event-pack README and stage console so it is easy to open when challenged during Q&A.
   - Replaced brittle exact smoke-distance values in presenter docs with threshold-style proof language: mobile `RUNNING`, joystick visible, safe nearest-trash buffer, and boat seated at the waterline.
   - Scanned the event-pack docs for stale smoke values and overclaim trigger phrases; remaining Canvas/raw-footage/two-LLM hits are explicit boundary or "do not say" guidance.
+- Conference readiness scorecard pass on 2026-06-19:
+  - Added `event-pack/save-the-wildlife-ai-database-demo/conference-readiness-scorecard.md` as the final go/no-go artifact for the AI engineer conference.
+  - The scorecard maps the objective to current proof areas: limbic mobile opening, modern app on OCI/OKE, Oracle AI Database match intelligence, PAF/Canvas boundary, commentary safety, agent harness proof, model AI proof, and notebook CTA.
+  - Linked the scorecard from the README, stage console, and rehearsal checklist so it becomes part of the day-of operator flow.
