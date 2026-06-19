@@ -26,6 +26,7 @@ By the end, AI developers should understand four things:
 - [run-of-show.md](run-of-show.md): minute-by-minute talk flow.
 - [current-proof-snapshot.md](current-proof-snapshot.md): runtime deploy proof, live image tags, green receipts, and gated claims.
 - [final-readiness-audit.md](final-readiness-audit.md): current go/no-go audit mapping the objective to proof receipts and caveats.
+- [continual-learning-operating-model.md](continual-learning-operating-model.md): production-grade continual learning model for token, structured, weight, and skill spaces.
 - [18-minute-stage-script.md](18-minute-stage-script.md): read-aloud rehearsal script with stage actions, proof boundaries, and timing rescue.
 - [architecture.md](architecture.md): current post-Redis runtime topology and commentary sequence.
 - [slide-outline.md](slide-outline.md): 10-slide deck spine with visual direction and speaker notes.

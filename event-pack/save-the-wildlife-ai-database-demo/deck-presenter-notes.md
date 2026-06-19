@@ -137,6 +137,11 @@ path, trace persistence, and strict upstream gate.
 **Boundary:** Do not sell "more context" as memory. Say the production memory
 line clearly: persistence, scope, provenance, deletion, retrieval, governance.
 
+**Continual learning bridge:** Token space is the current prompt, evidence, and
+output. Structured space is the Oracle AI Database layer the harness can query
+and govern. Weight space is stable behavior learned before the turn. Skill
+space is where repeated workflows become tested tools or playbooks.
+
 ## Slide 8: The Game Pattern Becomes An Enterprise Pattern
 
 **Time:** 11:45-13:45
@@ -166,7 +171,9 @@ production-shaped.
 
 > The game is the front door. The notebooks are the developer path. One teaches
 > the harness. One teaches memory and context engineering. One teaches scoped
-> long-conversation memory.
+> long-conversation memory. The production learning model is to keep facts in
+> structured space, keep current reasoning in token space, move only stable
+> behavior into weights, and graduate repeated workflows into governed skills.
 
 **Proof cue:** notebook filenames are listed in the master card and event pack:
 `enterprise_data_agent_heavyweight.ipynb`,

@@ -75,6 +75,9 @@ Use this order if someone technical challenges the demo:
   harness around data, tools, policy, memory, and live systems.
 - A bigger context window is not memory. A vector table is not memory.
   Production memory needs scope, provenance, deletion, retrieval, and tests.
+- Production continual learning has four surfaces: token space for current
+  context, structured space for governed evidence, weight space for stable
+  behavior, and skill space for tested tool or playbook induction.
 
 ## Do Not Overclaim
 

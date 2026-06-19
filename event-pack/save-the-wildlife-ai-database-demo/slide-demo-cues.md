@@ -84,6 +84,9 @@ The model emits tokens. The harness is everything else: context, tools, memory, 
 **Memory line:**
 A vector database is not a memory system. Memory becomes architecture when you need persistence, scoping, provenance, deletion, retrieval, and governance.
 
+**Continual learning line:**
+Keep the surfaces separate: current context in token space, governed evidence in structured space, stable behavior in weight space, and repeated workflows in tested skill space.
+
 ## Slide 8 - Enterprise Mapping
 
 **Action:** Point from left to right.
@@ -96,7 +99,7 @@ For games, replace the demo replay JSON with production clip manifests and objec
 **Action:** Name the three notebooks.
 
 **Say:**
-The game is the front door. The notebooks are the developer path: full harness, memory/context engineering, and long-conversation memory.
+The game is the front door. The notebooks are the developer path: full harness, memory/context engineering, long-conversation memory, and the discipline to promote facts, behavior, and skills through different gates.
 
 ## Slide 10 - Close
 

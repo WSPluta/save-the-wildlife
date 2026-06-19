@@ -37,7 +37,7 @@ Then stop talking for a moment. Let the room play.
 | 5:45-7:30 | PAF context and commentary | The runtime builds bounded evidence before the model phrases anything |
 | 7:30-9:30 | Architecture | OKE, Socket.IO, Coherence, Oracle AI Database, and PAF are deployed together |
 | 9:30-12:00 | Harness | Agent = Model + Harness; the model emits tokens, the harness owns the system |
-| 12:00-14:30 | Memory patterns | Bigger context is not memory; production memory needs scope, provenance, deletion, and tests |
+| 12:00-14:30 | Continual learning pattern | Token space, structured space, weight space, and skill space each have different rules |
 | 14:30-16:30 | Notebook CTAs | The audience can take the pattern into harness, context, and long-conversation work |
 | 16:30-18:00 | Close | Start with real events, ground them in governed data, let the model phrase, not fabricate |
 
@@ -101,6 +101,8 @@ Say this to AI engineers:
 The practical line:
 
 > A bigger context window is not memory. A vector table is not memory. Production memory needs persistence, scope, retrieval, provenance, deletion, and independent tests.
+>
+> Facts live in structured space. Current reasoning lives in token space. Stable behavior can move into weight space. Repeated workflows graduate into skills only when the harness can test and govern them.
 
 ## What To Say About Canvas
 

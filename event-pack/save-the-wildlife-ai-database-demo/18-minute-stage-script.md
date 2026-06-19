@@ -96,7 +96,7 @@ Current healthy stage posture:
 
 **Phrase to land:**
 
-> Facts in memory. Behavior in weights.
+> Facts live in structured space. Current reasoning lives in token space. Stable behavior can move into weight space.
 
 ## 5:45-7:30 - Live Context And Commentary Proof
 
@@ -190,7 +190,7 @@ curl -sS -X POST http://130.162.174.167/paf/api/commentary \
 
 > If evidence is missing, the commentator should not invent it. If a runtime path is not proven, the metadata should show that. If a layer is slow, the harness should degrade gracefully.
 
-## 12:00-14:30 - Harness Patterns AI Engineers Can Reuse
+## 12:00-14:30 - Continual Learning Patterns AI Engineers Can Reuse
 
 **Screen:** Game demo to enterprise mapping.
 
@@ -201,6 +201,8 @@ curl -sS -X POST http://130.162.174.167/paf/api/commentary \
 > Replace replay clips with media evidence, ticket history, transaction snapshots, or operational logs.
 >
 > Keep the pattern: capture real events, store them where governance lives, retrieve context deliberately, and let the model phrase inside a bounded loop.
+>
+> This is also the continual learning lesson. Token space is the prompt, evidence, and output right now. Structured space is what Oracle AI Database can store, query, govern, and test. Weight space is stable behavior learned before the turn. Skill space is where repeated workflows become tools or playbooks only after tests.
 >
 > For gaming, this becomes live commentary, instant replay captions, post-match recaps, player memory, and highlight search.
 >

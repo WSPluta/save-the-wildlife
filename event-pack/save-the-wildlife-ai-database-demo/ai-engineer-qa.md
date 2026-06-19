@@ -26,6 +26,7 @@ Use this shape:
 | Are there in-database agents? | The path is configured and attempted through the commentary package. | `DBMS_CLOUD_AI_AGENT.RUN_TEAM` in `deploy/db/stwl_commentary_pkg.sql`, `/paf/healthz` | For a specific response, trust `in_db_agent` metadata. |
 | Are two private LLMs live? | Not as a live upstream claim yet. Adapter handoff is live; strict upstream is still gated. | `.codex_tmp/model-ai-readiness/proof-bundle.md` | Do not claim two live private LLM runtimes until strict upstream passes. |
 | What did tier 1000 prove? | The harness path, score-row proof, adapter-mode commentary, trace/eval metadata, and no duplicate commentary under load. | `.codex_tmp/model-ai-readiness/proof-bundle.md` | It does not prove upstream LLM runtime. |
+| What is production continual learning here? | Separate token space, structured space, weight space, and skill space. Facts stay structured; current context stays bounded; stable behavior can move into weights; repeated workflows become governed skills. | [continual-learning-operating-model.md](continual-learning-operating-model.md), `deploy/db/stwl_model_learning.sql` | Do not claim autonomous production weight updates or self-installed skills. |
 | What would production add? | SDK ingestion, clip manifests in object storage, moderation, identity policy, observability, caching, human override, and promotion gates. | [architecture.md](architecture.md), [conference-readiness-scorecard.md](conference-readiness-scorecard.md) | Demo scale uses telemetry plus replay JSON, not full video ingestion. |
 | How do you prevent hallucinated commentary? | Evidence package first, deterministic SQL summary, output limits, profanity guard, source metadata, trace persistence, and fallback. | `/paf/api/commentary`, `enforceCommentary`, `clamp_text` | The receipt must show the line matches recorded evidence. |
 | What about latency? | Live commentary is kept short, context is bounded, and runtime can fall back to deterministic SQL if a model route is slow. | `.codex_tmp/model-ai-readiness/proof-bundle.md`, PAF fallback path | Do not make broad latency guarantees beyond the receipts. |
@@ -158,6 +159,25 @@ Proof handle:
 Boundary:
 
 > Say the caveat out loud. AI engineers trust systems that refuse to overclaim.
+
+### "How does continual learning work without becoming chaos?"
+
+> You separate the surfaces. Token space is the current prompt and output.
+> Structured space is the organized evidence and traces the system can operate
+> on. Weight space is stable behavior learned before the turn. Skill space is
+> where repeated workflows become governed tools or playbooks. Each promotion
+> has a test and a trace.
+
+Proof handle:
+
+- [continual-learning-operating-model.md](continual-learning-operating-model.md)
+- `deploy/db/stwl_model_learning.sql`
+- `.codex_tmp/model-ai-readiness/proof-bundle.md`
+
+Boundary:
+
+> Do not say the demo auto-updates weights or lets a model self-install skills.
+> The production move is gated promotion, not uncontrolled self-modification.
 
 ## Deeper Answers
 

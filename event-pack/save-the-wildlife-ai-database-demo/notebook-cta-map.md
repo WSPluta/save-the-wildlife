@@ -64,6 +64,15 @@ Slide CTA:
 
 ## How The Notebooks Relate To The Game
 
+Use [continual-learning-operating-model.md](continual-learning-operating-model.md)
+as the bridge between the live demo and the notebooks:
+
+- **Token space:** what the model reads or writes in the current turn.
+- **Structured space:** what Oracle AI Database stores, retrieves, governs, and
+  tests.
+- **Weight space:** stable behavior learned before the conversation starts.
+- **Skill space:** repeated workflows promoted into governed tools or playbooks.
+
 | Demo piece | Notebook extension |
 |---|---|
 | Gameplay event stream | Episodic memory and event sourcing |
