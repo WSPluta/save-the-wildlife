@@ -136,7 +136,7 @@ async function runSocketLifecycle({ baseUrl, timeoutMs }) {
 
   try {
     socket = io(baseUrl, {
-      transports: ["polling", "websocket"],
+      transports: ["websocket"],
       extraHeaders: {
         Origin: baseUrl,
       },

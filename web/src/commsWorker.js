@@ -161,7 +161,7 @@ function init(wsURL, yourId, yourName, room, clientSessionId = null, debugWorker
   logger(`WebWorker commsWorker start on ${wsURL}`);
   savedInit = { wsURL, yourId, yourName, room, clientSessionId, debugWorker: DEBUG_WORKER, isPresenter: !!isPresenter };
   socket = io(wsURL, {
-    transports: ["websocket", "polling"],
+    transports: ["websocket"],
     withCredentials: false,
     reconnection: true,
     reconnectionAttempts: Infinity,
