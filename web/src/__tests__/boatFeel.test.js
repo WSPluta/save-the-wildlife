@@ -29,8 +29,9 @@ describe("boat feel layer", () => {
     expect(debug.y).toBeLessThanOrEqual(BOAT_FEEL_DEFAULTS.maxVisualY);
     expect(debug.y).toBeGreaterThanOrEqual(BOAT_FEEL_DEFAULTS.minVisualY);
     expect(debug.y).toBe(Number(BOAT_FEEL_DEFAULTS.waterlineOffset.toFixed(3)));
-    expect(BOAT_FEEL_DEFAULTS.maxVisualY).toBeLessThanOrEqual(-0.034);
-    expect(BOAT_FEEL_DEFAULTS.surfaceRippleY - BOAT_FEEL_DEFAULTS.maxVisualY).toBeGreaterThanOrEqual(0.04);
+    expect(debug.surfaceY).toBe(Number(BOAT_FEEL_DEFAULTS.waterSurfaceY.toFixed(3)));
+    expect(BOAT_FEEL_DEFAULTS.maxVisualY).toBeLessThanOrEqual(-0.045);
+    expect(Number((BOAT_FEEL_DEFAULTS.surfaceRippleY - BOAT_FEEL_DEFAULTS.maxVisualY).toFixed(3))).toBeGreaterThanOrEqual(0.05);
   });
 
   it("samples water into reusable objects with finite normals", () => {
@@ -79,7 +80,7 @@ describe("boat feel layer", () => {
     expect(root.rotation.z).toBe(0);
   });
 
-  it("keeps the visual hull slightly submerged near the waterline instead of riding full wave height", () => {
+  it("keeps the visual hull settled below the flat Water plane instead of riding positive CPU waves", () => {
     const { root } = makeBoatRoot();
     const state = createBoatFeelState();
     installBoatFeelPivot(root);
@@ -98,8 +99,8 @@ describe("boat feel layer", () => {
     const debug = getBoatFeelDebug(state);
     expect(debug.y).toBeGreaterThanOrEqual(BOAT_FEEL_DEFAULTS.minVisualY);
     expect(debug.y).toBeLessThanOrEqual(BOAT_FEEL_DEFAULTS.maxVisualY);
-    expect(debug.y).toBeLessThanOrEqual(BOAT_FEEL_DEFAULTS.maxVisualY);
-    expect(debug.y).toBeGreaterThanOrEqual(BOAT_FEEL_DEFAULTS.minVisualY);
+    expect(debug.y).toBeLessThanOrEqual(BOAT_FEEL_DEFAULTS.waterSurfaceY + BOAT_FEEL_DEFAULTS.waterlineOffset);
+    expect(debug.y).toBeLessThan(BOAT_FEEL_DEFAULTS.waterSurfaceY);
   });
 
   it("tracks wake strength and emits bounded ripple visuals through the adapter", () => {
@@ -139,7 +140,7 @@ describe("boat feel layer", () => {
     expect(debug.wake).toBeLessThanOrEqual(1);
     expect(ripples.length).toBe(1);
     expect(Number.isFinite(ripples[0].y)).toBe(true);
-    expect(ripples[0].y).toBeCloseTo(BOAT_FEEL_DEFAULTS.surfaceRippleY, 3);
+    expect(ripples[0].y).toBeCloseTo(BOAT_FEEL_DEFAULTS.waterSurfaceY + BOAT_FEEL_DEFAULTS.surfaceRippleY, 3);
     expect(ripples[0].strength).toBeGreaterThan(0);
     expect(ripples[0].strength).toBeLessThanOrEqual(1);
     expect(splashes).toBe(0);
@@ -159,6 +160,7 @@ describe("boat feel layer", () => {
     resetBoatFeel(state);
     expect(getBoatFeelDebug(state)).toEqual({
       y: Number(BOAT_FEEL_DEFAULTS.waterlineOffset.toFixed(3)),
+      surfaceY: Number(BOAT_FEEL_DEFAULTS.waterSurfaceY.toFixed(3)),
       pitch: 0,
       roll: 0,
       wake: 0,

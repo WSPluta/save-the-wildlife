@@ -2,13 +2,15 @@ import * as THREE from "three";
 import { getHeightAndNormalInto } from "./buoyancy";
 
 export const BOAT_FEEL_DEFAULTS = Object.freeze({
-  waterlineOffset: -0.044,
-  minVisualY: -0.064,
-  maxVisualY: -0.034,
-  surfaceRippleY: 0.006,
+  waterSurfaceY: 0,
+  waterlineOffset: -0.052,
+  minVisualY: -0.074,
+  maxVisualY: -0.045,
+  surfaceRippleY: 0.005,
   sampleForward: 0.82,
   sampleSide: 0.34,
-  verticalWaveStrength: 0.035,
+  verticalWaveStrength: 0.22,
+  speedSettleDepth: 0.006,
   maxPitch: 0.075,
   maxRoll: 0.14,
   wavePitchStrength: 1.45,
@@ -66,7 +68,13 @@ export function createBoatFeelState(options = {}) {
     forward: new THREE.Vector3(),
     right: new THREE.Vector3(),
     stern: new THREE.Vector3(),
-    debug: { y: Number(initialY.toFixed(3)), pitch: 0, roll: 0, wake: 0 },
+    debug: {
+      y: Number(initialY.toFixed(3)),
+      surfaceY: Number(mergedOptions.waterSurfaceY.toFixed(3)),
+      pitch: 0,
+      roll: 0,
+      wake: 0,
+    },
     options: mergedOptions,
   };
   for (const key of SAMPLE_KEYS) {
@@ -158,7 +166,7 @@ function maybeEmitWake(root, state, dt, isMobile, speed, maxSpeed, wakeRipples) 
   if (state.wake <= 0.08 || state.wakeCooldown > 0) return;
   const interval = isMobile ? opts.wakeIntervalMobile : opts.wakeIntervalDesktop;
   state.stern.copy(state.forward).multiplyScalar(-0.72).add(root.position);
-  state.stern.y = root.position.y + opts.surfaceRippleY;
+  state.stern.y = root.position.y + opts.waterSurfaceY + opts.surfaceRippleY;
   if (wakeRipples && typeof wakeRipples.emit === "function") {
     wakeRipples.emit(state.stern, root.rotation?.y || 0, state.wake);
   }
@@ -191,8 +199,10 @@ export function updateBoatFeel(root, state, input = {}) {
   const acceleration = clamp((speed - state.prevSpeed) / dt, -12, 12);
   state.prevSpeed = speed;
 
+  const downwardWaveSettle = Math.abs(avgHeight) * opts.verticalWaveStrength;
+  const speedSettle = speedRatio * opts.speedSettleDepth;
   const targetY = clamp(
-    avgHeight * opts.verticalWaveStrength + opts.waterlineOffset,
+    opts.waterSurfaceY + opts.waterlineOffset - downwardWaveSettle - speedSettle,
     opts.minVisualY,
     opts.maxVisualY
   );
@@ -225,6 +235,7 @@ export function updateBoatFeel(root, state, input = {}) {
   maybeEmitWake(root, state, dt, !!input.isMobile, speed, maxSpeed, input.wakeRipples);
 
   state.debug.y = Number(state.y.toFixed(3));
+  state.debug.surfaceY = Number(opts.waterSurfaceY.toFixed(3));
   state.debug.pitch = Number(state.pitch.toFixed(3));
   state.debug.roll = Number(state.roll.toFixed(3));
   state.debug.wake = Number(state.wake.toFixed(3));
@@ -246,13 +257,20 @@ export function resetBoatFeel(state) {
     state.pivot.position.y = state.y;
     state.pivot.rotation.set(0, 0, 0);
   }
-  state.debug = { y: Number(state.y.toFixed(3)), pitch: 0, roll: 0, wake: 0 };
+  state.debug = {
+    y: Number(state.y.toFixed(3)),
+    surfaceY: Number((opts.waterSurfaceY || 0).toFixed(3)),
+    pitch: 0,
+    roll: 0,
+    wake: 0,
+  };
 }
 
 export function getBoatFeelDebug(state) {
   if (!state || !state.debug) return { y: 0, pitch: 0, roll: 0, wake: 0 };
   return {
     y: Number(state.debug.y || 0),
+    surfaceY: Number(state.debug.surfaceY || 0),
     pitch: Number(state.debug.pitch || 0),
     roll: Number(state.debug.roll || 0),
     wake: Number(state.debug.wake || 0),

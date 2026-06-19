@@ -69,6 +69,7 @@ describe("gameplay polish regressions", () => {
 
   it("adds boat feel as a visual-only layer without changing gameplay collision root", () => {
     expect(script).toMatch(/createBoatFeelState,/);
+    expect(script).toMatch(/BOAT_FEEL_DEFAULTS,/);
     expect(script).toMatch(/installBoatFeelPivot,/);
     expect(script).toMatch(/updateBoatFeel,/);
     expect(script).toMatch(/function captureGameplayCollisionBox\(object3d\)/);
@@ -85,7 +86,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const playerBox = getPlayerCollisionBox\(\);/);
     expect(script).toMatch(/latestBoatFeelDebug = updateBoatFeel\(player, localBoatFeelState,/);
     expect(script).toMatch(/wakeRipples: wakeRippleEffect,/);
-    expect(script).toMatch(/updateBoatWaterlineContact\(player, effectiveSignedSpeed, latestBoatFeelDebug\.wake, MAX_SPEED, latestBoatFeelDebug\.y\);/);
+    expect(script).toMatch(/updateBoatWaterlineContact\(\s*player,\s*effectiveSignedSpeed,\s*latestBoatFeelDebug\.wake,\s*MAX_SPEED,\s*latestBoatFeelDebug\.y,\s*latestBoatFeelDebug\.surfaceY\s*\);/);
     expect(script).toMatch(/updateBoatFeel\(m, m\.userData && m\.userData\.boatFeel,/);
     expect(script).toMatch(/boatFeel: getBoatFeelDebug\(localBoatFeelState\) \|\| latestBoatFeelDebug,/);
     expect(script).toMatch(/import \{ createWakeRippleEffect \} from "\.\/wakeRipples";/);
