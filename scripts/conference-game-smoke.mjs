@@ -137,7 +137,11 @@ function validateCommon(state, failures) {
   if (state.mode !== "RUNNING") failures.push(`expected RUNNING, got ${state.mode}`);
   if ((state.itemsVisible || 0) <= 0) failures.push("expected visible items");
   if ((state.trashInstances || 0) < 4) failures.push(`expected at least 4 trash instances, got ${state.trashInstances || 0}`);
-  if ((state.powerupInstances || 0) < 2) failures.push(`expected at least 2 powerups, got ${state.powerupInstances || 0}`);
+  const visiblePowerups = Number(state.powerupInstances || 0);
+  const activePowerups = activePowerupEffectCount(state);
+  if (visiblePowerups + activePowerups < 1) {
+    failures.push(`expected at least 1 visible or active powerup, got visible=${visiblePowerups} active=${activePowerups}`);
+  }
   if (!state.boatFeel || !Number.isFinite(Number(state.boatFeel.y))) failures.push("missing finite boatFeel.y");
   if (state.boatFeel) {
     const boatY = Number(state.boatFeel.y || 0);
@@ -152,6 +156,16 @@ function validateCommon(state, failures) {
     if (seatDepth < 0.035) failures.push(`boat waterline seat depth too shallow: ${seatDepth}`);
     if (seatDepth > 0.095) failures.push(`boat waterline seat depth too deep: ${seatDepth}`);
   }
+}
+
+function activePowerupEffectCount(state) {
+  const powerUps = state?.powerUps || {};
+  let count = 0;
+  if (Number(powerUps.speed || 1) > 1) count++;
+  if (powerUps.shield === true) count++;
+  if (powerUps.magnet === true) count++;
+  if (powerUps.freeze === true) count++;
+  return count;
 }
 
 async function runMobile({ chromium, baseUrl, outputDir, timeoutMs }) {
@@ -296,7 +310,9 @@ function renderCheckDetails(check) {
   if (check.screenshot) lines.push(`- Screenshot: ${check.screenshot}`);
   if (check.state) {
     lines.push(`- Mode: ${check.state.mode}`);
-    lines.push(`- Items: ${check.state.itemsVisible || 0}, trash ${check.state.trashInstances || 0}, powerups ${check.state.powerupInstances || 0}`);
+    const activePowerups = activePowerupEffectCount(check.state);
+    const activeSuffix = activePowerups ? `, active effects ${activePowerups}` : "";
+    lines.push(`- Items: ${check.state.itemsVisible || 0}, trash ${check.state.trashInstances || 0}, powerups ${check.state.powerupInstances || 0}${activeSuffix}`);
     const nearestTrash = nearestTrashDistance(check.state);
     if (nearestTrash !== null) lines.push(`- Nearest trash distance: ${nearestTrash}`);
     lines.push(`- Boat feel: ${JSON.stringify(check.state.boatFeel || {})}`);

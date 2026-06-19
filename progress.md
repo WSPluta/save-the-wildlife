@@ -493,3 +493,10 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Added QR assets for `http://130.162.174.167/` under `event-pack/save-the-wildlife-ai-database-demo/assets/`.
   - Added `event-pack/save-the-wildlife-ai-database-demo/stage-entry.html`, a 16:9 teal-orbit audience-entry slide for the limbic opening.
   - Linked the entry slide from the README, stage console, rehearsal checklist, slide cues, slide outline, deck brief, and 18-minute stage script.
+- AI engineer Q&A pass on 2026-06-19:
+  - Added `event-pack/save-the-wildlife-ai-database-demo/ai-engineer-qa.md` with short answers, proof handles, and claim boundaries for likely AI-engineer objections.
+  - Covered data provenance, Oracle AI Database memory, PAF/Canvas, Select AI, in-database agents, harness ownership, tier-1000 proof, strict upstream gating, production gaming path, latency, security, Coherence, and fine-tuning boundaries.
+  - Linked the Q&A sheet from the README, stage console, and rehearsal checklist.
+- Conference game smoke hardening on 2026-06-19:
+  - A public desktop smoke reached `RUNNING` but failed because the moving smoke player sampled only one visible powerup; all other gameplay checks were healthy.
+  - Updated `scripts/conference-game-smoke.mjs` to validate visible-or-active powerup evidence instead of requiring two visible powerup instances at one sample frame.

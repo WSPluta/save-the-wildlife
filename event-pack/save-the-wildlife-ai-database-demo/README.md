@@ -32,6 +32,7 @@ By the end, AI developers should understand four things:
 - [stage-entry.html](stage-entry.html): 16:9 audience-entry slide with game URL, QR code, and opening cue.
 - [conference-readiness-scorecard.md](conference-readiness-scorecard.md): final go/no-go scorecard for stage readiness, proof posture, and fallback rules.
 - [claim-ledger.md](claim-ledger.md): stage-safe claim matrix that maps every major statement to a receipt and boundary.
+- [ai-engineer-qa.md](ai-engineer-qa.md): objection-handling sheet for technical Q&A after the demo lands.
 - [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md): limbic opening, AI engineer proof ladder, and stage-ready language.
 - [speaker-cards.md](speaker-cards.md): short talk tracks, transitions, and objection handling.
 - [notebook-cta-map.md](notebook-cta-map.md): how the three notebooks become CTAs and follow-up learning paths.

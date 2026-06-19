@@ -15,6 +15,7 @@
 - [ ] Open [stage-entry.html](stage-entry.html) and verify the QR/URL are readable from the back of the room.
 - [ ] Put the three notebook filenames on the CTA slide.
 - [ ] Read [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md) out loud once and make the opening land in under 45 seconds.
+- [ ] Read [ai-engineer-qa.md](ai-engineer-qa.md) and mark the five questions you are most likely to get.
 - [ ] Read [18-minute-stage-script.md](18-minute-stage-script.md) out loud once and decide which section you will cut if audience play runs long.
 
 ## Thirty Minutes Before

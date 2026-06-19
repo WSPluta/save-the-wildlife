@@ -6,6 +6,7 @@ For full rehearsal, use [18-minute-stage-script.md](18-minute-stage-script.md). 
 For final go/no-go, use [conference-readiness-scorecard.md](conference-readiness-scorecard.md).
 For the technical proof ladder, use [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md).
 For challenge handling, use [claim-ledger.md](claim-ledger.md).
+For deeper technical questions, use [ai-engineer-qa.md](ai-engineer-qa.md).
 
 ## Screen Setup
 
