@@ -1,5 +1,8 @@
 {
   "scripts": {
+    "check:conference-demo": "node scripts/conference-demo-preflight.mjs",
+    "check:conference-demo:game": "node scripts/conference-game-smoke.mjs",
+    "check:conference-demo:full": "npm run check:conference-demo && npm run check:conference-demo:game",
     "check:model-ai-demo": "node scripts/model-ai-demo-readiness.mjs",
     "check:model-ai-demo:strict": "node scripts/model-ai-demo-readiness.mjs --require-upstream-llm",
     "check:model-ai-demo:proof": "node scripts/model-ai-demo-proof-bundle.mjs"

@@ -30,6 +30,9 @@ Keep it playful but controlled. You do not need everyone to play. You need enoug
 For the fuller limbic opening and proof ladder, use
 [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md).
 
+For the live terminal and source-metadata flow, keep
+[stage-console.md](stage-console.md) open next to the browser.
+
 ## Core Narrative Arc
 
 1. **Play:** The room creates telemetry.

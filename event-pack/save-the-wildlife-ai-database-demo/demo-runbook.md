@@ -6,9 +6,31 @@ Use this as the crisp framing before the architecture slide:
 
 > In some cases, AI engineers should let business users build the agent experience in Canvas. The engineering job is to add the harness: connect that Canvas agent to live systems, SQL evidence, deterministic tools, memory, identity, tracing, and policy. In this demo, the harness is the endpoint service connected to the live 3D game. It turns SQL gameplay telemetry into bounded natural-language commentary and broadcasts the result back into the experience.
 
+For the shortest stage-ready operator view, use
+[stage-console.md](stage-console.md). It is the browser-plus-terminal card for the live room.
+
 ## Preflight Five Minutes Before
 
 Run:
+
+```bash
+npm run check:conference-demo
+npm run check:conference-demo:game
+```
+
+Healthy presenter result:
+
+- `PASS game-url`
+- `PASS paf-health`
+- `WARN match-context` is acceptable when the smoke session has no replay clips or vector memories
+- `WARN commentary` is acceptable while the response metadata reports `canvas:null`, `in_db_agent:null`, and `runtime_mode=behavior-adapter`
+- `PASS model-proof-bundle`
+- final verdict is `ready_with_caveats`
+- receipt is `.codex_tmp/conference-preflight/latest.md`
+- game smoke final verdict is `ready`
+- game smoke receipt is `.codex_tmp/conference-game-smoke/latest.md`
+
+For raw inspection, run:
 
 ```bash
 curl -sSI http://130.162.174.167/
@@ -99,6 +121,15 @@ Talk track:
 > A production gaming system would pair this with object-storage video clips. In the demo, the browser sends JSON replay clips around key moments. The replay caption should only mention clip evidence when that manifest exists.
 
 ## Model AI Proof Path
+
+The fastest conference preflight is:
+
+```bash
+npm run check:conference-demo
+npm run check:conference-demo:game
+```
+
+This wraps the live game URL, PAF health, match context, commentary constraints, and model proof bundle into `.codex_tmp/conference-preflight/latest.md`, then proves public mobile/desktop playability in `.codex_tmp/conference-game-smoke/latest.md`.
 
 Run the full local proof bundle:
 

@@ -14,6 +14,7 @@ import {
   resolveAuthoritativeBoatTypes,
   resolveCollisionValidateRadius,
   resolveServerAuthSpeedLimit,
+  chooseSpawnPositionAwayFromPlayers,
 } from "../lib/gameLogic.js";
 
 describe("clampNum", () => {
@@ -184,6 +185,34 @@ describe("authoritative boat physics", () => {
     expect(boatTypes.rescue.maxSpeed).toBe(2.75);
     expect(resolveServerAuthSpeedLimit("")).toBe(DEFAULT_SERVER_AUTH_SPEED_LIMIT);
     expect(resolveServerAuthSpeedLimit("3.75")).toBe(3.75);
+  });
+});
+
+describe("safe item spawning", () => {
+  it("keeps spawned items away from active players when a safe candidate exists", () => {
+    const coords = [0, 0, 1, 1, 7, 3];
+    const position = chooseSpawnPositionAwayFromPlayers({
+      players: [{ x: 0, z: 0 }],
+      worldSizeX: 88,
+      worldSizeZ: 22,
+      clearRadius: 4,
+      coordinateFactory: () => coords.shift(),
+      attempts: 3,
+    });
+
+    expect(position).toEqual({ x: 7, y: 0, z: 3 });
+  });
+
+  it("falls back to the safest attempted candidate when all candidates are close", () => {
+    const coords = [0, 0, 1, 1, 2, 0];
+    const position = chooseSpawnPositionAwayFromPlayers({
+      players: [{ x: 0, z: 0 }],
+      clearRadius: 4,
+      coordinateFactory: () => coords.shift(),
+      attempts: 3,
+    });
+
+    expect(position).toEqual({ x: 2, y: 0, z: 0 });
   });
 });
 

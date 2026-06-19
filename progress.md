@@ -238,3 +238,139 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Required `develop-web-game` Playwright loop passed against local foreground server/web sessions; latest state showed `environmentPropsVisible: 14`, healthy item counts, and submerged turtle samples.
   - Desktop smoke artifacts at `output/arcade-environment-smoke/` reached `RUNNING` with no browser errors, 14 props, healthy trash/power-up counts, and a full-canvas screenshot.
   - Mobile smoke artifacts at `output/mobile-polish-smoke/` reached `RUNNING` with no browser errors, visible joystick, 8 mobile props, healthy item counts, and turtle Y around `-0.072`.
+- Studio-safe boat physics feel layer started on 2026-06-12:
+  - Kept the existing WebGL/Three.js path after a lightweight r184/docs sanity check; no renderer migration, WebGPU/TSL rewrite, physics engine, or GPU water path.
+  - Added `web/src/boatFeel.js` for visual-only hull bob/pitch/roll/wake from reused CPU wave samples, with clamped dt and conservative motion limits.
+  - Extended `web/src/buoyancy.js` with reusable `getHeightAndNormalInto` sampling so boat feel can share wave math without per-frame vector churn.
+  - Wired local and remote boats through a child `boatFeelPivot`; gameplay root still owns X/Z/yaw, camera, trails, collision, and server reconciliation.
+  - Captured a root-based gameplay collision box before installing the local visual pivot so tilted hull visuals do not change item collision behavior.
+  - Added `boatFeel` to `window.render_game_to_text` for smoke checks.
+  - Validation so far: `node --check web/src/script.js`, focused boat/gameplay polish tests (2 files, 11 tests), full `npm --prefix web run test:unit` (8 files, 29 tests), and `npm --prefix web run build` with only existing asset-size warnings.
+- Boat waterline/wake correction on 2026-06-12:
+  - Fixed the local boat hierarchy so the gameplay body is a root group and the loaded boat mesh is a visual child; the visual-only `boatFeelPivot` now actually lifts/bobs the local boat instead of no-oping on a childless mesh.
+  - Raised the visual waterline conservatively while keeping pitch/roll/y clamps and root collision unchanged.
+  - Added pooled, partial-arc stern wake ripples with short lifetimes, no runtime mesh creation, and `render_game_to_text` wake stats for smoke visibility.
+  - Added a focused unit test proving moving boats emit bounded wake ripples through the visual adapter.
+  - Verified `node --check web/src/script.js`, focused boat/gameplay polish tests (2 files, 12 tests), full `npm --prefix web run test:unit` (8 files, 30 tests), and `npm --prefix web run build` with only existing asset-size warnings.
+  - Desktop visual smoke reached `RUNNING`, showed `boatFeel.y` around `0.055`, `wakeRipples.visible` around `10`, healthy item counts, and a less-sunken boat with restrained wake arcs in `output/arcade-environment-smoke/desktop-running.png`.
+  - Mobile visual smoke reached `RUNNING` with visible joystick, healthy item counts, submerged turtle samples, and safe idle boat feel in `output/mobile-polish-smoke/mobile-running.png`.
+- Boat hover correction on 2026-06-12:
+  - Reduced boat visual Y motion so the hull sticks near the Three.js water plane instead of riding the full CPU wave sample.
+  - Added `verticalWaveStrength` to damp waterline bob while keeping pitch/roll wave feel and wake emission.
+  - Tightened visual Y clamps and set the baseline slightly into the waterline; latest desktop smoke shows `boatFeel.y` around `-0.003` with visible wake ripples.
+- Boat water-contact correction on 2026-06-19:
+  - Lowered the visual hull waterline slightly below the surface and damped vertical wave following further, keeping pitch/roll feel without changing the gameplay root, controls, trails, collisions, or server movement.
+  - Wired the pooled `wakeRipples` visual adapter into local boat feel, so moving boats now emit cheap depth-tested stern ripples instead of relying on hull bob alone.
+  - Added a subtle local waterline contact ring under the hull, then reduced its size/opacity after visual smoke so it reads as surface contact rather than a halo.
+  - Fixed a runtime scope leak uncovered by the smoke: module-level authoritative item sync now calls `createItemMeshForScene`, matching the existing callback pattern for instanced trash/power-up helpers.
+  - Validation passed: `node --check web/src/script.js`, focused boat/gameplay polish tests, full `npm --prefix web run test:unit`, `npm --prefix web run build`, desktop Playwright smoke at `output/boat-waterline-smoke-3/`, and mobile viewport smoke at `output/mobile-polish-smoke/`.
+  - Latest desktop smoke reached `RUNNING` with no page errors, `boatFeel.y=-0.015`, `wakeRipples.visible=6`, and `waterlineContact.opacity=0.056`. Latest mobile smoke reached `RUNNING`, joystick visible, and `boatFeel.y=-0.013`.
+- AI engineer proof-boundary refresh on 2026-06-19:
+  - Ran `npm run check:model-ai-demo:proof`; refreshed `.codex_tmp/model-ai-readiness/proof-bundle.md` with `adapter_verdict=ready_with_upstream_llm_blocker` and expected `strict_verdict=failed`.
+  - Verified live game `HTTP/1.1 200 OK`, PAF `/paf/healthz` with Oracle/GenAI/Canvas/in-db agent/Select AI/match-intelligence configured, live `/paf/api/context` with SQL summary, JSON events, graph facts, shield, trail crossing, freeze, and coordinates, and live `/paf/api/commentary` with `warning:null`.
+  - Important live-response boundary: the smoke commentary currently reports `source=oci-base`, `fallback_source=oracle-sql`, `runtime_mode=behavior-adapter`, and `canvas=null`; Canvas is configured, but do not say Canvas produced a specific line unless the response metadata proves it.
+  - Tightened event-pack presenter docs (`README.md`, `demo-runbook.md`, `run-of-show.md`, `slide-demo-cues.md`, `slide-outline.md`, `architecture.md`, `speaker-cards.md`, `rehearsal-checklist.md`) so the talk track is source-aware and does not overclaim `source=paf-canvas`.
+  - Scoped markdown `git diff --check` passed for the updated event-pack files.
+  - Added a regression test that keeps the visual hull close to the waterline across moving wave samples.
+  - Verified focused boat/gameplay tests (2 files, 13 tests), full `npm --prefix web run test:unit` (8 files, 31 tests), `npm --prefix web run build`, and desktop smoke with the stricter waterline assertion.
+- Demo stability debug pass on 2026-06-15:
+  - Routed through `judge-agent` and the web-game validation loop for the user-reported issues: trash pickup, second-session crash/restart, wrong names, and noisy admin UI.
+  - Preserved existing dirty worktree changes; focused on `server/server.js`, `server/lib/gameLogic.js`, `server/test/gameLogic.test.js`, `web/src/script.js`, `web/src/commsWorker.js`, `web/src/index.html`, `web/src/style.css`, and focused tests/smokes.
+  - Server roster fixes now emit `lobby.players` and `player.info.all` scoped to the current room, update `playerRooms` earlier, and prevent presenter sockets from joining as fake players.
+  - Room restart fixes now clear stale room reset timers, allow presenter restart from `ENDED`, and prevent a delayed `ENDED -> WAITING` reset from clobbering a newly started match.
+  - Gameplay restart fixes keep the existing scene alive between sessions, reset score/input/power-up/trails/boat-feel state, and avoid clearing live item instances when a new `game.on` starts an already initialized client.
+  - Pickup fixes bind `items.collision` to the socket's player id, use the recorded player name for score/events, widen the default authoritative pickup radius to `1.6`, and expose nearest `trashSamples` plus player yaw in `render_game_to_text` for smoke targeting.
+  - Admin UI proof sections are hidden from plain `/admin`; `/admin/ai-learning` keeps the compact load/model proof receipts.
+  - Validation passed:
+    - `node --check server/server.js`
+    - `node --check web/src/script.js`
+    - `node --check web/src/commsWorker.js`
+    - `npm --prefix server run test:unit` (5 files, 34 tests)
+    - `npm --prefix web run test:unit -- --run src/__tests__/gameplayPolish.test.js src/__tests__/lobbyAdminFlow.test.js src/__tests__/adminLoadEvaluation.test.js` (3 files, 18 tests)
+    - `npm --prefix web run test:unit` (9 files, 36 tests)
+    - `npm --prefix web run build` passed with existing asset/entrypoint size warnings only.
+    - `git diff --check`
+    - Standard Playwright visual smoke at `output/web-game/` reached `RUNNING`, showed visible items/trash, and produced no fresh browser error artifact; old `output/web-game/errors-0.json` is stale from Mar 29.
+    - Plain admin smoke at `output/admin-ui-smoke/shot-0.png` shows only Presenter Control, status, room/token controls, Start/End/Copy buttons, and roster; load/model evidence is hidden from the standard presenter route.
+    - Authoritative pickup smoke `node .codex_tmp/socket_collision_smoke.mjs output/socket-collision-smoke ROOM-SOCKET-3` passed with `scoreDelta: 1` and `playerName: "Socket Trash Smoke"`.
+    - Roster smoke `node .codex_tmp/socket_roster_smoke.mjs output/socket-roster-smoke` passed with `Ada River` and `Grace Tide` scoped to `ROOM-NAMES-323469` and no `ROOM-OTHER-323469` player in that roster.
+    - Lifecycle smoke `node .codex_tmp/socket_lifecycle_smoke.mjs output/socket-lifecycle-smoke` passed `STARTING -> RUNNING -> ENDED -> STARTING -> RUNNING`.
+  - Note: `.codex_tmp/collect_trash_smoke.mjs` is available for adaptive browser pickup proof, but Chromium launch from that new script was blocked by the local approval/sandbox service. The safer socket smoke covered the authoritative server path; use the standard web-game Playwright client for visual smoke until direct browser approval works.
+- Multiplayer name/session source-of-truth hardening on 2026-06-15:
+  - Confirmed invite links are now room-only; legacy `?name=` is stripped after first bootstrap and is ignored when a saved/canonical name exists.
+  - Confirmed clients use stable `stwlClientSessionId`, send `clientSessionId` through the worker on init/reconnect, and adopt the server-emitted `player.session` canonical profile.
+  - Confirmed server persists canonical profiles to `stwl_player_sessions` with current name, room, client session, gameplay session, and bounded session history.
+  - Patched scaled-websocket roster behavior so room/player lists prefer canonical `profile.room` and `profile.name`; with Coherence enabled, roster/directory reads use the shared `mapPlayersInfo` entries instead of only pod-local `playerRooms`.
+  - Patched gameplay telemetry to use the canonical player name from the server profile before recording `game.event`, including Coherence-backed runs.
+  - Added a regression guard in `web/src/__tests__/lobbyAdminFlow.test.js` for canonical profile room/name roster behavior.
+  - Validation passed:
+    - `node --check server/server.js`
+    - `node --check web/src/script.js`
+    - `node --check web/src/commsWorker.js`
+    - `npm --prefix web run test:unit -- --run src/__tests__/lobbyAdminFlow.test.js` (1 file, 8 tests)
+    - `npm --prefix server run test:unit -- --run test/gameLogic.test.js test/gameEvents.test.js` (2 files, 25 tests)
+    - `npm --prefix server run test:unit` (5 files, 40 tests)
+    - `npm --prefix web run test:unit` (9 files, 38 tests)
+    - `npm --prefix web run build` passed with existing asset/entrypoint size warnings only.
+  - Suggested next manual check: open a player link with `?room=ROOM-NAMEFIX&name=OldUrlName`, rename in the UI, confirm the browser URL drops `name`, the room remains, admin roster shows the new name, and a second match restart does not resurrect the old URL name.
+- Production deploy/test follow-up on 2026-06-15:
+  - Deployed commit `f606bbe` through OCI DevOps; build succeeded and deploy pipeline reached `SUCCEEDED`.
+  - Public checks passed for `http://130.162.174.167/healthz` and `http://130.162.174.167/paf/healthz`; PAF health reported model router shadow mode with both base and fine-tuned endpoint configuration present.
+  - Production socket smokes passed for roster names scoped by room and start/end/start lifecycle restart.
+  - Production collision smoke initially failed because the client/smoke retained stale `ROOM-0001` items after joining a non-default room; server correctly rejected those collisions as `wrong_room`, matching the user report that trash could not be collected.
+  - Patched `web/src/script.js` so `items.all` is treated as authoritative room-scoped state: stale items are removed from the scene, pending/scored collision state is cleared for removed IDs, and only server-provided items remain visible.
+  - Added a regression guard in `web/src/__tests__/gameplayPolish.test.js` and bumped `web` to `0.0.16` for a new deployable image tag.
+  - Updated the temporary socket collision smoke to replace `items.all`; the production socket collision proof then passed against the current server with an accepted trash pickup in `ROOM-COLLISION-PROD2`.
+  - Validation passed:
+    - `node --check web/src/script.js`
+    - `npm --prefix web run test:unit -- --run src/__tests__/gameplayPolish.test.js` (1 file, 8 tests)
+    - `npm --prefix web run test:unit` (9 files, 39 tests)
+    - `npm --prefix web run build` passed with existing asset/entrypoint size warnings only.
+  - Browser-level URL/name smoke is still blocked by local Chromium sandbox approval; do not claim the browser path fully re-smoked until a browser-capable run is explicitly approved.
+- Boat waterline re-verification on 2026-06-19:
+  - Routed through `judge-agent` and the web-game smoke loop for the user-reported visual issue: the boat looked like it was floating on air instead of sticking to the water surface.
+  - Re-checked the current implementation: local boat visuals are under a visual-only `boatFeelPivot`, the gameplay root remains at authoritative y=0, and stern wake/contact ripples are visual-only.
+  - Fresh validation passed:
+    - `node --check web/src/script.js`
+    - `npm --prefix web run test:unit -- --run src/__tests__/boatFeel.test.js src/__tests__/gameplayPolish.test.js` (2 files, 14 tests)
+    - `npm --prefix web run test:unit` (9 files, 42 tests)
+    - `npm --prefix web run build` passed with existing asset/entrypoint size warnings only.
+    - Local mobile smoke passed against `http://127.0.0.1:8080` with `RUNNING`, visible joystick, `boatFeel.y=-0.011`, and a slightly submerged turtle sample.
+    - Local desktop environment smoke passed after movement with `boatFeel.y=-0.017`, `wakeRipples.visible=10`, `waterlineContact.visible=true`, and no browser errors.
+  - Visual inspection of `output/mobile-polish-smoke/mobile-running.png` and `output/arcade-environment-smoke/desktop-running.png` shows the boat sitting into the water with a restrained contact ripple rather than an air gap.
+  - Note: webpack dev server emitted `EMFILE: too many open files, watch` warnings in local watch mode, but serving and smoke checks still worked.
+  - Public OCI follow-up passed:
+    - `curl -sSI http://130.162.174.167/` returned `HTTP/1.1 200 OK`.
+    - `curl -sS http://130.162.174.167/paf/healthz` returned healthy PAF with Oracle, GenAI, Canvas config, Select AI, in-db agent, graph, replay, and vector retrieval enabled.
+    - `BASE_URL=http://130.162.174.167 node .codex_tmp/mobile_polish_smoke.mjs` reached `RUNNING` with visible joystick and `boatFeel.y=-0.01`.
+    - `BASE_URL=http://130.162.174.167 node .codex_tmp/arcade_environment_smoke.mjs` reached `RUNNING` after movement with `boatFeel.y=-0.017`, `wake=0.401`, and `wakeRipples.visible=10`.
+- AI engineer event-pack stage-console pass on 2026-06-19:
+  - Ran `npm run check:model-ai-demo:proof`; adapter mode remains `ready_with_upstream_llm_blocker`, strict upstream remains `failed`, and proof bundle refreshed at `.codex_tmp/model-ai-readiness/proof-bundle.md`.
+  - Re-verified live `http://130.162.174.167/`, `/paf/healthz`, `/paf/api/context`, and `/paf/api/commentary`.
+  - Current smoke context proves `oracle-match-intelligence` with SQL summary, JSON events, graph facts, shield, trail crossing, freeze, coordinates, and `warning:null`; replay and vector memories are absent for the smoke session and should not be claimed for that call.
+  - Current smoke commentary proves `source=oci-base`, `fallback_source=oracle-sql`, `route_mode=shadow`, `runtime_mode=behavior-adapter`, `trace_persisted=true`, and `canvas=null`; Canvas is configured but did not produce that exact smoke line.
+  - Added `event-pack/save-the-wildlife-ai-database-demo/stage-console.md` as a one-page browser-plus-terminal operator card with exact commands, metadata readings, proof lines, fallback language, and close.
+  - Linked the new stage-console card from `README.md`, `run-of-show.md`, and `demo-runbook.md`.
+- Conference preflight automation on 2026-06-19:
+  - Added `scripts/conference-demo-preflight.mjs` and root npm script `check:conference-demo`.
+  - The command checks live game URL, PAF health, `/paf/api/context`, `/paf/api/commentary`, and `npm run check:model-ai-demo:proof`.
+  - It writes `.codex_tmp/conference-preflight/latest.json` and `.codex_tmp/conference-preflight/latest.md`.
+  - It treats missing smoke replay/vector rows and behavior-adapter runtime metadata as warnings, so the expected stage verdict can be `ready_with_caveats` rather than a false green.
+  - Updated `stage-console.md`, `demo-runbook.md`, `README.md`, and `source-map.md` to use `npm run check:conference-demo` as the preferred preflight.
+- Conference game smoke and safe mobile spawn fix on 2026-06-19:
+  - Added `scripts/conference-game-smoke.mjs` and root npm scripts `check:conference-demo:game` and `check:conference-demo:full`.
+  - The game smoke uses Playwright when available, writes `.codex_tmp/conference-game-smoke/latest.md`, and verifies public mobile gameplay, joystick visibility, item counts, boat waterline contact, and desktop wake ripples.
+  - Initial public mobile smoke found a real stage-readiness issue: trash spawned at the player start (`distance=0.386`), filling the mobile camera with large trash boxes even though state was technically `RUNNING`.
+  - Added `chooseSpawnPositionAwayFromPlayers` in `server/lib/gameLogic.js`, wired room-aware item spawning through `reinitItemForRoom`, and updated presenter room starts to choose a start position away from existing room items.
+  - Added unit tests for safe item spawning and bumped `server` from `0.0.24` to `0.0.25` for deployment.
+  - Local mobile smoke against the modified server passed with nearest trash around `5.385` and a clean first mobile screenshot.
+- Boat waterline correction on 2026-06-19:
+  - Fixed the user-observed hover at game start by initializing and resetting `boatFeel` at its waterline offset instead of lerping down from `y=0`.
+  - Kept the gameplay root authoritative at `y=0`; only the visual-only hull pivot moves.
+  - Tightened boat visual clamps so the hull stays below the rendered water plane while wake/contact ripples stay on the surface.
+  - Validation passed:
+    - `node --check web/src/boatFeel.js`
+    - `npm --prefix web run test:unit -- --run src/__tests__/boatFeel.test.js src/__tests__/gameplayPolish.test.js` (2 files, 15 tests)
+    - `npm --prefix web run test:unit` (9 files, 43 tests)
+    - `npm --prefix web run build` passed with existing asset/entrypoint size warnings only.
+    - Web-game Playwright smoke reached `RUNNING`; final `render_game_to_text` reported `boatFeel.y=-0.018`, `waterlineContact.visible=true`, healthy item counts, and no fresh browser error artifacts.

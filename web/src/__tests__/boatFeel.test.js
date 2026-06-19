@@ -23,6 +23,14 @@ function makeBoatRoot() {
 }
 
 describe("boat feel layer", () => {
+  it("starts the visual hull on the waterline instead of lerping down from the air", () => {
+    const state = createBoatFeelState();
+    const debug = getBoatFeelDebug(state);
+    expect(debug.y).toBeLessThanOrEqual(BOAT_FEEL_DEFAULTS.maxVisualY);
+    expect(debug.y).toBeGreaterThanOrEqual(BOAT_FEEL_DEFAULTS.minVisualY);
+    expect(debug.y).toBe(Number(BOAT_FEEL_DEFAULTS.waterlineOffset.toFixed(3)));
+  });
+
   it("samples water into reusable objects with finite normals", () => {
     const target = { normal: new THREE.Vector3() };
     const result = getHeightAndNormalInto(4.5, -2.25, 12.5, target);
@@ -88,8 +96,8 @@ describe("boat feel layer", () => {
     const debug = getBoatFeelDebug(state);
     expect(debug.y).toBeGreaterThanOrEqual(BOAT_FEEL_DEFAULTS.minVisualY);
     expect(debug.y).toBeLessThanOrEqual(BOAT_FEEL_DEFAULTS.maxVisualY);
-    expect(debug.y).toBeLessThanOrEqual(0.014);
-    expect(debug.y).toBeGreaterThanOrEqual(-0.035);
+    expect(debug.y).toBeLessThanOrEqual(BOAT_FEEL_DEFAULTS.maxVisualY);
+    expect(debug.y).toBeGreaterThanOrEqual(BOAT_FEEL_DEFAULTS.minVisualY);
   });
 
   it("tracks wake strength and emits bounded ripple visuals through the adapter", () => {
@@ -129,6 +137,7 @@ describe("boat feel layer", () => {
     expect(debug.wake).toBeLessThanOrEqual(1);
     expect(ripples.length).toBe(1);
     expect(Number.isFinite(ripples[0].y)).toBe(true);
+    expect(ripples[0].y).toBeCloseTo(BOAT_FEEL_DEFAULTS.surfaceRippleY, 3);
     expect(ripples[0].strength).toBeGreaterThan(0);
     expect(ripples[0].strength).toBeLessThanOrEqual(1);
     expect(splashes).toBe(0);
@@ -146,7 +155,12 @@ describe("boat feel layer", () => {
       steer: 1,
     });
     resetBoatFeel(state);
-    expect(getBoatFeelDebug(state)).toEqual({ y: 0, pitch: 0, roll: 0, wake: 0 });
+    expect(getBoatFeelDebug(state)).toEqual({
+      y: Number(BOAT_FEEL_DEFAULTS.waterlineOffset.toFixed(3)),
+      pitch: 0,
+      roll: 0,
+      wake: 0,
+    });
     expect(root.position.x).toBe(1);
     expect(root.position.z).toBe(2);
     expect(root.rotation.y).toBeCloseTo(0.45);

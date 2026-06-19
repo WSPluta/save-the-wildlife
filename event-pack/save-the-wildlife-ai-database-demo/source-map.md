@@ -110,6 +110,34 @@ Safe presenter sentence:
 
 > Tier 1000 proves the harness; `upstream formats openai:2` proves the private handoff; strict upstream mode is the gate that will prove two live LLMs.
 
+## Conference Preflight Command
+
+Use this before rehearsal or stage time:
+
+```bash
+npm run check:conference-demo
+npm run check:conference-demo:game
+```
+
+The first command writes `.codex_tmp/conference-preflight/latest.md` and checks:
+
+- live game URL
+- PAF health flags
+- Oracle match-intelligence context
+- commentary length, profanity, source metadata, trace persistence, and runtime-mode boundary
+- model AI proof bundle
+
+The second command writes `.codex_tmp/conference-game-smoke/latest.md` and checks:
+
+- public mobile gameplay reaches `RUNNING`
+- touch joystick is visible and usable
+- opening trash is not spawned directly on the player
+- item counts remain healthy
+- boat waterline contact remains visible
+- desktop movement produces wake ripples
+
+Expected current presenter verdict is `ready_with_caveats`, because the smoke session may not return replay/vector evidence and the model routes still report `runtime_mode=behavior-adapter`. That is acceptable and should be presented as the honest boundary, not hidden.
+
 ## Notebook Story Sources
 
 | Talk point | Notebook |

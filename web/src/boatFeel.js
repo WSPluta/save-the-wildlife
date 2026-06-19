@@ -2,12 +2,13 @@ import * as THREE from "three";
 import { getHeightAndNormalInto } from "./buoyancy";
 
 export const BOAT_FEEL_DEFAULTS = Object.freeze({
-  waterlineOffset: -0.014,
-  minVisualY: -0.035,
-  maxVisualY: 0.014,
+  waterlineOffset: -0.018,
+  minVisualY: -0.034,
+  maxVisualY: -0.008,
+  surfaceRippleY: 0.006,
   sampleForward: 0.82,
   sampleSide: 0.34,
-  verticalWaveStrength: 0.16,
+  verticalWaveStrength: 0.05,
   maxPitch: 0.075,
   maxRoll: 0.14,
   wavePitchStrength: 1.45,
@@ -45,8 +46,14 @@ function makeSample() {
 }
 
 export function createBoatFeelState(options = {}) {
+  const mergedOptions = { ...BOAT_FEEL_DEFAULTS, ...options };
+  const initialY = clamp(
+    mergedOptions.waterlineOffset,
+    mergedOptions.minVisualY,
+    mergedOptions.maxVisualY
+  );
   const state = {
-    y: 0,
+    y: initialY,
     pitch: 0,
     roll: 0,
     wake: 0,
@@ -59,8 +66,8 @@ export function createBoatFeelState(options = {}) {
     forward: new THREE.Vector3(),
     right: new THREE.Vector3(),
     stern: new THREE.Vector3(),
-    debug: { y: 0, pitch: 0, roll: 0, wake: 0 },
-    options: { ...BOAT_FEEL_DEFAULTS, ...options },
+    debug: { y: Number(initialY.toFixed(3)), pitch: 0, roll: 0, wake: 0 },
+    options: mergedOptions,
   };
   for (const key of SAMPLE_KEYS) {
     state.samples[key] = makeSample();
@@ -151,7 +158,7 @@ function maybeEmitWake(root, state, dt, isMobile, speed, maxSpeed, wakeRipples) 
   if (state.wake <= 0.08 || state.wakeCooldown > 0) return;
   const interval = isMobile ? opts.wakeIntervalMobile : opts.wakeIntervalDesktop;
   state.stern.copy(state.forward).multiplyScalar(-0.72).add(root.position);
-  state.stern.y = root.position.y + state.y + 0.008;
+  state.stern.y = root.position.y + opts.surfaceRippleY;
   if (wakeRipples && typeof wakeRipples.emit === "function") {
     wakeRipples.emit(state.stern, root.rotation?.y || 0, state.wake);
   }
@@ -226,7 +233,8 @@ export function updateBoatFeel(root, state, input = {}) {
 
 export function resetBoatFeel(state) {
   if (!state) return;
-  state.y = 0;
+  const opts = state.options || BOAT_FEEL_DEFAULTS;
+  state.y = clamp(opts.waterlineOffset, opts.minVisualY, opts.maxVisualY);
   state.pitch = 0;
   state.roll = 0;
   state.wake = 0;
@@ -235,10 +243,10 @@ export function resetBoatFeel(state) {
   state.prevZ = null;
   state.wakeCooldown = 0;
   if (state.pivot) {
-    state.pivot.position.y = 0;
+    state.pivot.position.y = state.y;
     state.pivot.rotation.set(0, 0, 0);
   }
-  state.debug = { y: 0, pitch: 0, roll: 0, wake: 0 };
+  state.debug = { y: Number(state.y.toFixed(3)), pitch: 0, roll: 0, wake: 0 };
 }
 
 export function getBoatFeelDebug(state) {

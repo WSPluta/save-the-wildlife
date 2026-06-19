@@ -18,6 +18,7 @@ import {
   buildPlayerSessionProfile,
   resolveJoiningRoom,
   resolveAuthoritativeBoatTypes,
+  chooseSpawnPositionAwayFromPlayers,
   resolveCollisionValidateRadius,
   resolveServerAuthSpeedLimit,
 } from "./lib/gameLogic.js";
@@ -88,6 +89,9 @@ const SPAWN_MAX_PER_TICK_MARINE = parseInt(process.env.SPAWN_MAX_PER_TICK_MARINE
 const POWERUP_REFRESH_MS = parseInt(process.env.POWERUP_REFRESH_MS ?? "1500");
 const METRICS_BROADCAST_MS = parseInt(process.env.METRICS_BROADCAST_MS ?? (isProduction ? "1000" : "300"));
 const DEMO_ADMIN_TOKEN = process.env.DEMO_ADMIN_TOKEN || process.env.ADMIN_DEMO_TOKEN || "";
+const SPAWN_PLAYER_CLEAR_RADIUS = process.env.SPAWN_PLAYER_CLEAR_RADIUS
+  ? parseFloat(process.env.SPAWN_PLAYER_CLEAR_RADIUS)
+  : 4;
 
 const ITEM_MAX_SIZE = process.env.ITEM_MAX_SIZE
   ? parseFloat(process.env.ITEM_MAX_SIZE)
@@ -463,6 +467,34 @@ function reinitItem(obj, type) {
   }
 }
 
+function activePlayerPositionsForRoom(room) {
+  const want = room || GLOBAL_ROOM;
+  const positions = [];
+  for (const [playerId, state] of playersState.entries()) {
+    const playerRoom = playerRooms.get(playerId) || GLOBAL_ROOM;
+    if (playerRoom !== want) continue;
+    if (!state || !Number.isFinite(Number(state.x)) || !Number.isFinite(Number(state.z))) continue;
+    positions.push({ x: Number(state.x), z: Number(state.z) });
+  }
+  return positions;
+}
+
+function reinitItemForRoom(obj, type, room) {
+  reinitItem(obj, type);
+  const safe = chooseSpawnPositionAwayFromPlayers({
+    players: activePlayerPositionsForRoom(room),
+    coordinateFactory: randSpawnCoord,
+    worldSizeX,
+    worldSizeZ,
+    clearRadius: SPAWN_PLAYER_CLEAR_RADIUS,
+  });
+  obj.position = {
+    x: safe.x,
+    y: 0,
+    z: safe.z,
+  };
+}
+
 export async function start(
   httpServer,
   port,
@@ -674,6 +706,28 @@ export async function start(
     return { trash, marine, powerups: power };
   }
 
+  async function itemPositionsForRoom(room) {
+    const all = await getItemsForRoom(room);
+    return Object.values(all || {})
+      .map((item) => ({
+        x: Number(item?.position?.x),
+        z: Number(item?.position?.z),
+      }))
+      .filter((position) => Number.isFinite(position.x) && Number.isFinite(position.z));
+  }
+
+  async function chooseStartPositionForRoom(room) {
+    const itemPositions = await itemPositionsForRoom(room);
+    return chooseSpawnPositionAwayFromPlayers({
+      players: itemPositions,
+      coordinateFactory: randSpawnCoord,
+      worldSizeX,
+      worldSizeZ,
+      clearRadius: SPAWN_PLAYER_CLEAR_RADIUS,
+      attempts: 32,
+    });
+  }
+
   // Per-room match lifecycle: separate STARTING/RUNNING/ENDED timers per room (time only; items remain global)
 function broadcastRoomState(room, state, extra = {}) {
   if (!room) return;
@@ -743,15 +797,37 @@ function startRoomMatch(room) {
   io.to(room).emit("server.info", serverInfoPayload());
   broadcastRoomState(room, 'STARTING', { startsAt: startingAt, countdownMs: 10000 });
 
-  setTimeout(() => {
+  setTimeout(async () => {
     const rs = roomTimers.get(room) || { state: 'WAITING' };
     if (rs.state !== 'STARTING') return; // Prevent race conditions
 
     const startTime = Date.now();
-    const startX = randSpawnCoord(worldSizeX);
-    const startZ = randSpawnCoord(worldSizeZ);
+    const startPosition = await chooseStartPositionForRoom(room).catch(() => ({
+      x: randSpawnCoord(worldSizeX),
+      y: 0,
+      z: randSpawnCoord(worldSizeZ),
+    }));
+    const startX = startPosition.x;
+    const startZ = startPosition.z;
     rs.startTime = startTime;
     rs.startingAt = null;
+    if (SERVER_AUTH_ENABLED) {
+      const players = await listHumansInRoom(room).catch(() => []);
+      for (const playerId of players) {
+        playersState.set(playerId, {
+          x: startX,
+          y: 0,
+          z: startZ,
+          rotY: 0,
+          vel: 0,
+          speedMul: 1,
+          shield: false,
+          effects: { speedUntil: 0, shieldUntil: 0, magnetUntil: 0, freezeUntil: 0 },
+          boatType: 'speed',
+        });
+        playersInput.set(playerId, { throttle: 0, steer: 0, brake: false, lastSeq: -1 });
+      }
+    }
     broadcastRoomState(room, 'RUNNING', { startPosition: { x: startX, y: 0, z: startZ } });
 
     if (rs.timerId) clearInterval(rs.timerId);
@@ -1632,7 +1708,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           for (let i = 0; i < Math.max(1, numPlayersNow); i++) {
             const obj = itemPool.getObject();
             if (obj) {
-              reinitItem(obj, 'trash');
+              reinitItemForRoom(obj, 'trash', GLOBAL_ROOM);
               obj.room = GLOBAL_ROOM;
               io.to(GLOBAL_ROOM).emit('item.new', { id: obj.id, data: obj });
               ENABLE_COHERENCE_BACKEND ? await writeCache(mapTrash, obj.id, obj) : (mapTrash[obj.id] = obj);
@@ -1643,7 +1719,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           for (let i = 0; i < Math.max(2, numPlayersNow * 2); i++) {
             const obj = itemPool.getObject();
             if (obj) {
-              reinitItem(obj, 'turtle');
+              reinitItemForRoom(obj, 'turtle', GLOBAL_ROOM);
               obj.room = GLOBAL_ROOM;
               io.to(GLOBAL_ROOM).emit('item.new', { id: obj.id, data: obj });
               ENABLE_COHERENCE_BACKEND ? await writeCache(mapMarineLife, obj.id, obj) : (mapMarineLife[obj.id] = obj);
@@ -1657,7 +1733,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
             const obj = itemPool.getObject();
             if (obj) {
               const ptype = powerTypes[i % powerTypes.length];
-              reinitItem(obj, ptype);
+              reinitItemForRoom(obj, ptype, GLOBAL_ROOM);
               obj.room = GLOBAL_ROOM;
               io.to(GLOBAL_ROOM).emit('item.new', { id: obj.id, data: obj });
               ENABLE_COHERENCE_BACKEND ? await writeCache(mapPowerUps, obj.id, obj) : (mapPowerUps[obj.id] = obj);
@@ -2002,7 +2078,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       for (let i = 0; i < spawnTrash; i++) {
         const obj = itemPool.getObject();
         if (obj) {
-          reinitItem(obj, 'trash');
+          reinitItemForRoom(obj, 'trash', room);
           obj.room = room;
           io.to(room).emit('item.new', { id: obj.id, data: obj });
           ENABLE_COHERENCE_BACKEND ? await writeCache(mapTrash, obj.id, obj) : (mapTrash[obj.id] = obj);
@@ -2011,7 +2087,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       for (let i = 0; i < spawnMarine; i++) {
         const obj = itemPool.getObject();
         if (obj) {
-          reinitItem(obj, 'turtle');
+          reinitItemForRoom(obj, 'turtle', room);
           obj.room = room;
           io.to(room).emit('item.new', { id: obj.id, data: obj });
           ENABLE_COHERENCE_BACKEND ? await writeCache(mapMarineLife, obj.id, obj) : (mapMarineLife[obj.id] = obj);
@@ -2047,7 +2123,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         const obj = itemPool.getObject();
         if (obj) {
           const ptype = powerTypes[i % powerTypes.length];
-          reinitItem(obj, ptype);
+          reinitItemForRoom(obj, ptype, room);
           obj.room = room;
           io.to(room).emit("item.new", { id: obj.id, data: obj });
           if (ENABLE_COHERENCE_BACKEND) {

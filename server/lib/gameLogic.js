@@ -175,6 +175,58 @@ export function resolveAuthoritativeBoatTypes(env = {}) {
   };
 }
 
+export const DEFAULT_SPAWN_PLAYER_CLEAR_RADIUS = 4;
+
+function distanceSq2d(a, b) {
+  const dx = Number(a?.x || 0) - Number(b?.x || 0);
+  const dz = Number(a?.z || 0) - Number(b?.z || 0);
+  return dx * dx + dz * dz;
+}
+
+export function chooseSpawnPositionAwayFromPlayers({
+  players = [],
+  coordinateFactory,
+  worldSizeX = 88,
+  worldSizeZ = 22,
+  clearRadius = DEFAULT_SPAWN_PLAYER_CLEAR_RADIUS,
+  attempts = 24,
+} = {}) {
+  const coord = typeof coordinateFactory === "function"
+    ? coordinateFactory
+    : (size) => Math.round((Math.random() - 0.5) * (Number(size || 1) - 1));
+  const activePlayers = (Array.isArray(players) ? players : [])
+    .map((player) => ({
+      x: Number(player?.x),
+      z: Number(player?.z),
+    }))
+    .filter((player) => Number.isFinite(player.x) && Number.isFinite(player.z));
+  const tries = Math.max(1, Number(attempts) || 1);
+  const radius = Math.max(0, Number(clearRadius) || 0);
+  const minDistanceSq = radius * radius;
+  let best = null;
+  let bestDistanceSq = -1;
+
+  for (let i = 0; i < tries; i += 1) {
+    const candidate = {
+      x: coord(worldSizeX),
+      y: 0,
+      z: coord(worldSizeZ),
+    };
+    if (!activePlayers.length || radius <= 0) return candidate;
+    const nearestSq = activePlayers.reduce(
+      (nearest, player) => Math.min(nearest, distanceSq2d(candidate, player)),
+      Number.POSITIVE_INFINITY
+    );
+    if (nearestSq >= minDistanceSq) return candidate;
+    if (nearestSq > bestDistanceSq) {
+      best = candidate;
+      bestDistanceSq = nearestSq;
+    }
+  }
+
+  return best || { x: coord(worldSizeX), y: 0, z: coord(worldSizeZ) };
+}
+
 export const MAX_PLAYER_SESSION_HISTORY = 20;
 
 export function normalizePlayerName(value, fallback = "Player") {
