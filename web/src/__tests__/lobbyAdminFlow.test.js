@@ -83,5 +83,6 @@ describe("presenter-controlled lobby flow", () => {
     expect(webpackDev).toMatch(/historyApiFallback:\s*true/);
     expect(dockerfile).toMatch(/COPY nginx\.conf \/etc\/nginx\/conf\.d\/default\.conf/);
     expect(nginx).toMatch(/try_files \$uri \$uri\/ \/index\.html;/);
+    expect(nginx).toMatch(/Cache-Control "no-store, max-age=0" always/);
   });
 });
