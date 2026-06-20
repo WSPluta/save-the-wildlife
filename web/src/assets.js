@@ -78,10 +78,10 @@ export async function preloadAssets() {
   preloadPromise = (async () => {
     // Load models and textures in parallel, but don't hard-fail gameplay on a single fetch issue.
     const [boatRes, turtleRes, boxRes, waterRes] = await Promise.allSettled([
-      loadGLTF("assets/boat.gltf", gltfLoader),
-      loadGLTF("assets/turtle.gltf", gltfLoader),
-      loadGLTF("assets/box.gltf", gltfLoader),
-      loadTexture("assets/waternormals.jpg", textureLoader),
+      loadGLTF("/assets/boat.gltf", gltfLoader),
+      loadGLTF("/assets/turtle.gltf", gltfLoader),
+      loadGLTF("/assets/box.gltf", gltfLoader),
+      loadTexture("/assets/waternormals.jpg", textureLoader),
     ]);
 
     const boatGLTF = boatRes.status === "fulfilled" ? boatRes.value : null;
@@ -158,8 +158,8 @@ export async function preloadNonCriticalAssets() {
   const manager = new THREE.LoadingManager();
   const textureLoader = new THREE.TextureLoader(manager);
   const tasks = [
-    loadTexture("assets/menu/logo.compressed.png", textureLoader),
-    loadTexture("assets/menu/logoPlusOCI.compressed.png", textureLoader),
+    loadTexture("/assets/menu/logo.compressed.png", textureLoader),
+    loadTexture("/assets/menu/logoPlusOCI.compressed.png", textureLoader),
   ];
   const results = await Promise.allSettled(tasks);
   results.forEach((res) => {

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import {
   clampNum,
@@ -156,14 +157,21 @@ describe("recomputeWorldSize", () => {
 
 describe("resolveCollisionValidateRadius", () => {
   it("defaults to an arcade pickup radius that matches the visible client hitbox", () => {
-    expect(DEFAULT_COLLISION_VALIDATE_RADIUS).toBe(1.6);
-    expect(resolveCollisionValidateRadius()).toBe(1.6);
+    expect(DEFAULT_COLLISION_VALIDATE_RADIUS).toBe(2.1);
+    expect(resolveCollisionValidateRadius()).toBe(2.1);
   });
 
   it("accepts explicit positive overrides and ignores invalid values", () => {
     expect(resolveCollisionValidateRadius("2.25")).toBe(2.25);
-    expect(resolveCollisionValidateRadius("0")).toBe(1.6);
-    expect(resolveCollisionValidateRadius("bad")).toBe(1.6);
+    expect(resolveCollisionValidateRadius("0")).toBe(2.1);
+    expect(resolveCollisionValidateRadius("bad")).toBe(2.1);
+  });
+});
+
+describe("production collision configuration", () => {
+  it("keeps the OKE ws-server pickup radius aligned with the server default", () => {
+    const template = readFileSync("../deploy/k8s/base/ws-server/env_server_template", "utf8");
+    expect(template).toContain(`COLLISION_VALIDATE_RADIUS=${DEFAULT_COLLISION_VALIDATE_RADIUS}`);
   });
 });
 

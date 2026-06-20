@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const script = readFileSync("src/script.js", "utf8");
 const worker = readFileSync("src/commsWorker.js", "utf8");
+const assets = readFileSync("src/assets.js", "utf8");
 
 describe("gameplay polish regressions", () => {
   it("uses browser-safe short uuid generation for fresh players", () => {
@@ -18,6 +19,39 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/function requestAutoStartMatch\(\)/);
     expect(script).toMatch(/type: "admin\.presenter\.start"/);
     expect(script).not.toMatch(/autoStartMatch[\s\S]{0,180}admin\.claim/);
+  });
+
+  it("uses root-relative static assets so nested admin routes do not fetch /admin/assets", () => {
+    expect(assets).toContain('loadGLTF("/assets/boat.gltf"');
+    expect(assets).toContain('loadGLTF("/assets/turtle.gltf"');
+    expect(assets).toContain('loadGLTF("/assets/box.gltf"');
+    expect(assets).toContain('loadTexture("/assets/waternormals.jpg"');
+    expect(assets).toContain('loadTexture("/assets/menu/logo.compressed.png"');
+    expect(script).toContain('audioLoader.loadAsync("/assets/mixkit-motorboat-on-the-sea-1183.m4v")');
+    expect(script).not.toMatch(/["']assets\//);
+  });
+
+  it("keeps deployed bots as data-only participants so load tests do not block gameplay", () => {
+    expect(script).toMatch(/const BOT_RENDER_MODE = "data-only";/);
+    expect(script).toMatch(/function isBotDisplayName\(name\)/);
+    expect(script).toMatch(/function isBotPlayerId\(id\)/);
+    expect(script).toMatch(/function removeRemotePlayerVisual\(id\)/);
+    expect(script).toMatch(/releaseRemoteBoatVisual = returnBoatToPool;/);
+    expect(script).toMatch(/if \(BOT_RENDER_MODE === "data-only" && isBotPlayerId\(key\)\)/);
+    expect(script).toMatch(/if \(BOT_RENDER_MODE === "data-only" && isBotPlayerId\(joinedId\)\)/);
+    expect(script).toMatch(/const infoCount = Object\.keys\(otherPlayersInfo \|\| \{\}\)\.length;/);
+  });
+
+  it("clamps trash and power-up visual scale so bad telemetry cannot become walls", () => {
+    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 0\.34;/);
+    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 0\.74;/);
+    expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.38;/);
+    expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 0\.82;/);
+    expect(script).toMatch(/function clampVisualScale\(size, min, max\)/);
+    expect(script).toMatch(/clampVisualScale\(size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX\)/);
+    expect(script).toMatch(/clampVisualScale\(size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX\)/);
+    expect(script).toMatch(/clampVisualScale\(item\.size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX\)/);
+    expect(script).toMatch(/clampVisualScale\(item\.size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX\)/);
   });
 
   it("keeps item collisions pending until the server accepts or destroys the item", () => {

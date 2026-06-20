@@ -24,8 +24,9 @@ describe("presenter-controlled lobby flow", () => {
     expect(html).toContain('id="btn-admin-start"');
     expect(html).toContain('id="btn-admin-end"');
     expect(html).toContain('id="admin-player-list"');
-    expect(script).toMatch(/path === "\/admin" \|\| path === "\/admin\/ai-learning"/);
+    expect(script).toMatch(/path === "\/admin" \|\| path === "\/admin\/ai-learning" \|\| path === "\/admin\/observability"/);
     expect(script).toMatch(/ADMIN:\s*"ADMIN"/);
+    expect(script).toMatch(/if \(!IS_ADMIN_VIEW && !clientGameStarted\)/);
     expect(styles).toMatch(/body\.phase-admin #hud/);
   });
 
@@ -76,7 +77,9 @@ describe("presenter-controlled lobby flow", () => {
   });
 
   it("serves the SPA for clean /admin URLs in dev and nginx", () => {
+    const webpackCommon = readFileSync("bundler/webpack.common.js", "utf8");
     const webpackDev = readFileSync("bundler/webpack.dev.js", "utf8");
+    expect(webpackCommon).toMatch(/publicPath:\s*['"]\/['"]/);
     expect(webpackDev).toMatch(/historyApiFallback:\s*true/);
     expect(dockerfile).toMatch(/COPY nginx\.conf \/etc\/nginx\/conf\.d\/default\.conf/);
     expect(nginx).toMatch(/try_files \$uri \$uri\/ \/index\.html;/);

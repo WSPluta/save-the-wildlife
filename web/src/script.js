@@ -162,12 +162,18 @@ let clearPowerupInstances = () => {};
 let releaseTrashInstance = () => {};
 let releasePowerupInstance = () => {};
 let createItemMeshForScene = () => null;
+let releaseRemoteBoatVisual = () => {};
 let scoreElementRef = null;
 let applyPowerUpEffect = () => {};
 let triggerReplayMomentCallback = () => {};
 const pendingItemCollisions = new Map();
 const scoredItemCollisions = new Set();
 const COLLISION_PENDING_TIMEOUT_MS = 1500;
+const TRASH_VISUAL_SCALE_MIN = 0.34;
+const TRASH_VISUAL_SCALE_MAX = 0.74;
+const POWERUP_VISUAL_SCALE_MIN = 0.38;
+const POWERUP_VISUAL_SCALE_MAX = 0.82;
+const BOT_RENDER_MODE = "data-only";
 const trashTmpMatrix = new THREE.Matrix4();
 const trashTmpPos = new THREE.Vector3();
 const trashTmpScale = new THREE.Vector3();
@@ -248,6 +254,36 @@ function getFollowCameraComposition() {
   return isMobileGameViewport()
     ? FOLLOW_CAMERA_COMPOSITION.mobile
     : FOLLOW_CAMERA_COMPOSITION.desktop;
+}
+
+function clampVisualScale(size, min, max) {
+  const value = Number(size);
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
+
+function isBotDisplayName(name) {
+  return String(name || "").trim().toLowerCase().startsWith("bot ");
+}
+
+function isBotPlayerId(id) {
+  const playerId = String(id || "");
+  const info = otherPlayersInfo && otherPlayersInfo[playerId];
+  return playerId.toLowerCase().startsWith("bot-") || isBotDisplayName(info && info.name);
+}
+
+function removeRemotePlayerVisual(id) {
+  if (!id) return;
+  if (otherPlayersMeshes[id]) {
+    releaseRemoteBoatVisual(otherPlayersMeshes[id]);
+    delete otherPlayersMeshes[id];
+  }
+  if (trails[id]) {
+    scene.remove(trails[id].line);
+    if (trails[id].line && trails[id].line.geometry) trails[id].line.geometry.dispose();
+    if (trails[id].line && trails[id].line.material) trails[id].line.material.dispose();
+    delete trails[id];
+  }
 }
 
 function applyFollowCamera(root, yaw) {
@@ -2239,7 +2275,7 @@ async function init() {
     if (!trashInstances.free.length) return false;
     const idx = trashInstances.free.pop();
     trashInstances.map.set(itemId, idx);
-    const s = Number(size) || 1;
+    const s = clampVisualScale(size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX);
     trashTmpScale.set(s, s, s);
     const waterY = typeof position?.y === "number" ? position.y : 0;
     trashTmpPos.set(position.x, waterY + 0.2, position.z);
@@ -2289,7 +2325,7 @@ async function init() {
     if (!powerupInstances.free.length) return false;
     const idx = powerupInstances.free.pop();
     powerupInstances.map.set(itemId, { idx, rot: Math.random() * Math.PI * 2 });
-    const s = Number(size) || 1;
+    const s = clampVisualScale(size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX);
     powerupTmpScale.set(s, s, s);
     const waterY = typeof position?.y === "number" ? position.y : 0;
     powerupTmpPos.set(position.x, waterY + 0.2, position.z);
@@ -2427,7 +2463,7 @@ async function init() {
   // Audio (Firefox-safe: gracefully handle autoplay/codec failures)
   try {
     const audioLoader = new THREE.AudioLoader();
-    sounds = await audioLoader.loadAsync("assets/mixkit-motorboat-on-the-sea-1183.m4v");
+    sounds = await audioLoader.loadAsync("/assets/mixkit-motorboat-on-the-sea-1183.m4v");
   } catch (e) {
     console.warn("Audio load failed; continuing without engine sound", e);
     sounds = null;
@@ -2497,7 +2533,7 @@ async function init() {
 
 
 
-  if (!clientGameStarted) {
+  if (!IS_ADMIN_VIEW && !clientGameStarted) {
     const fallbackDuration = gameDuration || 180;
     startGame(
       fallbackDuration,
@@ -2690,10 +2726,12 @@ async function init() {
       case "player.trace.all":
         for (const [key, traceData] of Object.entries(body)) {
           if (key === yourId) {
-            if (otherPlayersMeshes[key]) {
-              returnBoatToPool(otherPlayersMeshes[key]);
-              delete otherPlayersMeshes[key];
-            }
+            removeRemotePlayerVisual(key);
+            delete otherPlayers[key];
+            continue;
+          }
+          if (BOT_RENDER_MODE === "data-only" && isBotPlayerId(key)) {
+            removeRemotePlayerVisual(key);
             delete otherPlayers[key];
             continue;
           }
@@ -2711,6 +2749,12 @@ async function init() {
             // Ensure name map is updated so subsequent mesh creation shows correct label
             if (joinedName) {
               otherPlayersInfo[joinedId] = { name: joinedName };
+            }
+            if (BOT_RENDER_MODE === "data-only" && isBotPlayerId(joinedId)) {
+              removeRemotePlayerVisual(joinedId);
+              delete otherPlayers[joinedId];
+              updatePlayersHud();
+              break;
             }
             // Create mesh if not present; will pick name from otherPlayersInfo
             if (joinedId !== yourId && !otherPlayersMeshes[joinedId]) {
@@ -2735,14 +2779,8 @@ async function init() {
         {
           const playerId = body;
           if (playerId !== yourId) {
-            returnBoatToPool(otherPlayersMeshes[playerId]);
-            delete otherPlayersMeshes[playerId];
+            removeRemotePlayerVisual(playerId);
             delete otherPlayers[playerId];
-            // Clean up that player's trail
-            if (trails[playerId]) {
-              scene.remove(trails[playerId].line);
-              delete trails[playerId];
-            }
           }
           updatePlayersHud();
         }
@@ -2751,7 +2789,12 @@ async function init() {
         otherPlayersInfo = body || {};
         try {
           Object.keys(otherPlayersInfo || {}).forEach((id) => {
-            if (otherPlayersMeshes[id]) refreshNameTagForPlayer(id);
+            if (BOT_RENDER_MODE === "data-only" && isBotPlayerId(id)) {
+              removeRemotePlayerVisual(id);
+              delete otherPlayers[id];
+            } else if (otherPlayersMeshes[id]) {
+              refreshNameTagForPlayer(id);
+            }
           });
         } catch (_) {}
         updatePlayersHud();
@@ -3121,6 +3164,7 @@ async function init() {
     group.rotation.set(0, 0, 0);
     while (group.children.length) group.remove(group.children[0]);
   }
+  releaseRemoteBoatVisual = returnBoatToPool;
 
   function serializableUserData(userData) {
     const safe = {};
@@ -3222,7 +3266,9 @@ async function init() {
       }
     }
 
-    const s = Number(size) || 1;
+    const s = isPowerUp(itemType)
+      ? clampVisualScale(size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX)
+      : clampVisualScale(size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX);
     itemMesh.scale.set(s, s, s);
     itemMesh.itemId = itemId;
     itemMesh.itemType = itemType;
@@ -3559,7 +3605,9 @@ function updateFrozenIndicators() {
 function updatePlayersHud() {
   if (!hudPlayersEl) return;
   try {
-    const count = 1 + Object.keys(otherPlayersMeshes || {}).length;
+    const infoCount = Object.keys(otherPlayersInfo || {}).length;
+    const visibleCount = 1 + Object.keys(otherPlayersMeshes || {}).length;
+    const count = Math.max(visibleCount, infoCount || 0);
     hudPlayersEl.innerHTML = "Players: " + count;
     optimizePoolSizesForPlayers(count);
   } catch (_) {}
@@ -4197,7 +4245,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         const item = items[itemId];
         if (!item) continue;
         entry.rot += 0.6 * dt;
-        const s = Number(item.size) || 1;
+        const s = clampVisualScale(item.size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX);
         powerupTmpScale.set(s, s, s);
         const ix = Number(item.position?.x) || 0;
         const iz = Number(item.position?.z) || 0;
@@ -4215,7 +4263,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       for (const [itemId, idx] of trashInstances.map.entries()) {
         const item = items[itemId];
         if (!item) continue;
-        const s = Number(item.size) || 1;
+        const s = clampVisualScale(item.size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX);
         const ix = Number(item.position?.x) || 0;
         const iz = Number(item.position?.z) || 0;
         const waterY = typeof item.position?.y === "number" ? item.position.y : 0;
@@ -4511,7 +4559,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       if (!trashInstances || !trashInstances.map.has(key)) continue;
       if (pendingItemCollisions.has(key)) continue;
 
-      const s = Number(item.size) || 1;
+      const s = clampVisualScale(item.size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX);
       const px = Number(item.position && item.position.x) || 0;
       const pz = Number(item.position && item.position.z) || 0;
       const py = (typeof item.position?.y === "number" ? item.position.y : 0) + 0.08;
@@ -4548,7 +4596,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       if (!powerupInstances || !powerupInstances.map.has(key)) continue;
       if (pendingItemCollisions.has(key)) continue;
 
-      const s = Number(item.size) || 1;
+      const s = clampVisualScale(item.size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX);
       const px = Number(item.position && item.position.x) || 0;
       const pz = Number(item.position && item.position.z) || 0;
       const py = (typeof item.position?.y === "number" ? item.position.y : 0) + 0.08;

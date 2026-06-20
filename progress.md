@@ -218,6 +218,26 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - `node --check` passed for `server/server.js`, `web/src/script.js`, and `web/src/commsWorker.js`.
     - Scoped `git diff --check` passed for touched tracked files; new-file no-index checks reported no whitespace diagnostics.
 - Deployed gameplay polish verification on 2026-06-11:
+- Live incident fix on 2026-06-20:
+  - Reproduced the failure from user screenshots: nested `/admin/observability` and `/admin/ai-learning` routes loaded bare HTML because built assets used relative paths; gameplay view showed huge blocker geometry and trash pickup felt broken in deployed OKE.
+  - Fixed production web asset routing by setting webpack `output.publicPath = "/"` and switching runtime static assets/audio to root-relative `/assets/...` URLs.
+  - Prevented presenter admin routes from auto-starting the WebGL gameplay scene; admin now stays a control/observability/model panel and avoids WebGL overlay failures.
+  - Kept deployed bots as telemetry/data-only clients in the game renderer so load-test bots do not render full boat meshes or trails that block human gameplay.
+  - Added visual scale clamps for trash and powerups across instanced rendering, fallback meshes, per-frame updates, and client-side collision boxes.
+  - Raised boat visual waterline defaults to stop the hull reading as sunk while keeping the feel layer below the water surface.
+  - Aligned server pickup validation with the visible arcade hitbox by setting `DEFAULT_COLLISION_VALIDATE_RADIUS=2.1` and `COLLISION_VALIDATE_RADIUS=2.1` in the ws-server deployment template.
+  - Added regression coverage for admin asset routing, root-relative assets, data-only bots, item scale clamps, and the prod collision-radius override.
+  - Validation passed:
+    - `node --check web/src/script.js`
+    - `node --check server/server.js`
+    - `npm --prefix web run test:unit` (9 files, 47 tests)
+    - `npm --prefix server run test:unit` (7 files, 54 tests)
+    - `npm --prefix web run build` (only existing asset-size warnings)
+    - `kubectl kustomize deploy/k8s/base/ws-server` renders `COLLISION_VALIDATE_RADIUS=2.1`
+    - Local Playwright smokes:
+      - `output/admin-route-incident/result.json` confirms `/admin/observability` and `/admin/ai-learning` render styled panels with root CSS/JS and no errors.
+      - `output/collect-trash-incident-2/result.json` confirms trash collection works (`score 0 -> 1`) with no browser errors and no bot blockers.
+      - `output/mobile-polish-smoke/result.json` confirms mobile reaches RUNNING with joystick visible.
   - Confirmed OCI DevOps build/deploy had landed `web@0.0.14` and `server@0.0.16` from commit `f282b27`.
   - Ran deployed mobile smoke against `http://130.162.174.167/`; result reached `RUNNING`, joystick was visible, no browser errors were captured, and item counts stayed healthy (`itemsVisible: 65`, `trashInstances: 24`, `powerupInstances: 4`).
   - Visual screenshot at `output/mobile-polish-smoke/mobile-running.png` shows rendered mobile gameplay with HUD, joystick, turtles, and trash.
