@@ -33,7 +33,7 @@ describe("gameplay polish regressions", () => {
 
   it("renders demo bots as bounded visible participants for gameplay and commentary proof", () => {
     expect(script).toMatch(/const BOT_RENDER_MODE = "demo-visible";/);
-    expect(script).toMatch(/const BOT_VISUAL_SCALE = 0\.62;/);
+    expect(script).toMatch(/const BOT_VISUAL_SCALE = 0\.28;/);
     expect(script).toMatch(/const BOT_VISUAL_COLOR = 0x15c7b8;/);
     expect(script).toMatch(/function isBotDisplayName\(name\)/);
     expect(script).toMatch(/function isBotPlayerId\(id\)/);
@@ -69,10 +69,10 @@ describe("gameplay polish regressions", () => {
   it("clamps trash and power-up visual scale so bad telemetry cannot become walls", () => {
     expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 0\.34;/);
     expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 0\.74;/);
-    expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.045;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_WIDTH = 0\.52;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_HEIGHT = 0\.12;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.34;/);
+    expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.028;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_WIDTH = 0\.34;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_HEIGHT = 0\.07;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.22;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.38;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 0\.82;/);
     expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 2\.6;/);

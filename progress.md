@@ -586,3 +586,5 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - Public mobile/desktop game smoke then passed with `verdict=ready`; receipt at `.codex_tmp/conference-game-smoke-live-bc0610f-threshold/latest.md`.
 
 - 2026-06-20 live incident follow-up: reproduced that trash collection mechanics pass on prod, but visual smoke showed full-cube trash instances reading as orange wall geometry near bots. Patched `web/src/script.js` so instanced trash renders as low floating debris using capped footprint constants and `TRASH_FLOAT_Y`, without changing server item size, pickup radius, scoring, or telemetry. Added regression assertions in `web/src/__tests__/gameplayPolish.test.js`. Validation/deploy still pending.
+
+- 2026-06-20 post-deploy visual tightening: live `web:0.0.27` proved mobile, trash pickup, admin routes, and model readiness, but desktop smoke timed out around the GO/RUNNING transition and screenshot still showed overly chunky close-range debris/bot visuals. Tightened `BOT_VISUAL_SCALE` to 0.28 and reduced trash debris footprint to avoid wall-like slabs. Bumped web to 0.0.28; validation/deploy pending.
