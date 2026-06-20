@@ -174,6 +174,10 @@ const scoredItemCollisions = new Set();
 const COLLISION_PENDING_TIMEOUT_MS = 1500;
 const TRASH_VISUAL_SCALE_MIN = 0.34;
 const TRASH_VISUAL_SCALE_MAX = 0.74;
+const TRASH_FLOAT_Y = 0.045;
+const TRASH_GEOMETRY_WIDTH = 0.52;
+const TRASH_GEOMETRY_HEIGHT = 0.12;
+const TRASH_GEOMETRY_DEPTH = 0.34;
 const POWERUP_VISUAL_SCALE_MIN = 0.38;
 const POWERUP_VISUAL_SCALE_MAX = 0.82;
 const TRASH_ARCADE_PICKUP_RADIUS = 2.6;
@@ -2236,7 +2240,7 @@ async function init() {
   // Materials and geometries for pooled items
   const geometries = [
     new THREE.SphereGeometry(), // wildlife placeholder
-    new THREE.BoxGeometry(), // trash placeholder
+    new THREE.BoxGeometry(TRASH_GEOMETRY_WIDTH, TRASH_GEOMETRY_HEIGHT, TRASH_GEOMETRY_DEPTH), // floating trash debris
     new THREE.TetrahedronGeometry(0.75, 2), // power-up placeholder
   ];
 
@@ -2305,7 +2309,7 @@ async function init() {
     const s = clampVisualScale(size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX);
     trashTmpScale.set(s, s, s);
     const waterY = typeof position?.y === "number" ? position.y : 0;
-    trashTmpPos.set(position.x, waterY + 0.2, position.z);
+    trashTmpPos.set(position.x, waterY + TRASH_FLOAT_Y, position.z);
     trashTmpMatrix.identity();
     trashTmpMatrix.compose(trashTmpPos, new THREE.Quaternion(), trashTmpScale);
     trashInstances.mesh.setMatrixAt(idx, trashTmpMatrix);
@@ -4391,7 +4395,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         const iz = Number(item.position?.z) || 0;
         const waterY = typeof item.position?.y === "number" ? item.position.y : 0;
         trashTmpScale.set(s, s, s);
-        trashTmpPos.set(ix, waterY + 0.2, iz);
+        trashTmpPos.set(ix, waterY + TRASH_FLOAT_Y, iz);
         trashTmpMatrix.identity();
         trashTmpMatrix.compose(trashTmpPos, new THREE.Quaternion(), trashTmpScale);
         trashInstances.mesh.setMatrixAt(idx, trashTmpMatrix);

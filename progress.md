@@ -584,3 +584,5 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Follow-up smoke-harness correction:
     - Updated `scripts/conference-game-smoke.mjs` waterline thresholds to match the non-sinking hotfix intent.
     - Public mobile/desktop game smoke then passed with `verdict=ready`; receipt at `.codex_tmp/conference-game-smoke-live-bc0610f-threshold/latest.md`.
+
+- 2026-06-20 live incident follow-up: reproduced that trash collection mechanics pass on prod, but visual smoke showed full-cube trash instances reading as orange wall geometry near bots. Patched `web/src/script.js` so instanced trash renders as low floating debris using capped footprint constants and `TRASH_FLOAT_Y`, without changing server item size, pickup radius, scoring, or telemetry. Added regression assertions in `web/src/__tests__/gameplayPolish.test.js`. Validation/deploy still pending.
