@@ -23,6 +23,11 @@ kind: Deployment
 metadata:
   name: private-agent-factory
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   template:
     spec:
       containers:
