@@ -101,3 +101,28 @@ npx zx scripts/build.mjs model-ai-training-gpu
 ```
 
 Push the resulting image to OCIR and set `model_ai_training_image_uri` before enabling the Terraform `model_ai_enabled` path.
+
+For the OKE-hosted adapters, pass the private Ollama URL through the deploy
+pipeline environment before running Kustomize:
+
+```bash
+MODEL_AI_BASE_UPSTREAM_URL=http://<private-a10-ollama-ip>:11434/api/chat
+MODEL_AI_FT_UPSTREAM_URL=http://<private-a10-ollama-ip>:11434/api/chat
+MODEL_AI_BASE_UPSTREAM_MODEL_ID=llama3.1:8b
+MODEL_AI_FT_UPSTREAM_MODEL_ID=llama3.1:8b-stwl
+```
+
+When those URLs are blank, the adapters intentionally stay in
+`behavior-adapter` mode.
+
+For the private A10 Ollama host, set `model_ollama_adapter_uri` to the adapter
+prefix produced by training:
+
+```hcl
+model_ollama_enabled     = true
+model_ollama_adapter_uri = "oci://<bucket>@<namespace>/adapters/stwl-commentary-lora-v1/"
+```
+
+The cloud-init bootstrap downloads the adapter with instance principal and
+adds it to the generated Ollama Modelfile with an `ADAPTER` line before
+creating `model_ollama_custom_model_id`.

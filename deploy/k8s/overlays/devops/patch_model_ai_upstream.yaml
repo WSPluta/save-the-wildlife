@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stwl-base-commentary
+spec:
+  template:
+    spec:
+      containers:
+        - name: model-ai-inference
+          env:
+            - name: STWL_UPSTREAM_URL
+              value: ""
+            - name: STWL_UPSTREAM_FORMAT
+              value: "ollama"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stwl-ft-commentary
+spec:
+  template:
+    spec:
+      containers:
+        - name: model-ai-inference
+          env:
+            - name: STWL_UPSTREAM_URL
+              value: ""
+            - name: STWL_UPSTREAM_FORMAT
+              value: "ollama"

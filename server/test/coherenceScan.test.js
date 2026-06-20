@@ -84,6 +84,36 @@ describe("Coherence entry scan fallback", () => {
     expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 
+  it("uses the last successful Coherence snapshot before falling back to local memory", async () => {
+    let currentTime = 0;
+    const logger = { warn: vi.fn() };
+    const cache = {
+      entries: vi.fn(),
+    };
+    cache.entries.mockImplementationOnce(async function* entries() {
+      yield { key: "shared", value: { score: 7 } };
+    });
+    cache.entries.mockImplementation(async function* entries() {
+      throw new Error("coherence deadline");
+    });
+    const reader = createCoherenceEntryReader({
+      timeoutMs: 50,
+      backoffMs: 5000,
+      now: () => currentTime,
+      logger,
+    });
+
+    await expect(reader.readEntries(cache, { fallback: () => ({ local: true }), label: "trash" }))
+      .resolves.toEqual({ shared: { score: 7 } });
+    await expect(reader.readEntries(cache, { fallback: () => ({ local: true }), label: "trash" }))
+      .resolves.toEqual({ shared: { score: 7 } });
+    await expect(reader.readEntries(cache, { fallback: () => ({ local: "backoff" }), label: "trash" }))
+      .resolves.toEqual({ shared: { score: 7 } });
+
+    expect(cache.entries).toHaveBeenCalledTimes(2);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+
   it("shares one slow in-flight scan across concurrent readers", async () => {
     vi.useFakeTimers();
     const logger = { warn: vi.fn() };

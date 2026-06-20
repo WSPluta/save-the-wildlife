@@ -292,11 +292,11 @@ async function devopsTFvars() {
   const ociBaseModelEndpointUrl = process.env.OCI_BASE_MODEL_ENDPOINT_URL || modelAiBaseEndpointUrl || "";
   const ociFtModelEndpointUrl = process.env.OCI_FT_MODEL_ENDPOINT_URL || modelAiFtEndpointUrl || "";
   const ociModelEndpointAuthSecretId = process.env.OCI_MODEL_ENDPOINT_AUTH_SECRET_ID || modelEndpointAuthSecretId || "";
-  const ociModelEndpointTimeoutMs = process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "8000";
+  const ociModelEndpointTimeoutMs = process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "15000";
   const ociModelEndpointVerifyTls = process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true";
   const pafTracePersist = process.env.PAF_TRACE_PERSIST || "true";
   const pafEvalEnabled = process.env.PAF_EVAL_ENABLED || "true";
-  const pafModelFastPathEnabled = process.env.PAF_MODEL_FAST_PATH_ENABLED || "true";
+  const pafModelFastPathEnabled = process.env.PAF_MODEL_FAST_PATH_ENABLED || "false";
   const pafEvalRubricVersion = process.env.PAF_EVAL_RUBRIC_VERSION || "stwl-commentary-v1";
   const pafTrainingCaptureEnabled = process.env.PAF_TRAINING_CAPTURE_ENABLED || "true";
 

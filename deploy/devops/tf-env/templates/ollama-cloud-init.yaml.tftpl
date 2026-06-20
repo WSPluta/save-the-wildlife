@@ -1,0 +1,95 @@
+#cloud-config
+package_update: true
+package_upgrade: false
+
+write_files:
+  - path: /opt/stwl-ollama/Modelfile.base
+    permissions: "0644"
+    owner: root:root
+    content: |
+      FROM ${base_model}
+      SYSTEM """
+      You are the Save the Wildlife commentary model. Facts, changing game state,
+      coordinates, evidence references, traces, and evals stay in Oracle AI Database.
+      Learn and express behavior only: concise live commentary, evidence discipline,
+      calibrated confidence, and safe conference-stage tone. Never invent events.
+      """
+      PARAMETER temperature 0.2
+      PARAMETER num_ctx 4096
+  - path: /etc/systemd/system/stwl-ollama-bootstrap.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Bootstrap Save the Wildlife Ollama model
+      After=network-online.target ollama.service
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/bin/stwl-ollama-bootstrap.sh
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /usr/local/bin/stwl-ollama-bootstrap.sh
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      export OLLAMA_HOST="127.0.0.1:${port}"
+      adapter_uri="${adapter_uri}"
+      object_namespace="${object_namespace}"
+
+      download_adapter() {
+        if [ -z "$adapter_uri" ]; then
+          return 0
+        fi
+        if ! command -v oci >/dev/null 2>&1; then
+          python3 -m pip install --upgrade oci-cli
+        fi
+        local clean="$${adapter_uri#oci://}"
+        local bucket_ns="$${clean%%/*}"
+        local prefix="$${clean#*/}"
+        local bucket="$bucket_ns"
+        local namespace="$object_namespace"
+        if [[ "$bucket_ns" == *"@"* ]]; then
+          bucket="$${bucket_ns%@*}"
+          namespace="$${bucket_ns#*@}"
+        fi
+        if [ -z "$bucket" ] || [ -z "$prefix" ] || [ "$prefix" = "$clean" ]; then
+          echo "Invalid model_ollama_adapter_uri: $adapter_uri" >&2
+          return 1
+        fi
+        mkdir -p /opt/stwl-ollama/adapter
+        oci --auth instance_principal os object bulk-download \
+          --namespace-name "$namespace" \
+          --bucket-name "$bucket" \
+          --prefix "$prefix" \
+          --download-dir /opt/stwl-ollama/adapter \
+          --overwrite
+      }
+
+      for attempt in $(seq 1 90); do
+        if curl -fsS "http://$${OLLAMA_HOST}/api/tags" >/dev/null; then
+          break
+        fi
+        sleep 5
+      done
+      ollama pull "${base_model}"
+      cp /opt/stwl-ollama/Modelfile.base /opt/stwl-ollama/Modelfile
+      download_adapter
+      adapter_file="$(find /opt/stwl-ollama/adapter -name 'adapter_model.safetensors' -print -quit 2>/dev/null || true)"
+      if [ -n "$adapter_file" ]; then
+        printf '\nADAPTER %s\n' "$(dirname "$adapter_file")" >> /opt/stwl-ollama/Modelfile
+      fi
+      ollama create "${custom_model}" -f /opt/stwl-ollama/Modelfile
+      date --iso-8601=seconds > /opt/stwl-ollama/ready.txt
+
+runcmd:
+  - [ bash, -lc, "set -euxo pipefail; dnf install -y curl firewalld python3 python3-pip || true" ]
+  - [ bash, -lc, "systemctl enable --now firewalld || true; firewall-cmd --add-port=${port}/tcp --permanent || true; firewall-cmd --reload || true" ]
+  - [ bash, -lc, "curl -fsSL https://ollama.com/install.sh | sh" ]
+  - [ bash, -lc, "mkdir -p /etc/systemd/system/ollama.service.d; printf '%s\n' '[Service]' 'Environment=\"OLLAMA_HOST=0.0.0.0:${port}\"' 'Environment=\"OLLAMA_KEEP_ALIVE=24h\"' > /etc/systemd/system/ollama.service.d/override.conf" ]
+  - [ bash, -lc, "systemctl daemon-reload; systemctl enable --now ollama; systemctl enable --now stwl-ollama-bootstrap.service" ]

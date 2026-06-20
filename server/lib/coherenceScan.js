@@ -27,6 +27,14 @@ export function createCoherenceEntryReader(options = {}) {
   const now = typeof options.now === "function" ? options.now : () => Date.now();
   const logger = options.logger;
   const states = new WeakMap();
+  const lastResults = new WeakMap();
+
+  function fallbackFor(cache, fallback) {
+    if (cache && lastResults.has(cache)) {
+      return lastResults.get(cache);
+    }
+    return fallbackValue(fallback);
+  }
 
   function startScan(cache, label) {
     let timeoutId;
@@ -46,6 +54,7 @@ export function createCoherenceEntryReader(options = {}) {
               }),
             ])
           : await scanPromise;
+        lastResults.set(cache, result);
         states.delete(cache);
         return { ok: true, result };
       } catch (error) {
@@ -83,21 +92,24 @@ export function createCoherenceEntryReader(options = {}) {
       const state = states.get(cache);
       const current = now();
       if (state && state.retryAfter > current) {
-        return fallbackValue(fallback);
+        return fallbackFor(cache, fallback);
       }
       if (state?.inFlight) {
         const outcome = await state.inFlight;
-        return outcome.ok ? outcome.result : fallbackValue(fallback);
+        return outcome.ok ? outcome.result : fallbackFor(cache, fallback);
       }
 
       const inFlight = startScan(cache, label);
       states.set(cache, { retryAfter: 0, inFlight });
       const outcome = await inFlight;
-      return outcome.ok ? outcome.result : fallbackValue(fallback);
+      return outcome.ok ? outcome.result : fallbackFor(cache, fallback);
     },
 
     reset(cache) {
-      if (cache) states.delete(cache);
+      if (cache) {
+        states.delete(cache);
+        lastResults.delete(cache);
+      }
     },
   };
 }

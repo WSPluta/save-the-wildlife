@@ -14,6 +14,7 @@ resources:
 patchesStrategicMerge:
   - "patch_server_replicas.yaml"
   - "patch_load_resources.yaml"
+  - "patch_model_ai_upstream.yaml"
 
 images:
 - name: ws-server

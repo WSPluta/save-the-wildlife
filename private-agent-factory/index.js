@@ -30,6 +30,7 @@ const REPLAY_CLIPS_TABLE = safeIdentifier(process.env.REPLAY_CLIPS_TABLE || "STW
 const AGENT_MEMORIES_TABLE = safeIdentifier(process.env.AGENT_MEMORIES_TABLE || "STWL_AGENT_MEMORIES");
 const ORACLE_CONFIG_DIR = process.env.ORACLE_CONFIG_DIR || process.env.TNS_ADMIN || (existsSync("/wallet") ? "/wallet" : "");
 const profanityPattern = /\b(fuck|shit|bitch|asshole|bastard|dick|cunt)\b/i;
+const commentaryMetaPattern = /\b(oracle|database|sql|model|models|telemetry|evidence|prediction|predictions|agent|select ai|genai|llm)\b/i;
 const DEFAULT_CANVAS_TIMEOUT_MS = 8000;
 const DEFAULT_COMMENTARY_DEADLINE_MS = 9000;
 const DEFAULT_CANVAS_RETURN_RESERVE_MS = 1000;
@@ -128,7 +129,7 @@ function modelRouterConfig() {
     routeMode: ["off", "primary", "shadow"].includes(routeMode) ? routeMode : "shadow",
     primaryProvider: textValue(process.env.PAF_PRIMARY_MODEL_PROVIDER || "oci-base"),
     candidateProvider: textValue(process.env.PAF_CANDIDATE_MODEL_PROVIDER || "oci-fine-tuned"),
-    timeoutMs: Math.max(500, Math.min(60_000, numberValue(process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || 8000, 8000))),
+    timeoutMs: Math.max(500, Math.min(60_000, numberValue(process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || 15000, 15000))),
     authSecret: textValue(process.env.OCI_MODEL_ENDPOINT_AUTH_SECRET),
     verifyTls: !["0", "false", "no", "off"].includes(verifyTlsValue),
     tracePersist: boolEnv("PAF_TRACE_PERSIST", true),
@@ -233,6 +234,7 @@ function historyPhrase(summary) {
 
 function enforceCommentary(value, maxChars = COMMENTARY_MAX_CHARS) {
   let text = textValue(value, "Clean run. SQL telemetry had the final word.");
+  text = text.replace(/^["“”]+|["“”]+$/g, "").trim();
   if (profanityPattern.test(text)) {
     text = "Strong run. The highlight stays conference-safe.";
   }
@@ -660,13 +662,15 @@ function scoreTextAgainstEvidence(text, summary = {}, maxChars = COMMENTARY_MAX_
   const mentionsPowerup = /powerup|shield|magnet|freeze|boost/.test(normalized);
   const mentionsFreeze = /frozen|freeze/.test(normalized);
   const mentionsTrail = /trail|cross/.test(normalized);
+  const mentionsWin = /\b(win|wins|won|victory|champion)\b/.test(normalized);
   const unsupportedFreeze = mentionsFreeze && !summary.freezes && !powerups.includes("freeze");
   const unsupportedPowerup = mentionsPowerup && powerups.length === 0 && !summary.freezes;
   const unsupportedTrail = mentionsTrail && !summary.trail_crosses;
+  const unsupportedOutcome = mentionsWin;
   const tokenCount = estimateTokens(text);
   return {
     uses_retrieved_evidence: Boolean(mentionsScore || mentionsPlayer || (summary.freezes && mentionsFreeze) || (summary.trail_crosses && mentionsTrail) || (powerups.length && mentionsPowerup)),
-    no_hallucinated_game_facts: !(unsupportedFreeze || unsupportedPowerup || unsupportedTrail),
+    no_hallucinated_game_facts: !(unsupportedFreeze || unsupportedPowerup || unsupportedTrail || unsupportedOutcome),
     unique_commentary: Boolean(normalized && normalized !== normalizeSummary({}).player_name.toLowerCase()),
     commentary_quality: Boolean(text && text.length >= 24 && text.length <= Math.max(40, Math.min(200, maxChars))),
     confidence_calibrated: !/\b(definitely|guaranteed|certainly|undeniably)\b/i.test(text || ""),
@@ -674,6 +678,32 @@ function scoreTextAgainstEvidence(text, summary = {}, maxChars = COMMENTARY_MAX_
     safe_for_stage: !profanityPattern.test(text || ""),
     token_count: tokenCount,
   };
+}
+
+function modelOutputGate(output, summary = {}, maxChars = COMMENTARY_MAX_CHARS) {
+  if (!output?.ok || !output.text) {
+    return { ok: false, reason: "missing_model_output", scores: null, meta_leak: false };
+  }
+  const scores = scoreTextAgainstEvidence(output.text, summary, maxChars);
+  const metaLeak = commentaryMetaPattern.test(output.text || "");
+  const ok = Boolean(
+    scores.uses_retrieved_evidence &&
+    scores.no_hallucinated_game_facts &&
+    scores.commentary_quality &&
+    scores.confidence_calibrated &&
+    scores.safe_for_stage &&
+    !metaLeak
+  );
+  let reason = "accepted";
+  if (!ok) {
+    if (metaLeak) reason = "meta_commentary";
+    else if (!scores.uses_retrieved_evidence) reason = "not_evidence_anchored";
+    else if (!scores.no_hallucinated_game_facts) reason = "unsupported_game_fact";
+    else if (!scores.commentary_quality) reason = "quality_gate";
+    else if (!scores.confidence_calibrated) reason = "overconfident";
+    else if (!scores.safe_for_stage) reason = "safety_gate";
+  }
+  return { ok, reason, scores, meta_leak: metaLeak };
 }
 
 function booleanScore(scores = {}) {
@@ -2222,10 +2252,38 @@ function buildLegacyEnvelope(summary, context = {}, { source = "request-summary"
   };
 }
 
-function modelRouteWarnings(modelRoute = {}) {
+function modelRouteWarnings(modelRoute = {}, { includeCandidate = true } = {}) {
   return [modelRoute.primary, modelRoute.candidate]
+    .filter((item) => includeCandidate || item?.provider !== modelRoute.candidate_provider)
     .filter((item) => item && item.ok === false && !item.skipped)
     .map((item) => `${item.provider}:${item.error || "failed"}`);
+}
+
+function candidateModelRouteWarnings(modelRoute = {}) {
+  const candidateProvider = modelRoute.candidate_provider;
+  if (!candidateProvider) return [];
+  return [modelRoute.candidate]
+    .filter((item) => item?.provider === candidateProvider)
+    .filter((item) => item && item.ok === false && !item.skipped)
+    .map((item) => `${item.provider}:${item.error || "failed"}`);
+}
+
+function combineWarnings(...groups) {
+  return groups
+    .flat()
+    .filter(Boolean)
+    .map(String);
+}
+
+function warningString(warnings) {
+  return combineWarnings(warnings).join("; ") || null;
+}
+
+function splitWarningString(value) {
+  return String(value || "")
+    .split(";")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function publicModelOutput(output) {
@@ -2271,14 +2329,27 @@ function buildCommentaryResult({
   formats,
   matchContext,
   maxChars,
+  diagnosticWarnings = [],
 }) {
+  const selectedHasGrounding = Boolean(
+    selectedSource && selectedSource !== "request-summary" ||
+    inDbAgent ||
+    canvas
+  );
+  const recoveredWarnings = selectedHasGrounding ? splitWarningString(warning) : [];
+  const publicWarning = selectedHasGrounding ? null : warning;
+  const diagnostics = {
+    warnings: combineWarnings(diagnosticWarnings, recoveredWarnings),
+  };
   return {
     ok: true,
     commentary: enforceCommentary(selectedCommentary, requestedOutput === "clip_title" ? 80 : maxChars),
     output_format: requestedOutput,
     source: selectedSource,
     fallback_source: fallbackSource,
-    warning,
+    warning: publicWarning,
+    diagnostics,
+    warnings: diagnostics.warnings,
     trace_id: modelRoute.trace_id,
     route_mode: modelRoute.route_mode,
     primary_provider: modelRoute.primary_provider,
@@ -2337,6 +2408,7 @@ async function buildCommentary(body = {}, options = {}) {
   let summary = bodySummary;
   let source = "request-summary";
   let warning = null;
+  let diagnosticWarnings = [];
   let matchContext = null;
 
   if (!options.skipOracleSummary && bodySummary.session_id && bodySummary.player_id) {
@@ -2370,14 +2442,37 @@ async function buildCommentary(body = {}, options = {}) {
       },
       options
     );
-    const modelWarnings = modelRouteWarnings(modelRoute);
-    if (modelRoute.primary?.ok) {
+    const modelWarnings = modelRouteWarnings(modelRoute, { includeCandidate: false });
+    const shadowWarnings = candidateModelRouteWarnings(modelRoute);
+    const primaryGate = modelOutputGate(modelRoute.primary, summary, maxChars);
+    const primaryDiagnostics = modelRoute.primary?.ok && !primaryGate.ok
+      ? [`${modelRoute.primary.provider}:model_output_rejected_${primaryGate.reason}`]
+      : [];
+    if (modelRoute.primary?.ok && primaryGate.ok) {
       return buildCommentaryResult({
         selectedCommentary: modelRoute.primary.text,
         requestedOutput,
         selectedSource: modelRoute.primary.provider,
         fallbackSource: legacySource,
         warning: [warning, ...modelWarnings].filter(Boolean).join("; ") || null,
+        diagnosticWarnings: combineWarnings(primaryDiagnostics, shadowWarnings),
+        modelRoute,
+        inDbAgent: null,
+        canvas: null,
+        summary,
+        formats,
+        matchContext: null,
+        maxChars,
+      });
+    }
+    if (modelRoute.primary?.ok && !primaryGate.ok) {
+      return buildCommentaryResult({
+        selectedCommentary: legacy.commentary,
+        requestedOutput,
+        selectedSource: legacySource,
+        fallbackSource: modelRoute.primary.provider,
+        warning: warning || null,
+        diagnosticWarnings: combineWarnings(primaryDiagnostics, shadowWarnings),
         modelRoute,
         inDbAgent: null,
         canvas: null,
@@ -2388,7 +2483,7 @@ async function buildCommentary(body = {}, options = {}) {
       });
     }
     if (modelWarnings.length) {
-      warning = [warning, ...modelWarnings].filter(Boolean).join("; ");
+      diagnosticWarnings = combineWarnings(diagnosticWarnings, modelWarnings, shadowWarnings);
     }
   }
 
@@ -2430,6 +2525,7 @@ async function buildCommentary(body = {}, options = {}) {
   }
 
   let canvas = null;
+  const canvasWarnings = [];
   const canvasRuntimeConfig = canvasConfig();
   if (canvasRuntimeConfig.runEndpointUrl) {
     try {
@@ -2453,7 +2549,7 @@ async function buildCommentary(body = {}, options = {}) {
         "paf_canvas"
       );
     } catch (error) {
-      warning = [warning, `paf_canvas:${error.message}`].filter(Boolean).join("; ");
+      canvasWarnings.push(`paf_canvas:${error.message}`);
     }
   }
 
@@ -2473,26 +2569,44 @@ async function buildCommentary(body = {}, options = {}) {
     },
     options
   );
-  const modelCommentary = ["live_line", "post_match_recap"].includes(requestedOutput) && modelRoute.primary?.ok
+  const primaryGate = modelOutputGate(modelRoute.primary, summary, maxChars);
+  const primaryDiagnostics = modelRoute.primary?.ok && !primaryGate.ok
+    ? [`${modelRoute.primary.provider}:model_output_rejected_${primaryGate.reason}`]
+    : [];
+  const modelCommentary = ["live_line", "post_match_recap"].includes(requestedOutput) && modelRoute.primary?.ok && primaryGate.ok
     ? modelRoute.primary.text
     : null;
-  const selectedCommentary = modelCommentary || (
+  const groundedCommentary = canvas?.commentary || inDbAgent?.commentary || null;
+  const selectedCommentary = groundedCommentary || modelCommentary || (
     requestedOutput === "live_line"
       ? baseCommentary
       : formats[requestedOutput] || baseCommentary
   );
-  const selectedSource = modelRoute.primary?.ok ? modelRoute.primary.provider : legacySource;
-  const modelWarnings = modelRouteWarnings(modelRoute);
-  if (modelWarnings.length) {
-    warning = [warning, ...modelWarnings].filter(Boolean).join("; ");
+  const selectedSource = canvas ? "paf-canvas" : (inDbAgent?.source || (modelCommentary ? modelRoute.primary.provider : legacySource));
+  const selectedFallbackSource = canvas
+    ? (inDbAgent?.source || source)
+    : (inDbAgent ? (modelRoute.primary?.ok ? modelRoute.primary.provider : source) : (modelCommentary ? legacySource : (modelRoute.primary?.ok ? modelRoute.primary.provider : null)));
+  const primaryModelWarnings = modelRouteWarnings(modelRoute, { includeCandidate: false });
+  const shadowModelWarnings = candidateModelRouteWarnings(modelRoute);
+  const hasGroundedFallback = Boolean(modelCommentary || canvas || inDbAgent || source === "oracle-sql" || matchContext);
+  if (!hasGroundedFallback && canvasWarnings.length) {
+    warning = warningString([warning, canvasWarnings]);
   }
+  diagnosticWarnings = combineWarnings(
+    diagnosticWarnings,
+    primaryDiagnostics,
+    primaryModelWarnings,
+    shadowModelWarnings,
+    hasGroundedFallback ? canvasWarnings : []
+  );
 
   return buildCommentaryResult({
     selectedCommentary,
     requestedOutput,
     selectedSource,
-    fallbackSource: modelRoute.primary?.ok ? legacySource : (canvas ? inDbAgent?.source || source : null),
+    fallbackSource: selectedFallbackSource,
     warning,
+    diagnosticWarnings,
     modelRoute,
     inDbAgent,
     canvas,

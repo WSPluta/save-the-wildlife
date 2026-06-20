@@ -98,3 +98,23 @@ output "model_ai_ft_endpoint_url" {
     try(oci_datascience_model_deployment.ft_commentary[0].model_deployment_url, "")
   )
 }
+
+output "model_ollama_instance_id" {
+  sensitive = false
+  value     = try(oci_core_instance.model_ollama[0].id, "")
+}
+
+output "model_ollama_private_ip" {
+  sensitive = false
+  value     = try(oci_core_instance.model_ollama[0].private_ip, "")
+}
+
+output "model_ollama_chat_url" {
+  sensitive = false
+  value     = try(format("http://%s:%d/api/chat", oci_core_instance.model_ollama[0].private_ip, var.model_ollama_port), "")
+}
+
+output "model_ollama_model_id" {
+  sensitive = false
+  value     = var.model_ollama_custom_model_id
+}

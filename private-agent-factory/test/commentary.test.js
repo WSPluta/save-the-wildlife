@@ -298,7 +298,9 @@ test("returns in-db commentary when Canvas exceeds the remaining commentary budg
     assert.ok(Date.now() - started < 500);
     assert.equal(response.source, "select-ai");
     assert.equal(response.commentary, "Select AI grounded Ada's 55 point finish in DB evidence.");
-    assert.match(response.warning, /paf_canvas:paf_canvas_timeout_/);
+    assert.equal(response.warning, null);
+    assert.match(response.diagnostics.warnings.join("; "), /paf_canvas:paf_canvas_timeout_/);
+    assert.match(response.warnings.join("; "), /paf_canvas:paf_canvas_timeout_/);
     assert.equal(response.trace_id, "TRACE-BUDGET");
     assert.equal(response.route_mode, "shadow");
     assert.equal(response.primary_provider, "oci-base");
@@ -391,8 +393,8 @@ test("routes base and fine-tuned OCI model endpoints in shadow mode", async () =
         provider: isFineTuned ? "oci-fine-tuned" : "oci-base",
         model_id: isFineTuned ? "stwl-ft-v1" : "stwl-base-v1",
         text: isFineTuned
-          ? "Ada closed on 42 points, grounded in SQL evidence."
-          : "Ada finished with 42 points after a clean evidence-backed run.",
+          ? "Ada closed on 42 points cleanly."
+          : "Ada finished with 42 points after a clean run.",
         tokens: isFineTuned ? 9 : 12,
         finish_reason: "stop",
         runtime_mode: "upstream-llm",
@@ -436,7 +438,7 @@ test("routes base and fine-tuned OCI model endpoints in shadow mode", async () =
 
     assert.equal(response.source, "oci-base");
     assert.equal(response.fallback_source, "request-summary");
-    assert.equal(response.commentary, "Ada finished with 42 points after a clean evidence-backed run.");
+    assert.equal(response.commentary, "Ada finished with 42 points after a clean run.");
     assert.equal(response.trace_id, "TRACE-UNIT");
     assert.equal(response.route_mode, "shadow");
     assert.equal(response.primary_provider, "oci-base");
@@ -457,6 +459,184 @@ test("routes base and fine-tuned OCI model endpoints in shadow mode", async () =
   assert.match(calls[0].body.prompt, /Facts stay in Oracle AI Database memory|Model comparison task/);
 });
 
+test("keeps shadow candidate timeout as diagnostics when primary model returns commentary", async () => {
+  const modelRequestJson = async (url) => {
+    if (url.includes("fine-tuned")) {
+      throw new Error("http_timeout_15000ms");
+    }
+    return {
+      status: 200,
+      headers: {},
+      elapsed_ms: 48,
+      payload: {
+        ok: true,
+        provider: "oci-base",
+        model_id: "stwl-base-live",
+        text: "Ada held 42 points after a steady run.",
+        tokens: 10,
+        finish_reason: "stop",
+        runtime_mode: "upstream-llm",
+        upstream_configured: true,
+        facts_policy: "facts-in-memory-behavior-in-weights",
+      },
+    };
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "shadow",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
+    PAF_TRACE_PERSIST: "false",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-SHADOW-DIAG",
+          player_id: "P-SHADOW-DIAG",
+          player_name: "Ada",
+          score: 42,
+        },
+      },
+      {
+        skipOracleSummary: true,
+        traceId: "TRACE-SHADOW-DIAG",
+        modelRequestJson,
+      }
+    );
+
+    assert.equal(response.ok, true);
+    assert.equal(response.source, "oci-base");
+    assert.equal(response.warning, null);
+    assert.match(response.diagnostics.warnings.join("; "), /oci-fine-tuned:http_timeout_15000ms/);
+    assert.equal(response.model_route.primary.runtime_mode, "upstream-llm");
+    assert.equal(response.model_route.candidate.ok, false);
+  });
+});
+
+test("falls back to SQL-derived gameplay wording when model output leaks meta commentary", async () => {
+  const modelRequestJson = async () => ({
+    status: 200,
+    headers: {},
+    elapsed_ms: 38,
+    payload: {
+      ok: true,
+      provider: "oci-base",
+      model_id: "stwl-base-meta",
+      text: "Oracle AI Database models predict Ada will keep improving.",
+      tokens: 9,
+      finish_reason: "stop",
+      runtime_mode: "upstream-llm",
+      upstream_configured: true,
+      facts_policy: "facts-in-memory-behavior-in-weights",
+    },
+  });
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "primary",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    PAF_TRACE_PERSIST: "false",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-META",
+          player_id: "P-META",
+          player_name: "Ada",
+          score: 42,
+          trash_collected: 7,
+          trail_crosses: 1,
+          freezes: 1,
+          powerups: { powerup_shield: 1 },
+        },
+      },
+      {
+        skipOracleSummary: true,
+        traceId: "TRACE-META",
+        modelRequestJson,
+      }
+    );
+
+    assert.equal(response.ok, true);
+    assert.equal(response.source, "request-summary");
+    assert.equal(response.fallback_source, "oci-base");
+    assert.doesNotMatch(response.commentary, /Oracle|Database|model|predict/i);
+    assert.match(response.commentary, /Ada|42|shield|trail|freeze/i);
+    assert.match(response.diagnostics.warnings.join("; "), /oci-base:model_output_rejected_meta_commentary/);
+    assert.equal(response.model_route.primary.runtime_mode, "upstream-llm");
+  });
+});
+
+test("keeps primary model timeout as diagnostics when in-db agent returns commentary", async () => {
+  const oracleConnection = {
+    async execute() {
+      return {
+        outBinds: {
+          result: JSON.stringify({
+            ok: true,
+            source: "select-ai",
+            commentary: "Ada froze once after crossing a trail and still finished on 42.",
+          }),
+        },
+      };
+    },
+  };
+  const modelRequestJson = async () => {
+    throw new Error("http_timeout_15000ms");
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_FAST_PATH_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "shadow",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
+    PAF_TRACE_PERSIST: "false",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-INDB-MODEL-TIMEOUT",
+          player_id: "P-INDB-MODEL-TIMEOUT",
+          player_name: "Ada",
+          score: 42,
+          trail_crosses: 1,
+          freezes: 1,
+        },
+      },
+      {
+        skipOracleSummary: true,
+        oracleConnection,
+        oracledb: { BIND_OUT: 3003, STRING: 2001 },
+        traceId: "TRACE-INDB-MODEL-TIMEOUT",
+        modelRequestJson,
+      }
+    );
+
+    assert.equal(response.source, "select-ai");
+    assert.equal(response.warning, null);
+    assert.equal(response.in_db_agent.source, "select-ai");
+    assert.match(response.diagnostics.warnings.join("; "), /oci-base:http_timeout_15000ms/);
+    assert.match(response.diagnostics.warnings.join("; "), /oci-fine-tuned:http_timeout_15000ms/);
+  });
+});
+
 test("uses model fast path before slow Canvas enrichment when endpoints are configured", async () => {
   const modelCalls = [];
   let canvasCalls = 0;
@@ -473,8 +653,8 @@ test("uses model fast path before slow Canvas enrichment when endpoints are conf
         provider: isFineTuned ? "oci-fine-tuned" : "oci-base",
         model_id: isFineTuned ? "stwl-ft-fast" : "stwl-base-fast",
         text: isFineTuned
-          ? "Ada closed on 77 points, citing DB evidence."
-          : "Ada finished on 77 points with DB evidence in view.",
+          ? "Ada closed on 77 points with a crisp finish."
+          : "Ada finished on 77 points with a clean route.",
         tokens: isFineTuned ? 9 : 11,
         finish_reason: "stop",
         runtime_mode: "behavior-adapter",
@@ -522,7 +702,7 @@ test("uses model fast path before slow Canvas enrichment when endpoints are conf
 
     assert.equal(response.source, "oci-base");
     assert.equal(response.fallback_source, "request-summary");
-    assert.equal(response.commentary, "Ada finished on 77 points with DB evidence in view.");
+    assert.equal(response.commentary, "Ada finished on 77 points with a clean route.");
     assert.equal(response.trace_id, "TRACE-FAST");
     assert.equal(response.model_route.primary.runtime_mode, "behavior-adapter");
     assert.equal(response.model_route.candidate.runtime_mode, "behavior-adapter");
@@ -546,7 +726,7 @@ test("model router config clamps invalid numeric environment values", async () =
     const config = modelRouterConfig();
 
     assert.equal(config.routeMode, "shadow");
-    assert.equal(config.timeoutMs, 8000);
+    assert.equal(config.timeoutMs, 15000);
     assert.equal(config.temperature, 0.2);
     assert.equal(config.maxTokens, 120);
   });
@@ -829,7 +1009,7 @@ test("falls back to deterministic SQL commentary when in-db agent and Canvas fai
     assert.match(response.commentary, /19 points/);
     assert.ok(response.commentary.length <= 200);
     assert.match(response.warning, /indb_agent_profile_missing/);
-    assert.match(response.warning, /paf_canvas:paf_canvas_http_503/);
+    assert.match(response.diagnostics.warnings.join("; "), /paf_canvas:paf_canvas_http_503/);
   });
 });
 

@@ -258,6 +258,36 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Verified `node --check web/src/script.js`, focused gameplay polish tests, full `npm --prefix web run test:unit`, and `npm --prefix web run build`.
   - Ran local desktop Playwright smoke at `output/water-turtle-polish-smoke/` and mobile smoke at `output/mobile-polish-smoke/`; latest mobile result reached `RUNNING`, joystick was visible, and sampled turtle Y was `-0.06`.
 - Arcade-bright environment pass started on 2026-06-12:
+- Live incident PAF hardening on 2026-06-20:
+  - Verified `http://130.162.174.167/` gameplay is playable again via conference smoke: mobile and desktop both reached `RUNNING`, bots were visible/known, joystick rendered on mobile, items stayed healthy, and boat waterline contact was visible.
+  - Verified trash collection against the live endpoint after the PAF rollout: score `0 -> 1`, trash `33 -> 32`, no browser errors, boat feel stayed slightly submerged (`boatFeel.y=-0.029`, `seatDepth=0.032`).
+  - Verified `/admin/observability` and `/admin/ai-learning` render styled panels with no browser errors using `BASE_URL=http://130.162.174.167 node .codex_tmp/admin_route_smoke.mjs output/admin-route-live-final-post-paf-fix`.
+  - Fixed PAF response contract so optional shadow-model or Canvas polish failures are returned as `diagnostics.warnings`/`warnings`, not as top-level `warning`, when a valid grounded commentary line is available.
+  - Added a PAF model-output gate that rejects meta commentary such as Oracle/database/model/prediction language in the live commentator line and falls back to deterministic SQL/gameplay wording while preserving model-route trace metadata.
+  - Increased durable private model endpoint timeout defaults from `8000` to `15000` ms in PAF config generation and DevOps variables to reduce cold-start fragility.
+  - Applied a live PAF hotfix by mounting `private-agent-factory/index.js` from ConfigMap `private-agent-factory-index-hotfix` over `/usr/src/app/index.js`, because local Podman could not reliably connect to its VM socket for a clean image build/push.
+  - Validation passed:
+    - `npm --prefix private-agent-factory test` (20/20)
+    - `npm --prefix server run test:unit` (56/56)
+    - `npm --prefix web run test:unit` (47/47)
+    - `npm run check:model-ai-demo:proof` -> `adapter_verdict=ready`, `strict_verdict=ready`
+    - `npm run check:conference-demo -- --timeout-ms 90000` -> `ready_with_caveats`
+    - `node scripts/conference-game-smoke.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/conference-game-smoke-live-final-rerun --require-bots` -> `ready`
+  - Remaining caveats:
+    - Conference preflight is `ready_with_caveats` because the smoke session has no replay/vector evidence, Canvas is not the source of the exact line, and the fine-tuned shadow route still times out in that specific commentary call.
+    - The strict model proof is ready via adapter health/upstream canary, but the commentary smoke should not be used to claim the fine-tuned route generated that exact line until candidate runtime appears in that response.
+    - Replace the ConfigMap-mounted PAF hotfix with a real `private-agent-factory:latest` image through OCI DevOps once the local container build/push path or pipeline is available.
+  - Final PAF shape after follow-up tightening:
+    - Live PAF now uses `PAF_MODEL_FAST_PATH_ENABLED=false`, `PAF_ORACLE_QUERY_TIMEOUT_MS=8000`, `PAF_CONTEXT_TIMEOUT_MS=8000`, `INDB_AGENT_TIMEOUT_MS=10000`, and `OCI_MODEL_ENDPOINT_TIMEOUT_MS=15000`.
+    - Final raw `/paf/api/commentary` response used `source=select-ai`, `in_db_agent=present`, `warning=null`, and kept model/Canvas timeouts in `diagnostics.warnings`.
+    - The PAF selector now prioritizes Canvas, then Select AI/in-db commentary, then gated model output, then deterministic SQL/request fallback. This prevents model phrasing from overriding the safer in-db line during the live demo.
+- Live demo rescue follow-up on 2026-06-20:
+  - Rechecked public URL after the reported broken screenshots; current deployed `web:0.0.28`/`server:0.0.33` already fixed the giant blocker geometry, boat waterline, trash pickup, and nested admin asset routing.
+  - Found a remaining observability regression: the in-game/operator item counters reported zero because ws-server metrics avoided Coherence scans by returning `0` for item maps.
+  - Added `countMirroredMapEntries` and wired item metrics to local item mirrors, with regression coverage in `server/test/gameLogic.test.js`.
+  - Bumped ws-server to `0.0.34`, committed `f70184e Fix ws-server item metrics`, pushed `main`, ran OCI DevOps build and deploy, and verified Kubernetes now serves `server:0.0.34`.
+  - Post-deploy public receipts passed: trash collection score `0 -> 1`, mobile and desktop conference smokes ready, admin observability/model routes render, and monitor counts are non-zero with visible items.
+  - Remaining hardening note: ws-server logs still show Coherence full-map scan timeout fallbacks under load; gameplay falls back safely, but the next robustness pass should reduce full-map scan usage on join/refill paths.
   - Added named water/sky/tone-mapping constants for a brighter blue ocean with reduced horizon glare.
   - Added a sparse primitive-only environment prop layer (buoys, rocks, markers) outside gameplay lanes and flagged it as non-collision/non-scoring.
   - Added `environmentPropsVisible` to `window.render_game_to_text` so visual smoke runs can confirm the environment layer loaded.
@@ -588,3 +618,31 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
 - 2026-06-20 live incident follow-up: reproduced that trash collection mechanics pass on prod, but visual smoke showed full-cube trash instances reading as orange wall geometry near bots. Patched `web/src/script.js` so instanced trash renders as low floating debris using capped footprint constants and `TRASH_FLOAT_Y`, without changing server item size, pickup radius, scoring, or telemetry. Added regression assertions in `web/src/__tests__/gameplayPolish.test.js`. Validation/deploy still pending.
 
 - 2026-06-20 post-deploy visual tightening: live `web:0.0.27` proved mobile, trash pickup, admin routes, and model readiness, but desktop smoke timed out around the GO/RUNNING transition and screenshot still showed overly chunky close-range debris/bot visuals. Tightened `BOT_VISUAL_SCALE` to 0.28 and reduced trash debris footprint to avoid wall-like slabs. Bumped web to 0.0.28; validation/deploy pending.
+
+- 2026-06-20 live rescue deployment verification: deployed `web:0.0.28` through OCI DevOps (`stwl-deploy-web-0.0.28-20260620184742`, SUCCEEDED). Kubernetes confirms `web:0.0.28`, `ws-server:0.0.33`, PAF 4/4, score 2/2, replay 1/1, bots 1/1, and model adapters 1/1. Public conference smoke passed mobile and desktop with joystick visible, healthy trash/item counts, scaled bots, waterline contact, and `verdict=ready` at `.codex_tmp/conference-game-smoke-live-web-0.0.28-20260620185558/latest.md`. Strict trash collection smoke passed with score `0 -> 1` and trash `40 -> 39` at `output/collect-trash-live-web-0.0.28-20260620185700/result.json`. Admin route smoke passed for `/admin/observability` and `/admin/ai-learning` with CSS/JS assets `200` and panels visible at `output/admin-route-live-web-0.0.28-20260620185747/result.json`. `/paf/healthz` is green for Oracle DB, OCI GenAI, Canvas, in-db agent, Select AI, graph/replay/vector retrieval, and model router. Model proof remains `ready_with_upstream_llm_blocker` because both private commentary adapters still report `runtime_mode=behavior-adapter`, not strict `upstream-llm`.
+
+- 2026-06-20 bot stability follow-up: fresh public smokes showed gameplay, trash collection, admin observability, admin model AI, and PAF health are green on `web:0.0.28` and `ws-server:0.0.34`, but production `bots:0.0.2` logs still churn through rapid spawn/remove cycles. Prepared a scoped bot patch for `bots:0.0.3` that debounces scale-down with `BOT_SCALE_DOWN_GRACE_MS` and `BOT_SCALE_DOWN_COOLDOWN_MS`. Validation passed: `node --check bots/index.js`, `node --check bots/bot-behavior.mjs`, `npm --prefix bots run test:unit`, and scoped `git diff --check`.
+
+- 2026-06-20 bot stability deployed: committed and pushed `eb9314c` (`Stabilize demo bot pool`). OCI DevOps build `stwl-build-bots-0.0.3-20260620201010` succeeded and exported `BOTS_VERSION=0.0.3` while preserving `WS_SERVER_VERSION=0.0.34`, `WEB_VERSION=0.0.28`, `PAF_VERSION=0.0.4`, `SCORE_VERSION=0.0.7`, and `REPLAY_VERSION=0.0.1`. OCI DevOps deploy `stwl-deploy-bots-0.0.3-20260620203223` succeeded. Kubernetes confirms `bots:0.0.3`, `web:0.0.28`, `ws-server:0.0.34`, PAF `4/4`, score `2/2`, replay `1/1`, and model adapters `1/1`. Post-deploy public receipts: conference game smoke ready for mobile/desktop at `.codex_tmp/conference-game-smoke-live-bots-0.0.3-20260620204230/latest.md`; strict trash collection scored `0 -> 1` at `output/collect-trash-live-bots-0.0.3-20260620204230/result.json`; admin route smoke passed at `output/admin-route-live-bots-0.0.3-20260620204230/result.json`; observability counts passed at `output/observability-counts-live-bots-0.0.3-20260620204231/result.json`; model proof remains `ready_with_upstream_llm_blocker` at `.codex_tmp/model-ai-readiness-bots-0.0.3-20260620204351/proof-bundle.md`; conference preflight is `ready_with_caveats` at `.codex_tmp/conference-preflight-bots-0.0.3-20260620204437/latest.md`.
+
+- 2026-06-20 live incident stabilization after user screenshots:
+  - Verified the user's screenshots matched earlier live failures: giant orange/green blocker geometry, boat reading as sunk, and unstyled `/admin/observability` plus `/admin/ai-learning` routes.
+  - Fresh public smokes after the current deploy showed the visible regressions were no longer present, but ws-server had scaled to 8 pods and logs showed repeated Coherence scan timeouts with per-pod local fallback.
+  - Hardened `server/lib/coherenceScan.js` so failed/slow Coherence scans return the last successful shared snapshot before falling back to local memory. Added regression coverage in `server/test/coherenceScan.test.js`.
+  - Updated durable manifests/env for conference stability:
+    - ws-server HPA max `8 -> 4` in devops/prod overlays.
+    - Coherence resources `500m/1Gi -> 1000m/2Gi` requests and `2 CPU/2Gi -> 4 CPU/4Gi` limits.
+    - ws-server env template/generated env now declares `WS_SERVER_REPLICAS=4`, `COHERENCE_SCAN_TIMEOUT_MS=6000`, `COHERENCE_SCAN_BACKOFF_MS=15000`, `ITEMS_REFRESH_MS=1000`, `POWERUP_REFRESH_MS=2000`, `COLLISION_VALIDATE_RADIUS=2.8`, and `PAF_AGENT_TIMEOUT_MS=10000`.
+  - Applied a live incident patch:
+    - Created `ws-server-coherence-scan-hotfix` ConfigMap from the patched `server/lib/coherenceScan.js`.
+    - Mounted it over `/usr/src/app/lib/coherenceScan.js` in `ws-server`.
+    - Patched HPA max to 4, scaled ws-server to 4, and rolled Coherence with larger resources.
+  - Post-patch live verification:
+    - `ws-server` 4/4, `coherence` 1/1, HPA target `16%/60%`, max 4.
+    - Fresh 20-second ws-server logs showed no new Coherence scan failures after rollout settled.
+    - Public mobile/desktop game smoke passed with `verdict=ready` at `.codex_tmp/conference-game-smoke-incident-postpatch/latest.md`.
+    - Strict trash pickup passed with score `0 -> 1`, no browser errors, `boatFeel.y=-0.03`, and `waterlineContact.visible=true` at `output/collect-trash-incident-postpatch/result.json`.
+    - Admin route smoke passed for `/admin/observability` and `/admin/ai-learning` at `output/admin-route-incident-postpatch/result.json`.
+    - `npm run check:model-ai-demo:proof` returned `adapter_verdict=ready` and `strict_verdict=ready`.
+    - `npm run check:conference-demo` remains `ready_with_caveats` only because the fixed smoke session has no replay/vector evidence and the commentary response did not produce an exact Canvas line; PAF health, Select AI, in-db agent, trace persistence, and model proof pass.
+  - TODO: make the ws-server hotfix durable through OCI DevOps image build/deploy, then remove the `ws-server-coherence-scan-hotfix` mount just as with the pending PAF hotfix cleanup.

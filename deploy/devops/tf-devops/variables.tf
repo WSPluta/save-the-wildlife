@@ -161,7 +161,7 @@ variable "oci_model_endpoint_auth_secret_id" {
 
 variable "oci_model_endpoint_timeout_ms" {
   type        = string
-  default     = "8000"
+  default     = "15000"
   description = "Timeout in milliseconds for private model endpoint calls."
 }
 
@@ -185,8 +185,8 @@ variable "paf_eval_enabled" {
 
 variable "paf_model_fast_path_enabled" {
   type        = string
-  default     = "true"
-  description = "Whether PAF should route directly to private OCI model endpoints before optional Canvas enrichment."
+  default     = "false"
+  description = "Whether PAF may route directly to private OCI model endpoints before Oracle AI Database in-db agent enrichment."
 }
 
 variable "paf_eval_rubric_version" {

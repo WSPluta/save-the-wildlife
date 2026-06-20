@@ -13,6 +13,7 @@ const regionKey = key;
 const namespace = await getNamespace();
 
 await createKustomizationYaml(regionKey, namespace);
+await createModelAiUpstreamPatchFile();
 
 await createWsServerConfigFile(adbAdminPassword, adbService);
 await createScoreConfigFile(adbAdminPassword, adbService);
@@ -70,6 +71,69 @@ async function createKustomizationYaml(regionKey, namespace) {
     console.log(`Overlay ${chalk.green("kustomization.yaml")} created.`);
   } catch (error) {
     exitWithError(error.stderr);
+  } finally {
+    await cd(pwdOutput);
+  }
+}
+
+function yamlString(value) {
+  return JSON.stringify(String(value ?? ""));
+}
+
+function envValue(name, fallback = "") {
+  return process.env[name] == null ? fallback : process.env[name];
+}
+
+async function createModelAiUpstreamPatchFile() {
+  const pwdOutput = (await $`pwd`).stdout.trim();
+  const baseUpstreamUrl = envValue("MODEL_AI_BASE_UPSTREAM_URL");
+  const ftUpstreamUrl = envValue("MODEL_AI_FT_UPSTREAM_URL");
+  const baseFormat = envValue("MODEL_AI_BASE_UPSTREAM_FORMAT", envValue("MODEL_AI_UPSTREAM_FORMAT", "ollama"));
+  const ftFormat = envValue("MODEL_AI_FT_UPSTREAM_FORMAT", envValue("MODEL_AI_UPSTREAM_FORMAT", "ollama"));
+  const baseModelId = envValue("MODEL_AI_BASE_UPSTREAM_MODEL_ID", baseUpstreamUrl ? "llama3.1:8b" : "");
+  const ftModelId = envValue("MODEL_AI_FT_UPSTREAM_MODEL_ID", ftUpstreamUrl ? "llama3.1:8b-stwl" : "");
+
+  function envEntries(url, format, modelId) {
+    const entries = [
+      ["STWL_UPSTREAM_URL", url],
+      ["STWL_UPSTREAM_FORMAT", format],
+    ];
+    if (modelId) entries.push(["STWL_MODEL_ID", modelId]);
+    return entries.map(([name, value]) => `            - name: ${name}
+              value: ${yamlString(value)}`).join("\n");
+  }
+
+  const content = `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stwl-base-commentary
+spec:
+  template:
+    spec:
+      containers:
+        - name: model-ai-inference
+          env:
+${envEntries(baseUpstreamUrl, baseFormat, baseModelId)}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stwl-ft-commentary
+spec:
+  template:
+    spec:
+      containers:
+        - name: model-ai-inference
+          env:
+${envEntries(ftUpstreamUrl, ftFormat, ftModelId)}
+`;
+
+  await cd("./deploy/k8s/overlays/devops");
+  try {
+    await fs.writeFile("patch_model_ai_upstream.yaml", content, "utf8");
+    console.log(`Overlay ${chalk.green("patch_model_ai_upstream.yaml")} created.`);
+  } catch (error) {
+    exitWithError(error.stderr || error.message);
   } finally {
     await cd(pwdOutput);
   }
@@ -159,11 +223,11 @@ async function createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService,
       TEMPLATE_PAF_CANDIDATE_MODEL_PROVIDER: process.env.PAF_CANDIDATE_MODEL_PROVIDER || "oci-fine-tuned",
       TEMPLATE_OCI_BASE_MODEL_ENDPOINT_URL: process.env.OCI_BASE_MODEL_ENDPOINT_URL || "http://stwl-base-commentary:8080",
       TEMPLATE_OCI_FT_MODEL_ENDPOINT_URL: process.env.OCI_FT_MODEL_ENDPOINT_URL || "http://stwl-ft-commentary:8080",
-      TEMPLATE_OCI_MODEL_ENDPOINT_TIMEOUT_MS: process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "8000",
+      TEMPLATE_OCI_MODEL_ENDPOINT_TIMEOUT_MS: process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "15000",
       TEMPLATE_OCI_MODEL_ENDPOINT_VERIFY_TLS: process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true",
       TEMPLATE_PAF_TRACE_PERSIST: process.env.PAF_TRACE_PERSIST || "true",
       TEMPLATE_PAF_EVAL_ENABLED: process.env.PAF_EVAL_ENABLED || "true",
-      TEMPLATE_PAF_MODEL_FAST_PATH_ENABLED: process.env.PAF_MODEL_FAST_PATH_ENABLED || "true",
+      TEMPLATE_PAF_MODEL_FAST_PATH_ENABLED: process.env.PAF_MODEL_FAST_PATH_ENABLED || "false",
       TEMPLATE_PAF_EVAL_RUBRIC_VERSION: process.env.PAF_EVAL_RUBRIC_VERSION || "stwl-commentary-v1",
       TEMPLATE_PAF_TRAINING_CAPTURE_ENABLED: process.env.PAF_TRAINING_CAPTURE_ENABLED || "true",
     };

@@ -88,6 +88,15 @@ STWL_UPSTREAM_URL=http://<private-a10-ollama-ip>:11434/api/chat
 STWL_MODEL_ID=llama3.1:8b-stwl
 ```
 
+OKE deploy-time wiring:
+
+```bash
+MODEL_AI_BASE_UPSTREAM_URL=http://<private-a10-ollama-ip>:11434/api/chat
+MODEL_AI_FT_UPSTREAM_URL=http://<private-a10-ollama-ip>:11434/api/chat
+MODEL_AI_BASE_UPSTREAM_MODEL_ID=llama3.1:8b
+MODEL_AI_FT_UPSTREAM_MODEL_ID=llama3.1:8b-stwl
+```
+
 Terraform opt-in variables:
 
 ```hcl
@@ -99,6 +108,9 @@ model_ai_base_upstream_url    = "http://<private-a10-ollama-ip>:11434/api/chat"
 model_ai_ft_upstream_url      = "http://<private-a10-ollama-ip>:11434/api/chat"
 ```
 
+`model_ollama_enabled = true` creates the private host. Keep it off until the
+GPU shape/limit check passes.
+
 Training remains behavior-only:
 
 ```bash
@@ -107,6 +119,17 @@ STWL_DATASET_URI=oci://<bucket>@<namespace>/datasets/stwl-behavior-v1.jsonl \
 STWL_ADAPTER_URI=oci://<bucket>@<namespace>/adapters/stwl-commentary-lora-v1/ \
 python /app/train_behavior_lora.py
 ```
+
+Then point the private A10 Ollama bootstrap at that adapter prefix:
+
+```hcl
+model_ollama_enabled     = true
+model_ollama_adapter_uri = "oci://<bucket>@<namespace>/adapters/stwl-commentary-lora-v1/"
+```
+
+The bootstrap keeps the host private, downloads the adapter with instance
+principal, and creates `llama3.1:8b-stwl` from the base model plus the exported
+LoRA adapter.
 
 ## Proof Gate
 
