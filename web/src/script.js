@@ -156,6 +156,8 @@ let latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0, seatDepth:
 let latestCameraCompositionDebug = { mobile: false, distanceToPlayer: 0, relativeY: 0, lookHeight: 0 };
 let latestEffectiveSpeed = 0;
 let latestAuthLagMs = 0;
+let lastBotRosterVisualSyncAt = 0;
+let latestBotRosterVisualDebug = { mode: "pending", botIds: 0, existing: 0, created: 0, error: null };
 let latestPoolMetrics = null;
 let clearTrashInstances = () => {};
 let clearPowerupInstances = () => {};
@@ -163,6 +165,7 @@ let releaseTrashInstance = () => {};
 let releasePowerupInstance = () => {};
 let createItemMeshForScene = () => null;
 let releaseRemoteBoatVisual = () => {};
+let ensureBotRosterVisualsForScene = () => {};
 let scoreElementRef = null;
 let applyPowerUpEffect = () => {};
 let triggerReplayMomentCallback = () => {};
@@ -173,7 +176,9 @@ const TRASH_VISUAL_SCALE_MIN = 0.34;
 const TRASH_VISUAL_SCALE_MAX = 0.74;
 const POWERUP_VISUAL_SCALE_MIN = 0.38;
 const POWERUP_VISUAL_SCALE_MAX = 0.82;
-const BOT_RENDER_MODE = "data-only";
+const BOT_RENDER_MODE = "demo-visible";
+const BOT_VISUAL_SCALE = 0.62;
+const BOT_VISUAL_COLOR = 0x15c7b8;
 const trashTmpMatrix = new THREE.Matrix4();
 const trashTmpPos = new THREE.Vector3();
 const trashTmpScale = new THREE.Vector3();
@@ -270,6 +275,19 @@ function isBotPlayerId(id) {
   const playerId = String(id || "");
   const info = otherPlayersInfo && otherPlayersInfo[playerId];
   return playerId.toLowerCase().startsWith("bot-") || isBotDisplayName(info && info.name);
+}
+
+function shouldRenderRemotePlayer(id) {
+  return !(BOT_RENDER_MODE === "data-only" && isBotPlayerId(id));
+}
+
+function keepBotRemoteBoatVisible(group) {
+  if (!group || !group.userData || !group.userData.isBot) return;
+  group.visible = true;
+  group.frustumCulled = false;
+  group.traverse((object) => {
+    if (object) object.frustumCulled = false;
+  });
 }
 
 function removeRemotePlayerVisual(id) {
@@ -2730,7 +2748,7 @@ async function init() {
             delete otherPlayers[key];
             continue;
           }
-          if (BOT_RENDER_MODE === "data-only" && isBotPlayerId(key)) {
+          if (!shouldRenderRemotePlayer(key)) {
             removeRemotePlayerVisual(key);
             delete otherPlayers[key];
             continue;
@@ -2750,7 +2768,7 @@ async function init() {
             if (joinedName) {
               otherPlayersInfo[joinedId] = { name: joinedName };
             }
-            if (BOT_RENDER_MODE === "data-only" && isBotPlayerId(joinedId)) {
+            if (!shouldRenderRemotePlayer(joinedId)) {
               removeRemotePlayerVisual(joinedId);
               delete otherPlayers[joinedId];
               updatePlayersHud();
@@ -2763,6 +2781,9 @@ async function init() {
             // Refresh existing name tag if mesh already exists
             if (otherPlayersMeshes[joinedId]) {
               refreshNameTagForPlayer(joinedId);
+            }
+            if (isBotPlayerId(joinedId)) {
+              ensureBotRosterVisuals();
             }
           }
           updatePlayersHud();
@@ -2789,13 +2810,14 @@ async function init() {
         otherPlayersInfo = body || {};
         try {
           Object.keys(otherPlayersInfo || {}).forEach((id) => {
-            if (BOT_RENDER_MODE === "data-only" && isBotPlayerId(id)) {
+            if (!shouldRenderRemotePlayer(id)) {
               removeRemotePlayerVisual(id);
               delete otherPlayers[id];
             } else if (otherPlayersMeshes[id]) {
               refreshNameTagForPlayer(id);
             }
           });
+          ensureBotRosterVisuals();
         } catch (_) {}
         updatePlayersHud();
         break;
@@ -3191,8 +3213,40 @@ async function init() {
     }
   }
 
+  function styleBotRemoteBoat(group, mesh, lodLow) {
+    if (!group || !mesh) return;
+    group.userData.isBot = true;
+    group.scale.setScalar(BOT_VISUAL_SCALE);
+    group.visible = true;
+    group.frustumCulled = false;
+    mesh.traverse((object) => {
+      if (object) object.frustumCulled = false;
+      if (!object || !object.isMesh || !object.material) return;
+      const materialsForObject = Array.isArray(object.material) ? object.material : [object.material];
+      object.material = materialsForObject.map((material) => {
+        const clone = material && typeof material.clone === "function"
+          ? material.clone()
+          : new THREE.MeshLambertMaterial({ color: BOT_VISUAL_COLOR, flatShading: true });
+        clone.color = clone.color || new THREE.Color(BOT_VISUAL_COLOR);
+        clone.color.lerp(new THREE.Color(BOT_VISUAL_COLOR), 0.72);
+        clone.transparent = true;
+        clone.opacity = Math.min(0.82, Number(clone.opacity || 1));
+        return clone;
+      });
+      if (materialsForObject.length === 1) object.material = object.material[0];
+    });
+    if (lodLow && lodLow.material) {
+      lodLow.material = lodLow.material.clone();
+      lodLow.material.color.setHex(BOT_VISUAL_COLOR);
+      lodLow.material.transparent = true;
+      lodLow.material.opacity = 0.82;
+    }
+  }
+
   function makePlayerMesh(playerMesh, id) {
     const group = getBoatFromPool();
+    group.userData.isBot = false;
+    group.scale.setScalar(1);
     const mesh = cloneModelForRemotePlayer(playerMesh);
     mesh.position.set(0, 0, 0);
     mesh.rotation.set(0, 0, 0);
@@ -3210,18 +3264,74 @@ async function init() {
     );
     lodLow.visible = false;
     group.add(lodLow);
+    if (isBotPlayerId(id)) {
+      styleBotRemoteBoat(group, mesh, lodLow);
+    }
     group.userData.lodHigh = mesh;
     group.userData.lodLow = lodLow;
     group.userData.boatVisual = mesh;
     group.userData.boatFeel = createBoatFeelState();
     installBoatFeelPivot(group, [mesh, lodLow]);
     const label =
-      (otherPlayersInfo[id] && otherPlayersInfo[id].name)
+      isBotPlayerId(id)
+        ? `BOT ${String(id || "").slice(4, 8)}`
+        : (otherPlayersInfo[id] && otherPlayersInfo[id].name)
         ? otherPlayersInfo[id].name
         : (id ? id.substring(0, 4) : "Player");
     addNameTag(group, label);
     return group;
   }
+
+  function ensureBotRosterVisuals() {
+    const debug = {
+      mode: BOT_RENDER_MODE,
+      hasBoatModel: !!boatModel,
+      infoCount: Object.keys(otherPlayersInfo || {}).length,
+      botIds: 0,
+      existing: 0,
+      created: 0,
+      error: null,
+    };
+    if (BOT_RENDER_MODE !== "demo-visible" || !boatModel) {
+      latestBotRosterVisualDebug = debug;
+      return;
+    }
+    const botIds = Object.keys(otherPlayersInfo || {}).filter((id) => id !== yourId && isBotPlayerId(id));
+    debug.botIds = botIds.length;
+    botIds.forEach((id, index) => {
+      if (otherPlayersMeshes[id]) {
+        debug.existing += 1;
+        keepBotRemoteBoatVisible(otherPlayersMeshes[id]);
+        refreshNameTagForPlayer(id);
+        return;
+      }
+      try {
+        const mesh = makePlayerMesh(boatModel, id);
+        const baseX = player ? Number(player.position.x || 0) : 0;
+        const baseZ = player ? Number(player.position.z || 0) : 0;
+        const angle = (index / Math.max(1, botIds.length)) * Math.PI * 2;
+        const radius = 5.5 + (index % 3) * 1.35;
+        const x = baseX + Math.sin(angle) * radius;
+        const z = baseZ + Math.cos(angle) * radius;
+        mesh.position.set(x, 0, z);
+        mesh.rotation.y = angle + Math.PI;
+        otherPlayersMeshes[id] = mesh;
+        otherPlayers[id] = {
+          id,
+          x,
+          z,
+          rotY: mesh.rotation.y,
+          rosterFallback: true,
+        };
+        keepBotRemoteBoatVisible(mesh);
+        debug.created += 1;
+      } catch (error) {
+        debug.error = error && error.message ? error.message : String(error);
+      }
+    });
+    latestBotRosterVisualDebug = debug;
+  }
+  ensureBotRosterVisualsForScene = ensureBotRosterVisuals;
 
   // Create a random trash or wildlife or power-up object
   function createItemMesh(itemId, itemType, position, size) {
@@ -3289,6 +3399,8 @@ async function init() {
     return itemMesh;
   }
   createItemMeshForScene = createItemMesh;
+  ensureBotRosterVisuals();
+  updatePlayersHud();
 
   // Overlay/screen visibility is managed by setPhase(); do not toggle here.
   // Ensure keyboard focus is available
@@ -3495,7 +3607,9 @@ function refreshNameTagForPlayer(id) {
   const group = otherPlayersMeshes[id];
   if (!group) return;
   const label =
-    (otherPlayersInfo[id] && otherPlayersInfo[id].name)
+    isBotPlayerId(id)
+      ? `BOT ${String(id || "").slice(4, 8)}`
+      : (otherPlayersInfo[id] && otherPlayersInfo[id].name)
       ? otherPlayersInfo[id].name
       : (id ? id.substring(0, 4) : "Player");
   updateNameTag(group, label);
@@ -4968,6 +5082,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     animateItems();
     if (gameState !== "STARTING" && !serverAuthEnabled && sendYourPosition) sendYourPosition();
     animateOtherPlayers(otherPlayersMeshes);
+    if (BOT_RENDER_MODE === "demo-visible" && now - lastBotRosterVisualSyncAt > 1000) {
+      lastBotRosterVisualSyncAt = now;
+      try { ensureBotRosterVisualsForScene(); } catch (_) {}
+    }
   }
 
   const frustum = new THREE.Frustum();
@@ -4994,7 +5112,18 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       cullRebuildCounter++;
       cullCandidates.length = 0;
       Object.values(itemMeshes).forEach((m) => { if (m) cullCandidates.push(m); });
-      Object.values(otherPlayersMeshes).forEach((g) => { if (g) cullCandidates.push(g); });
+      Object.values(otherPlayersMeshes).forEach((g) => {
+        if (!g) return;
+        if (g.userData && g.userData.isBot) {
+          g.visible = true;
+          g.frustumCulled = false;
+          g.traverse((object) => {
+            if (object) object.frustumCulled = false;
+          });
+          return;
+        }
+        cullCandidates.push(g);
+      });
 
       if (cullCandidates.length) {
         tmpWorldBox.makeEmpty();
@@ -5124,6 +5253,7 @@ function hideMessages() {
 }
 
 function renderGameToText() {
+  try { ensureBotRosterVisualsForScene(); } catch (_) {}
   const turtleSamples = Object.values(itemMeshes || {})
     .filter((mesh) => mesh && String(mesh.itemType || "") === "turtle" && mesh.visible !== false)
     .slice(0, 3)
@@ -5154,6 +5284,21 @@ function renderGameToText() {
     })
     .sort((a, b) => a.distance - b.distance)
     .slice(0, 5);
+  const remotePlayerEntries = Object.entries(otherPlayersMeshes || {})
+    .filter(([, mesh]) => mesh && mesh.visible !== false);
+  const botSamples = remotePlayerEntries
+    .filter(([id]) => isBotPlayerId(id))
+    .slice(0, 5)
+    .map(([id, mesh]) => ({
+      id,
+      name: otherPlayersInfo?.[id]?.name || id,
+      x: Number((mesh.position?.x || 0).toFixed(3)),
+      y: Number((mesh.position?.y || 0).toFixed(3)),
+      z: Number((mesh.position?.z || 0).toFixed(3)),
+      rotY: Number((mesh.rotation?.y || 0).toFixed(3)),
+      scale: Number((mesh.scale?.x || 1).toFixed(3)),
+    }));
+  const knownBotCount = Object.keys(otherPlayersInfo || {}).filter((id) => isBotPlayerId(id)).length;
   const payload = {
     mode: gameState,
     coordinateSystem: "World origin is center; +x right, +z forward, +y up",
@@ -5170,7 +5315,12 @@ function renderGameToText() {
     authLagMs: latestAuthLagMs,
     score: Number(localScore || 0),
     timeRemaining: Number(remainingTime || 0),
-    playersVisible: Object.keys(otherPlayers || {}).length,
+    playersVisible: remotePlayerEntries.length,
+    botsVisible: botSamples.length,
+    botsKnown: Math.max(knownBotCount, botSamples.length),
+    botRenderMode: BOT_RENDER_MODE,
+    botSamples,
+    botRosterVisual: latestBotRosterVisualDebug,
     itemsVisible: Object.keys(items || {}).length,
     trashInstances: trashInstances && trashInstances.map ? trashInstances.map.size : 0,
     trashSamples,

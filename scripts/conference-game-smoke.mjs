@@ -16,6 +16,10 @@ function argValue(name, fallback) {
   return fallback;
 }
 
+function hasFlag(name) {
+  return process.argv.includes(`--${name}`);
+}
+
 function normalizeBaseUrl(value) {
   return String(value || DEFAULT_BASE_URL).replace(/\/+$/, "");
 }
@@ -73,8 +77,8 @@ async function resolvePlaywrightImport() {
   );
 }
 
-function scenarioUrl(baseUrl, prefix) {
-  const room = `${prefix}-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6)}`;
+function scenarioUrl(baseUrl, prefix, roomOverride = "") {
+  const room = roomOverride || `${prefix}-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6)}`;
   return {
     room,
     url: `${baseUrl}/?name=${prefix}Smoke&room=${room}&autostart=1`,
@@ -141,10 +145,14 @@ function collectBrowserErrors(page) {
   return errors;
 }
 
-function validateCommon(state, failures) {
+function validateCommon(state, failures, options = {}) {
   if (state.mode !== "RUNNING") failures.push(`expected RUNNING, got ${state.mode}`);
   if ((state.itemsVisible || 0) <= 0) failures.push("expected visible items");
   if ((state.trashInstances || 0) < 4) failures.push(`expected at least 4 trash instances, got ${state.trashInstances || 0}`);
+  if (options.requireBots) {
+    if ((state.botsVisible || 0) < 1) failures.push(`expected at least 1 visible bot, got ${state.botsVisible || 0}`);
+    if (state.botRenderMode !== "demo-visible") failures.push(`expected botRenderMode=demo-visible, got ${state.botRenderMode || "missing"}`);
+  }
   const visiblePowerups = Number(state.powerupInstances || 0);
   const activePowerups = activePowerupEffectCount(state);
   if (visiblePowerups + activePowerups < 1) {
@@ -176,8 +184,8 @@ function activePowerupEffectCount(state) {
   return count;
 }
 
-async function runMobile({ chromium, baseUrl, outputDir, timeoutMs }) {
-  const { room, url } = scenarioUrl(baseUrl, "MOBILE");
+async function runMobile({ chromium, baseUrl, outputDir, timeoutMs, roomOverride, requireBots }) {
+  const { room, url } = scenarioUrl(baseUrl, "MOBILE", roomOverride);
   const screenshotDir = path.join(outputDir, "mobile");
   await fs.mkdir(screenshotDir, { recursive: true });
   let browser;
@@ -202,7 +210,7 @@ async function runMobile({ chromium, baseUrl, outputDir, timeoutMs }) {
     const result = await captureState(page);
     await page.screenshot({ path: path.join(screenshotDir, "running.png"), fullPage: true });
     const failures = [...errors.map((error) => `${error.type}: ${error.text}`)];
-    validateCommon(result.state, failures);
+    validateCommon(result.state, failures, { requireBots });
     if (!result.joystick || result.joystick.display === "none" || result.joystick.visibility === "hidden") {
       failures.push("mobile joystick is hidden");
     }
@@ -235,8 +243,8 @@ async function runMobile({ chromium, baseUrl, outputDir, timeoutMs }) {
   }
 }
 
-async function runDesktop({ chromium, baseUrl, outputDir, timeoutMs }) {
-  const { room, url } = scenarioUrl(baseUrl, "DESKTOP");
+async function runDesktop({ chromium, baseUrl, outputDir, timeoutMs, roomOverride, requireBots }) {
+  const { room, url } = scenarioUrl(baseUrl, "DESKTOP", roomOverride);
   const screenshotDir = path.join(outputDir, "desktop");
   await fs.mkdir(screenshotDir, { recursive: true });
   let browser;
@@ -265,7 +273,7 @@ async function runDesktop({ chromium, baseUrl, outputDir, timeoutMs }) {
     const result = await captureState(page);
     await page.screenshot({ path: path.join(screenshotDir, "running.png"), fullPage: true });
     const failures = [...errors.map((error) => `${error.type}: ${error.text}`)];
-    validateCommon(result.state, failures);
+    validateCommon(result.state, failures, { requireBots });
     if ((result.state.environmentPropsVisible || 0) < 10) {
       failures.push(`expected desktop environment props, got ${result.state.environmentPropsVisible || 0}`);
     }
@@ -336,6 +344,7 @@ function renderCheckDetails(check) {
     const activePowerups = activePowerupEffectCount(check.state);
     const activeSuffix = activePowerups ? `, active effects ${activePowerups}` : "";
     lines.push(`- Items: ${check.state.itemsVisible || 0}, trash ${check.state.trashInstances || 0}, powerups ${check.state.powerupInstances || 0}${activeSuffix}`);
+    lines.push(`- Bots: visible ${check.state.botsVisible || 0}, known ${check.state.botsKnown || 0}, mode ${check.state.botRenderMode || "unknown"}`);
     const nearestTrash = nearestTrashDistance(check.state);
     if (nearestTrash !== null) lines.push(`- Nearest trash distance: ${nearestTrash}`);
     lines.push(`- Boat feel: ${JSON.stringify(check.state.boatFeel || {})}`);
@@ -384,6 +393,8 @@ async function main() {
   const outputDir = argValue("output-dir", process.env.STWL_CONFERENCE_GAME_OUTPUT_DIR || DEFAULT_OUTPUT_DIR);
   const scenario = argValue("scenario", process.env.STWL_CONFERENCE_GAME_SCENARIO || DEFAULT_SCENARIO);
   const timeoutMs = Number(argValue("timeout-ms", process.env.STWL_DEMO_TIMEOUT_MS || "90000"));
+  const roomOverride = argValue("room", process.env.STWL_CONFERENCE_GAME_ROOM || "");
+  const requireBots = hasFlag("require-bots") || /^(1|true|yes|on)$/i.test(process.env.STWL_REQUIRE_BOTS || "");
   if (!["mobile", "desktop", "both"].includes(scenario)) {
     throw new Error(`Unsupported scenario ${scenario}; expected mobile, desktop, or both`);
   }
@@ -393,16 +404,18 @@ async function main() {
   const { chromium } = await import(playwrightImport);
   const checks = [];
   if (scenario === "mobile" || scenario === "both") {
-    checks.push(await runMobile({ chromium, baseUrl, outputDir, timeoutMs }));
+    checks.push(await runMobile({ chromium, baseUrl, outputDir, timeoutMs, roomOverride, requireBots }));
   }
   if (scenario === "desktop" || scenario === "both") {
-    checks.push(await runDesktop({ chromium, baseUrl, outputDir, timeoutMs }));
+    checks.push(await runDesktop({ chromium, baseUrl, outputDir, timeoutMs, roomOverride, requireBots }));
   }
 
   const report = {
     generated_at: new Date().toISOString(),
     base_url: baseUrl,
     scenario,
+    room_override: roomOverride || null,
+    require_bots: requireBots,
     verdict: finalVerdict(checks),
     playwright_import: playwrightImport,
     checks,

@@ -7,6 +7,7 @@ import {
   buildTrace,
   computeInputToward,
   desiredBotCount,
+  integrateBotMotion,
   parseBotConfig,
   selectTargetItem,
   syntheticMechanicForTick,
@@ -90,6 +91,7 @@ function createBotInstance(index) {
     score: 0,
     position: { x: 0, y: 0, z: 0 },
     rotationY: 0,
+    speed: 0,
     seq: 0,
     target: null,
     targetAt: 0,
@@ -100,6 +102,8 @@ function createBotInstance(index) {
     lastPositionEventAt: 0,
     lastMechanicEventAt: 0,
     lastGameOverAt: 0,
+    lastAuthoritativeStateAt: 0,
+    lastMotionAt: Date.now(),
   };
 
   function joinRoom() {
@@ -163,7 +167,11 @@ function createBotInstance(index) {
       : bot.strategy === "trail_drama"
         ? ["trash", "powerup", "marine"]
         : ["trash", "powerup", "marine"];
-    bot.target = selectTargetItem(bot.position, bot.items, preferences);
+    bot.target = selectTargetItem(bot.position, bot.items, preferences, {
+      rankOffset: bot.index,
+      pickWindow: 6,
+      jitter: bot.index * 0.08,
+    });
     bot.targetAt = now;
     return bot.target;
   }
@@ -191,6 +199,11 @@ function createBotInstance(index) {
     const input = bot.active
       ? computeInputToward(bot.position, bot.rotationY, target, config)
       : { throttle: 0, steer: 0, brake: false };
+    const dt = Math.max(0.001, Math.min(0.25, (now - (bot.lastMotionAt || now)) / 1000));
+    bot.lastMotionAt = now;
+    if (bot.active && now - (bot.lastAuthoritativeStateAt || 0) > 1000) {
+      integrateBotMotion(bot, input, config, dt);
+    }
 
     socket.emit("player.input", {
       id,
@@ -228,12 +241,17 @@ function createBotInstance(index) {
 
   socket.on("game.on", async ({ startPosition } = {}) => {
     if (startPosition) {
+      const fanoutRadius = Number(config.spawnFanoutRadius || 0);
+      const fanoutAngle = ((bot.index - 1) / Math.max(1, config.maxBots || 1)) * Math.PI * 2;
+      const x = Number(startPosition.x || 0) + Math.sin(fanoutAngle) * fanoutRadius;
+      const z = Number(startPosition.z || 0) + Math.cos(fanoutAngle) * fanoutRadius;
       bot.position = {
-        x: Number(startPosition.x || 0),
+        x: Math.max(-config.worldHalfWidth, Math.min(config.worldHalfWidth, x)),
         y: Number(startPosition.y || 0),
-        z: Number(startPosition.z || 0),
+        z: Math.max(-config.worldHalfHeight, Math.min(config.worldHalfHeight, z)),
       };
-      bot.rotationY = 0;
+      bot.rotationY = fanoutAngle + Math.PI;
+      bot.speed = 0;
     }
     bot.active = true;
     bot.started = true;
@@ -281,6 +299,8 @@ function createBotInstance(index) {
         z: Number(own.z || 0),
       };
       bot.rotationY = Number(own.rotY || 0);
+      bot.speed = Number(own.speed || own.vel || 0);
+      bot.lastAuthoritativeStateAt = Date.now();
     }
     for (const [playerId, state] of Object.entries(states || {})) {
       if (playerId !== id) bot.players[playerId] = state;

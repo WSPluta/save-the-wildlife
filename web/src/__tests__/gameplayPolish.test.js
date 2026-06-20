@@ -31,15 +31,39 @@ describe("gameplay polish regressions", () => {
     expect(script).not.toMatch(/["']assets\//);
   });
 
-  it("keeps deployed bots as data-only participants so load tests do not block gameplay", () => {
-    expect(script).toMatch(/const BOT_RENDER_MODE = "data-only";/);
+  it("renders demo bots as bounded visible participants for gameplay and commentary proof", () => {
+    expect(script).toMatch(/const BOT_RENDER_MODE = "demo-visible";/);
+    expect(script).toMatch(/const BOT_VISUAL_SCALE = 0\.62;/);
+    expect(script).toMatch(/const BOT_VISUAL_COLOR = 0x15c7b8;/);
     expect(script).toMatch(/function isBotDisplayName\(name\)/);
     expect(script).toMatch(/function isBotPlayerId\(id\)/);
+    expect(script).toMatch(/function shouldRenderRemotePlayer\(id\)/);
     expect(script).toMatch(/function removeRemotePlayerVisual\(id\)/);
+    expect(script).toMatch(/let ensureBotRosterVisualsForScene = \(\) => \{\};/);
+    expect(script).toMatch(/function styleBotRemoteBoat\(group, mesh, lodLow\)/);
+    expect(script).toMatch(/function keepBotRemoteBoatVisible\(group\)/);
+    expect(script).toMatch(/function ensureBotRosterVisuals\(\)/);
+    expect(script).toMatch(/`BOT \$\{String\(id \|\| ""\)\.slice\(4, 8\)\}`/);
+    expect(script).toMatch(/const botIds = Object\.keys\(otherPlayersInfo \|\| \{\}\)\.filter/);
+    expect(script).toMatch(/rosterFallback: true,/);
+    expect(script).toMatch(/group\.scale\.setScalar\(BOT_VISUAL_SCALE\);/);
+    expect(script).toMatch(/group\.frustumCulled = false;/);
+    expect(script).toMatch(/keepBotRemoteBoatVisible\(otherPlayersMeshes\[id\]\);/);
+    expect(script).toMatch(/if \(g\.userData && g\.userData\.isBot\) \{[\s\S]{0,120}g\.visible = true;[\s\S]{0,120}g\.frustumCulled = false;/);
+    expect(script).toMatch(/clone\.color\.lerp\(new THREE\.Color\(BOT_VISUAL_COLOR\), 0\.72\);/);
     expect(script).toMatch(/releaseRemoteBoatVisual = returnBoatToPool;/);
-    expect(script).toMatch(/if \(BOT_RENDER_MODE === "data-only" && isBotPlayerId\(key\)\)/);
-    expect(script).toMatch(/if \(BOT_RENDER_MODE === "data-only" && isBotPlayerId\(joinedId\)\)/);
+    expect(script).toMatch(/if \(!shouldRenderRemotePlayer\(key\)\)/);
+    expect(script).toMatch(/if \(!shouldRenderRemotePlayer\(joinedId\)\)/);
+    expect(script).toMatch(/ensureBotRosterVisuals\(\);/);
+    expect(script).toMatch(/createItemMeshForScene = createItemMesh;\s*ensureBotRosterVisuals\(\);/);
+    expect(script).toMatch(/ensureBotRosterVisualsForScene = ensureBotRosterVisuals;/);
+    expect(script).toMatch(/try \{ ensureBotRosterVisualsForScene\(\); \} catch \(_\) \{\}/);
     expect(script).toMatch(/const infoCount = Object\.keys\(otherPlayersInfo \|\| \{\}\)\.length;/);
+    expect(script).toMatch(/botsVisible: botSamples\.length,/);
+    expect(script).toMatch(/botsKnown: Math\.max\(knownBotCount, botSamples\.length\),/);
+    expect(script).toMatch(/botRenderMode: BOT_RENDER_MODE,/);
+    expect(script).toMatch(/botSamples,/);
+    expect(script).toMatch(/botRosterVisual: latestBotRosterVisualDebug,/);
   });
 
   it("clamps trash and power-up visual scale so bad telemetry cannot become walls", () => {

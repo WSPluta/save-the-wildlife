@@ -51,7 +51,7 @@ const REQUIRED_DEPLOYS = [
   "replay",
 ];
 const REQUIRED_ADAPTER_PROVIDERS = ["oci-base", "oci-fine-tuned"];
-const SUPPORTED_UPSTREAM_FORMATS = new Set(["openai", "internal"]);
+const SUPPORTED_UPSTREAM_FORMATS = new Set(["openai", "internal", "ollama", "ollama-chat", "ollama-native"]);
 
 function argValue(name, fallback) {
   const flag = `--${name}`;
