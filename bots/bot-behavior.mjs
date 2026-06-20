@@ -58,6 +58,8 @@ export function parseBotConfig(env = process.env) {
     spawnFanoutRadius: floatValue(env.BOT_SPAWN_FANOUT_RADIUS, 7.5, { min: 0, max: 30 }),
     eventGeneration: boolValue(env.BOT_GENERATE_GAME_EVENTS, true),
     emitSyntheticMechanics: boolValue(env.BOT_SYNTHETIC_MECHANICS_EVENTS, true),
+    scaleDownGraceMs: intValue(env.BOT_SCALE_DOWN_GRACE_MS, 15000, { min: 0, max: 300000 }),
+    scaleDownCooldownMs: intValue(env.BOT_SCALE_DOWN_COOLDOWN_MS, 2500, { min: 0, max: 60000 }),
     botNamePrefix: String(env.BOT_NAME_PREFIX || "Bot Data").trim() || "Bot Data",
     sessionPrefix: String(env.BOT_SESSION_PREFIX || "BOT-DATA").trim() || "BOT-DATA",
   };
@@ -70,6 +72,35 @@ export function desiredBotCount(counts = {}, config = parseBotConfig({})) {
   const wantedForTarget = Math.max(0, Number(config.targetPlayers || 0) - humans);
   const wanted = Math.max(Number(config.minBots || 0), wantedForTarget);
   return Math.max(0, Math.min(Number(config.maxBots || 0), wanted));
+}
+
+export function planBotPoolSize(currentSize, desired, state = {}, config = parseBotConfig({}), now = Date.now()) {
+  const current = Math.max(0, Math.floor(Number(currentSize || 0)));
+  const wanted = Math.max(0, Math.floor(Number(desired || 0)));
+  const nextState = {
+    scaleDownPendingSince: state.scaleDownPendingSince || 0,
+    lastScaleDownAt: state.lastScaleDownAt || 0,
+  };
+
+  if (wanted >= current) {
+    nextState.scaleDownPendingSince = 0;
+    return { size: wanted, state: nextState, reason: wanted > current ? "scale_up" : "stable" };
+  }
+
+  if (!nextState.scaleDownPendingSince) {
+    nextState.scaleDownPendingSince = now;
+    return { size: current, state: nextState, reason: "scale_down_pending" };
+  }
+
+  const graceElapsed = now - nextState.scaleDownPendingSince >= Number(config.scaleDownGraceMs || 0);
+  const cooldownElapsed = now - nextState.lastScaleDownAt >= Number(config.scaleDownCooldownMs || 0);
+  if (!graceElapsed || !cooldownElapsed) {
+    return { size: current, state: nextState, reason: "scale_down_debounced" };
+  }
+
+  nextState.lastScaleDownAt = now;
+  if (current - 1 <= wanted) nextState.scaleDownPendingSince = 0;
+  return { size: Math.max(wanted, current - 1), state: nextState, reason: "scale_down" };
 }
 
 export function itemKind(item = {}) {

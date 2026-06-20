@@ -50,6 +50,10 @@ spec:
               value: "2500"
             - name: BOT_MECHANICS_EVENT_INTERVAL_MS
               value: "6500"
+            - name: BOT_SCALE_DOWN_GRACE_MS
+              value: "15000"
+            - name: BOT_SCALE_DOWN_COOLDOWN_MS
+              value: "2500"
             - name: BOT_NAME_PREFIX
               value: "Bot Data"
           resources:

@@ -8,6 +8,7 @@ import {
   itemKind,
   normalizeRoom,
   parseBotConfig,
+  planBotPoolSize,
   selectTargetItem,
   syntheticMechanicForTick,
 } from "../bot-behavior.mjs";
@@ -22,6 +23,8 @@ test("parses production bot defaults for persistent demo data generation", () =>
   assert.equal(config.eventGeneration, true);
   assert.equal(config.emitSyntheticMechanics, true);
   assert.equal(config.spawnFanoutRadius, 7.5);
+  assert.equal(config.scaleDownGraceMs, 15000);
+  assert.equal(config.scaleDownCooldownMs, 2500);
 });
 
 test("normalizes room ids and computes desired bot count from humans", () => {
@@ -36,6 +39,42 @@ test("normalizes room ids and computes desired bot count from humans", () => {
   assert.equal(desiredBotCount({ humans: 0, bots: 0, total: 0 }, config), 8);
   assert.equal(desiredBotCount({ humans: 6, bots: 2, total: 8 }, config), 3);
   assert.equal(desiredBotCount({ humans: 20, bots: 0, total: 20 }, config), 3);
+});
+
+test("debounces bot scale-down to keep demo data producers stable", () => {
+  const config = parseBotConfig({
+    BOT_SCALE_DOWN_GRACE_MS: "10000",
+    BOT_SCALE_DOWN_COOLDOWN_MS: "2000",
+  });
+  let state = {};
+
+  let plan = planBotPoolSize(4, 8, state, config, 1000);
+  assert.equal(plan.size, 8);
+  assert.equal(plan.reason, "scale_up");
+  state = plan.state;
+
+  plan = planBotPoolSize(8, 6, state, config, 2000);
+  assert.equal(plan.size, 8);
+  assert.equal(plan.reason, "scale_down_pending");
+  state = plan.state;
+
+  plan = planBotPoolSize(8, 6, state, config, 9000);
+  assert.equal(plan.size, 8);
+  assert.equal(plan.reason, "scale_down_debounced");
+  state = plan.state;
+
+  plan = planBotPoolSize(8, 6, state, config, 13000);
+  assert.equal(plan.size, 7);
+  assert.equal(plan.reason, "scale_down");
+  state = plan.state;
+
+  plan = planBotPoolSize(7, 6, state, config, 14000);
+  assert.equal(plan.size, 7);
+  assert.equal(plan.reason, "scale_down_debounced");
+
+  plan = planBotPoolSize(7, 8, state, config, 15000);
+  assert.equal(plan.size, 8);
+  assert.equal(plan.reason, "scale_up");
 });
 
 test("selects high-value powerups before equally distant trash for commentary data", () => {

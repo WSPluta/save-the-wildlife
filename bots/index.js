@@ -9,6 +9,7 @@ import {
   desiredBotCount,
   integrateBotMotion,
   parseBotConfig,
+  planBotPoolSize,
   selectTargetItem,
   syntheticMechanicForTick,
 } from "./bot-behavior.mjs";
@@ -41,6 +42,7 @@ logger.info({
 
 let botPool = [];
 let playerCounts = { total: 0, humans: 0, bots: 0 };
+let resizeState = {};
 
 function socketOptions() {
   return {
@@ -333,16 +335,21 @@ function createBotInstance(index) {
 
 function updateBotPool() {
   const desired = desiredBotCount(playerCounts, config);
-  while (botPool.length < desired) {
+  const plan = planBotPoolSize(botPool.length, desired, resizeState, config, Date.now());
+  resizeState = plan.state;
+  if (plan.reason !== "stable") {
+    logger.debug({ current: botPool.length, desired, planned: plan.size, reason: plan.reason }, "bot pool resize plan");
+  }
+  while (botPool.length < plan.size) {
     const bot = createBotInstance(botPool.length + 1);
     botPool.push(bot);
-    logger.info({ bot: bot.id, pool: botPool.length, desired }, "spawned bot");
+    logger.info({ bot: bot.id, pool: botPool.length, desired, planned: plan.size }, "spawned bot");
   }
-  while (botPool.length > desired) {
+  while (botPool.length > plan.size) {
     const bot = botPool.pop();
     clearInterval(bot.interval);
     try { bot.socket.disconnect(); } catch (_) {}
-    logger.info({ bot: bot.id, pool: botPool.length, desired }, "removed bot");
+    logger.info({ bot: bot.id, pool: botPool.length, desired, planned: plan.size }, "removed bot");
   }
 }
 
