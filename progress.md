@@ -646,3 +646,36 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - `npm run check:model-ai-demo:proof` returned `adapter_verdict=ready` and `strict_verdict=ready`.
     - `npm run check:conference-demo` remains `ready_with_caveats` only because the fixed smoke session has no replay/vector evidence and the commentary response did not produce an exact Canvas line; PAF health, Select AI, in-db agent, trace persistence, and model proof pass.
   - TODO: make the ws-server hotfix durable through OCI DevOps image build/deploy, then remove the `ws-server-coherence-scan-hotfix` mount just as with the pending PAF hotfix cleanup.
+
+- 2026-06-20 durable live rescue completion:
+  - Committed and pushed `71b5cea` (`Harden live demo runtime and model deployment path`) with durable ws-server Coherence scan fallback, reduced ws HPA max, larger Coherence resources, PAF commentary gating, model upstream wiring, and Oracle AI Database/PAF timeout defaults.
+  - OCI DevOps build `stwl-build-71b5cea-runtime-paf-20260620233530` succeeded and exported `WS_SERVER_VERSION=0.0.35`, `WEB_VERSION=0.0.28`, `PAF_VERSION=0.0.5`, `BOTS_VERSION=0.0.3`, `SCORE_VERSION=0.0.7`, and `REPLAY_VERSION=0.0.1`.
+  - OCI DevOps deploy `stwl-deploy-71b5cea-runtime-paf-20260620235639` succeeded.
+  - Removed live ConfigMap hotfix mounts from `ws-server` and `private-agent-factory`, deleted `ws-server-coherence-scan-hotfix` and `private-agent-factory-index-hotfix`, and verified the pods roll cleanly from baked images.
+  - Found and fixed a DevOps command-spec issue where Terraform's `paf_version=latest` overrode deploy-time `PAF_VERSION`; committed and pushed `6c4558e` (`Respect deploy-time PAF image version`) and applied `deploy/devops/tf-devops` so the inline command-spec artifact is corrected.
+  - Patched live PAF to `private-agent-factory:0.0.5` and verified package version `0.0.5` inside the pod.
+  - Final cluster images: `web:0.0.28`, `server:0.0.35`, `private-agent-factory:0.0.5`, `bots:0.0.3`, `score:0.0.7`, `replay:0.0.1`, Coherence CE `25.03.1`, model adapters `latest`.
+  - Public receipts:
+    - Final mobile+desktop game smoke passed at `.codex_tmp/conference-game-smoke-live-71b5cea-final/latest.md`.
+    - Strict trash pickup passed at `output/collect-trash-live-71b5cea-rerun/result.json` with score `0 -> 1`, trash `4 -> 3`, and no browser errors.
+    - Admin route smoke passed at `output/admin-route-live-71b5cea/result.json` for `/admin/observability` and `/admin/ai-learning`.
+    - PAF `/paf/healthz` reports `version=0.0.5`, Oracle configured, OCI GenAI configured, Canvas configured, in-db agent enabled, Select AI profile/team configured, and graph/replay/vector retrieval enabled.
+    - Conference preflight is `ready_with_caveats`: no replay/vector rows for the smoke session, the exact smoke commentary line came from SQL fallback rather than Canvas/in-db metadata, and the two-live-upstream-LLM claim remains gated because adapters report `behavior-adapter`.
+  - Residual caveat: one earlier combined mobile smoke timed out in `STARTING`, while socket lifecycle, rerun mobile, rerun desktop, final combined game smoke, and strict trash pickup all passed. If this recurs, harden client/server room-state recovery for missed STARTING->RUNNING fanout.
+
+- 2026-06-21 live gameplay control fix:
+  - Reproduced the public complaint with fresh smokes against `http://130.162.174.167/`: admin routes and mobile rendering were healthy, but strict trash collection failed because the boat could drive around without reliably closing on trash.
+  - Confirmed the steering convention was inverted: holding `ArrowLeft` increased yaw and moved the boat right. The mobile joystick axes were also inverted by constants.
+  - Patched `web/src/script.js` so keyboard and mobile controls use player-facing signs: up/right joystick is forward/right, `ArrowLeft` steers left, and `ArrowRight` steers right. Server-authoritative physics, scoring, trails, powerups, and collision validation were left unchanged.
+  - Updated `web/src/__tests__/mobileControls.test.js` to pin the corrected sign convention and bumped `web` to `0.0.29` for a cache-safe OCI DevOps deployment.
+  - Validation before deploy:
+    - `node --check web/src/script.js`
+    - `npm --prefix web run test:unit -- --run src/__tests__/mobileControls.test.js`
+    - `npm --prefix web run test:unit -- --run src/__tests__/gameplayPolish.test.js`
+    - full `npm --prefix web run test:unit`
+    - full `npm --prefix server run test:unit`
+    - `npm --prefix web run build`
+    - local trash collection smoke passed with score `0 -> 1`
+    - local keyboard probe showed left steering produced negative yaw and negative X movement
+    - local mobile joystick pointer probe showed up/right drag produced forward motion, positive yaw, and positive X movement
+  - Deployment pending: commit/push and OCI DevOps build/deploy for `web:0.0.29`, then public strict collection, mobile, admin, and PAF/model UI smokes.

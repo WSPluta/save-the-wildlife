@@ -18,13 +18,13 @@ describe("mobile touch controls", () => {
     expect(script).toMatch(/Number\(mobileInput\.steer \|\| 0\)/);
   });
 
-  it("inverts mobile axes independently from keyboard controls", () => {
-    expect(script).toMatch(/const MOBILE_THROTTLE_AXIS = -1;/);
-    expect(script).toMatch(/const MOBILE_STEER_AXIS = -1;/);
+  it("maps mobile and keyboard axes to player-facing boat controls", () => {
+    expect(script).toMatch(/const MOBILE_THROTTLE_AXIS = 1;/);
+    expect(script).toMatch(/const MOBILE_STEER_AXIS = 1;/);
     expect(script).toMatch(/throttle:\s*Math\.max\(-1,\s*Math\.min\(1,\s*MOBILE_THROTTLE_AXIS \* -y \/ radius\)\)/);
     expect(script).toMatch(/steer:\s*Math\.max\(-1,\s*Math\.min\(1,\s*MOBILE_STEER_AXIS \* x \/ radius\)\)/);
-    expect(script).toMatch(/keyboard\["ArrowLeft"\] \? 1 : 0/);
-    expect(script).toMatch(/keyboard\["ArrowRight"\] \? -1 : 0/);
+    expect(script).toMatch(/keyboard\["ArrowLeft"\] \? -1 : 0/);
+    expect(script).toMatch(/keyboard\["ArrowRight"\] \? 1 : 0/);
   });
 
   it("shows the joystick on coarse pointers during gameplay only", () => {
