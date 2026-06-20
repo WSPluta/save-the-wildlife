@@ -175,6 +175,32 @@ export function resolveAuthoritativeBoatTypes(env = {}) {
   };
 }
 
+export function countMirroredMapEntries(mapLike, {
+  coherenceEnabled = false,
+  mapPlayersInfo,
+  mapPlayersTraces,
+  mapTrash,
+  mapMarineLife,
+  mapPowerUps,
+  mapRooms,
+  localPlayersInfo = {},
+  localPlayerTraces = {},
+  localTrash = {},
+  localMarineLife = {},
+  localPowerUps = {},
+  localRooms = {},
+} = {}) {
+  if (!mapLike) return 0;
+  if (!coherenceEnabled) return Object.keys(mapLike).length;
+  if (mapLike === mapPlayersInfo) return Object.keys(localPlayersInfo).length;
+  if (mapLike === mapPlayersTraces) return Object.keys(localPlayerTraces).length;
+  if (mapLike === mapTrash) return Object.keys(localTrash).length;
+  if (mapLike === mapMarineLife) return Object.keys(localMarineLife).length;
+  if (mapLike === mapPowerUps) return Object.keys(localPowerUps).length;
+  if (mapLike === mapRooms) return Object.keys(localRooms).length;
+  return 0;
+}
+
 export const DEFAULT_SPAWN_PLAYER_CLEAR_RADIUS = 4;
 export const DEFAULT_START_POSITION_ITEM_CLEAR_RADIUS = 6;
 

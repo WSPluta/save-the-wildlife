@@ -21,6 +21,7 @@ import {
   resolveAuthoritativeBoatTypes,
   chooseSpawnPositionAwayFromPlayers,
   buildStartPositionItemRelocations,
+  countMirroredMapEntries,
   resolveCollisionValidateRadius,
   resolveServerAuthSpeedLimit,
 } from "./lib/gameLogic.js";
@@ -2395,14 +2396,22 @@ async function readCacheEntries(cache) {
 }
 
 async function mapEntryCount(mapLike) {
-  if (!mapLike) return 0;
-  if (!ENABLE_COHERENCE_BACKEND) return Object.keys(mapLike).length;
   try {
-    if (mapLike === mapPlayersInfo) return Object.keys(localPlayersInfo).length;
-    if (mapLike === mapPlayersTraces) return Object.keys(localPlayerTraces).length;
-    // Avoid background Coherence scans/size RPCs in metrics loops; item maps are hydrated on demand.
-    if (mapLike === mapTrash || mapLike === mapMarineLife || mapLike === mapPowerUps || mapLike === mapRooms) return 0;
-    return 0;
+    return countMirroredMapEntries(mapLike, {
+      coherenceEnabled: ENABLE_COHERENCE_BACKEND,
+      mapPlayersInfo,
+      mapPlayersTraces,
+      mapTrash,
+      mapMarineLife,
+      mapPowerUps,
+      mapRooms,
+      localPlayersInfo,
+      localPlayerTraces,
+      localTrash,
+      localMarineLife,
+      localPowerUps,
+      localRooms,
+    });
   } catch (error) {
     logger.error(`Error counting entries. ${error.message}`);
     return 0;

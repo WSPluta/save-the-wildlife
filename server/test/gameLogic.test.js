@@ -15,6 +15,7 @@ import {
   resolveAuthoritativeBoatTypes,
   resolveCollisionValidateRadius,
   resolveServerAuthSpeedLimit,
+  countMirroredMapEntries,
   chooseSpawnPositionAwayFromPlayers,
   buildStartPositionItemRelocations,
   isPositionWithinRadius2d,
@@ -195,6 +196,32 @@ describe("authoritative boat physics", () => {
     expect(boatTypes.rescue.maxSpeed).toBe(2.75);
     expect(resolveServerAuthSpeedLimit("")).toBe(DEFAULT_SERVER_AUTH_SPEED_LIMIT);
     expect(resolveServerAuthSpeedLimit("3.75")).toBe(3.75);
+  });
+});
+
+describe("operator item metrics", () => {
+  it("counts local item mirrors for Coherence-backed metrics instead of reporting zero", () => {
+    const mapTrash = {};
+    const mapMarineLife = {};
+    const mapPowerUps = {};
+
+    const options = {
+      coherenceEnabled: true,
+      mapTrash,
+      mapMarineLife,
+      mapPowerUps,
+      localTrash: { t1: {}, t2: {} },
+      localMarineLife: { m1: {} },
+      localPowerUps: { p1: {}, p2: {}, p3: {} },
+    };
+
+    expect(countMirroredMapEntries(mapTrash, options)).toBe(2);
+    expect(countMirroredMapEntries(mapMarineLife, options)).toBe(1);
+    expect(countMirroredMapEntries(mapPowerUps, options)).toBe(3);
+  });
+
+  it("counts the map directly in memory mode", () => {
+    expect(countMirroredMapEntries({ a: {}, b: {} }, { coherenceEnabled: false })).toBe(2);
   });
 });
 
