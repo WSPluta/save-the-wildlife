@@ -119,7 +119,7 @@ steps:
     command: |
       kubectl -n default rollout status deploy/coherence --timeout=300s
       kubectl -n default rollout status deploy/score --timeout=300s
-      kubectl -n default rollout status deploy/ws-server --timeout=300s
+      kubectl -n default rollout status deploy/ws-server --timeout=600s
       kubectl -n default rollout status deploy/web --timeout=300s
       kubectl -n default rollout status deploy/replay --timeout=300s
       kubectl -n default rollout status deploy/bots --timeout=300s

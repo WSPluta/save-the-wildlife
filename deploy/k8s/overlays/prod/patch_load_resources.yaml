@@ -3,6 +3,12 @@ kind: Deployment
 metadata:
   name: ws-server
 spec:
+  minReadySeconds: 20
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   template:
     spec:
       containers:
