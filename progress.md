@@ -572,3 +572,15 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - full `npm --prefix server run test:unit`
     - `npm --prefix web run build`
     - local trash smoke passed with score `0 -> 1`, `boatFeel.y=-0.031`, `seatDepth=0.034`, and no browser errors.
+  - Deployed hotfix:
+    - Commit `bc0610f` (`Fix live pickups and boat waterline`) pushed to `main`.
+    - OCI DevOps build `stwl-build-bc0610f-pickup-waterline` succeeded and exported `WS_SERVER_VERSION=0.0.33`, `WEB_VERSION=0.0.25`, `PAF_VERSION=0.0.4`, `BOTS_VERSION=0.0.2`, `SCORE_VERSION=0.0.7`, and `REPLAY_VERSION=0.0.1`.
+    - OCI DevOps deploy `stwl-deploy-bc0610f-pickup-waterline` succeeded.
+    - Kubernetes confirms `web 1/1` on `web:0.0.25`, `ws-server 8/8` on `server:0.0.33`, PAF `4/4`, score `2/2`, replay `1/1`, bots `1/1`, and both model inference adapters `1/1`.
+    - Public strict trash smoke passed with score `0 -> 1`, trash `28 -> 27`, server auth on, `boatFeel.y=-0.029`, `seatDepth=0.032`, and no browser errors.
+    - Public admin route smoke passed for `/admin/observability` and `/admin/ai-learning`.
+    - PAF health is green with Oracle, OCI GenAI, Canvas, in-DB agent, Select AI, graph/replay/vector retrieval, and model router configured.
+    - Model readiness remains `ready_with_upstream_llm_blocker`; this is the honest boundary until both private routes report `runtime_mode=upstream-llm`.
+  - Follow-up smoke-harness correction:
+    - Updated `scripts/conference-game-smoke.mjs` waterline thresholds to match the non-sinking hotfix intent.
+    - Public mobile/desktop game smoke then passed with `verdict=ready`; receipt at `.codex_tmp/conference-game-smoke-live-bc0610f-threshold/latest.md`.
