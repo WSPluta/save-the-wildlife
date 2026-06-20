@@ -176,6 +176,8 @@ const TRASH_VISUAL_SCALE_MIN = 0.34;
 const TRASH_VISUAL_SCALE_MAX = 0.74;
 const POWERUP_VISUAL_SCALE_MIN = 0.38;
 const POWERUP_VISUAL_SCALE_MAX = 0.82;
+const TRASH_ARCADE_PICKUP_RADIUS = 2.6;
+const POWERUP_ARCADE_PICKUP_RADIUS = 2.65;
 const BOT_RENDER_MODE = "demo-visible";
 const BOT_VISUAL_SCALE = 0.62;
 const BOT_VISUAL_COLOR = 0x15c7b8;
@@ -543,6 +545,13 @@ function getPlayerCollisionBox() {
   if (!localBox) return playerCollisionBox.setFromObject(player).expandByVector(playerCollisionPadding);
   player.updateMatrixWorld(true);
   return playerCollisionBox.copy(localBox).applyMatrix4(player.matrixWorld).expandByVector(playerCollisionPadding);
+}
+
+function isWithinArcadePickupRadius(position, radius) {
+  if (!player || !position) return false;
+  const dx = (player.position?.x || 0) - (Number(position.x) || 0);
+  const dz = (player.position?.z || 0) - (Number(position.z) || 0);
+  return Math.hypot(dx, dz) <= radius;
 }
 const LOD_DISTANCES = {
   high: 50,
@@ -4680,7 +4689,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       trashCenter.set(px, py, pz);
       trashSize.set(s, s, s);
       trashBox.setFromCenterAndSize(trashCenter, trashSize);
-      if (!playerBox.intersectsBox(trashBox)) {
+      if (!playerBox.intersectsBox(trashBox) && !isWithinArcadePickupRadius(item.position, TRASH_ARCADE_PICKUP_RADIUS)) {
         if (!magnetActive) continue;
         const dx = (player.position?.x || 0) - px;
         const dz = (player.position?.z || 0) - pz;
@@ -4717,7 +4726,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       trashCenter.set(px, py, pz);
       trashSize.set(s, s, s);
       trashBox.setFromCenterAndSize(trashCenter, trashSize);
-      if (!playerBox.intersectsBox(trashBox)) {
+      if (!playerBox.intersectsBox(trashBox) && !isWithinArcadePickupRadius(item.position, POWERUP_ARCADE_PICKUP_RADIUS)) {
         if (!magnetActive) continue;
         const dx = (player.position?.x || 0) - px;
         const dz = (player.position?.z || 0) - pz;

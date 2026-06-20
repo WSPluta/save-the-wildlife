@@ -218,6 +218,14 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - `node --check` passed for `server/server.js`, `web/src/script.js`, and `web/src/commsWorker.js`.
     - Scoped `git diff --check` passed for touched tracked files; new-file no-index checks reported no whitespace diagnostics.
 - Deployed gameplay polish verification on 2026-06-11:
+- Incident verification on 2026-06-20:
+  - Fixed demo bot visibility by rendering bot participants again (`BOT_RENDER_MODE="demo-visible"`), adding bounded/tinted bot boats, and excluding bot groups from custom culling so the render optimizer cannot hide demo evidence.
+  - Added bot roster fallback visuals and `render_game_to_text` fields for `botsVisible`, `botsKnown`, `botRenderMode`, `botSamples`, and `botRosterVisual`.
+  - Added bot local motion fallback and target spreading so bots produce richer telemetry even when server-authoritative state is absent.
+  - Verified local desktop and mobile conference smokes on `http://127.0.0.1:8081` with `--require-bots`.
+  - Verified local trash collection with required score movement: `score 0 -> 1`.
+  - Verified local admin observability and Model AI routes render with root-relative assets and no page errors.
+  - Verified current live predeploy URL still lacks the newer bot fields, while live trash collection itself works (`score 0 -> 1`), indicating the public bundle is stale rather than the collision path being broken.
 - Live incident fix on 2026-06-20:
   - Reproduced the failure from user screenshots: nested `/admin/observability` and `/admin/ai-learning` routes loaded bare HTML because built assets used relative paths; gameplay view showed huge blocker geometry and trash pickup felt broken in deployed OKE.
   - Fixed production web asset routing by setting webpack `output.publicPath = "/"` and switching runtime static assets/audio to root-relative `/assets/...` URLs.
@@ -542,3 +550,25 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Added shared follow-camera composition with mobile-only higher eye line, slight forward look target, and narrower FOV so the hull/water contact reads properly on phones.
   - Lowered the visual-only boat feel pivot to sit the hull deeper in the waterline while preserving root movement, collisions, trails, joystick controls, and server movement.
   - Verified node syntax, focused boat/camera tests, full web unit tests, web production build, required develop-web-game Playwright loop, and local mobile conference smoke (`ready`, `boatFeel.y=-0.068`, `seatDepth=0.071`, joystick visible).
+- Live incident restoration on 2026-06-20:
+  - Verified commit `97000f7` (`Fix live gameplay and admin route regressions`) is both local `HEAD` and `origin/main`.
+  - Confirmed Kubernetes deployments are available: `web` 1/1, `ws-server` 8/8, `private-agent-factory` 4/4, `score` 2/2, and `replay` 1/1.
+  - Public mobile smoke against `http://130.162.174.167/` passed with `RUNNING`, visible joystick, `trashInstances=24`, `itemsVisible=104`, `boatFeel.y=-0.04`, and `waterlineContact.visible=true`.
+  - Strict public trash collection smoke passed with score `0 -> 1`, trash `44 -> 43`, and no browser errors.
+  - Public admin route smoke passed for `/admin/observability` and `/admin/ai-learning`; both pages loaded CSS/JS assets with `200` statuses and rendered their panels without browser errors.
+- Live pickup/waterline hotfix on 2026-06-20:
+  - Reproduced a fresh public trash-collection smoke failure after the earlier deployment: live gameplay reached `RUNNING`, but the automated boat path failed to collect before timeout and ended 3.9 units from nearest trash.
+  - Patched pickup feel conservatively:
+    - Added client-side arcade pickup-radius fallback for trash and powerups, while preserving Box3 collisions, server auth, scoring, telemetry, trails, and powerups.
+    - Raised the server authoritative `COLLISION_VALIDATE_RADIUS` default/env from `2.1` to `2.8` so accepted pickups match the visible boat footprint better.
+    - Lifted the visual-only boat hull pivot closer to the waterline (`waterlineOffset=-0.024`) and reduced extra settle depth so the boat reads as seated on water instead of sinking.
+  - Validation passed:
+    - `node --check web/src/script.js`
+    - `node --check web/src/boatFeel.js`
+    - `node --check server/server.js`
+    - focused web boat/gameplay tests
+    - focused server game logic tests
+    - full `npm --prefix web run test:unit`
+    - full `npm --prefix server run test:unit`
+    - `npm --prefix web run build`
+    - local trash smoke passed with score `0 -> 1`, `boatFeel.y=-0.031`, `seatDepth=0.034`, and no browser errors.

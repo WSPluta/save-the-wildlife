@@ -157,14 +157,14 @@ describe("recomputeWorldSize", () => {
 
 describe("resolveCollisionValidateRadius", () => {
   it("defaults to an arcade pickup radius that matches the visible client hitbox", () => {
-    expect(DEFAULT_COLLISION_VALIDATE_RADIUS).toBe(2.1);
-    expect(resolveCollisionValidateRadius()).toBe(2.1);
+    expect(DEFAULT_COLLISION_VALIDATE_RADIUS).toBe(2.8);
+    expect(resolveCollisionValidateRadius()).toBe(2.8);
   });
 
   it("accepts explicit positive overrides and ignores invalid values", () => {
     expect(resolveCollisionValidateRadius("2.25")).toBe(2.25);
-    expect(resolveCollisionValidateRadius("0")).toBe(2.1);
-    expect(resolveCollisionValidateRadius("bad")).toBe(2.1);
+    expect(resolveCollisionValidateRadius("0")).toBe(2.8);
+    expect(resolveCollisionValidateRadius("bad")).toBe(2.8);
   });
 });
 

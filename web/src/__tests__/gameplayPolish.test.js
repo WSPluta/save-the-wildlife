@@ -71,7 +71,10 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 0\.74;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.38;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 0\.82;/);
+    expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 2\.6;/);
+    expect(script).toMatch(/const POWERUP_ARCADE_PICKUP_RADIUS = 2\.65;/);
     expect(script).toMatch(/function clampVisualScale\(size, min, max\)/);
+    expect(script).toMatch(/function isWithinArcadePickupRadius\(position, radius\)/);
     expect(script).toMatch(/clampVisualScale\(size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX\)/);
     expect(script).toMatch(/clampVisualScale\(size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX\)/);
     expect(script).toMatch(/clampVisualScale\(item\.size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX\)/);
@@ -145,6 +148,8 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/localWaterlineContact\.scale\.set\(0\.38 \+ wakeStrength \* 0\.035, 1, 1\.06 \+ speedRatio \* 0\.08\);/);
     expect(script).toMatch(/player\.add\(localWaterlineContact\);/);
     expect(script).toMatch(/const playerBox = getPlayerCollisionBox\(\);/);
+    expect(script).toMatch(/isWithinArcadePickupRadius\(item\.position, TRASH_ARCADE_PICKUP_RADIUS\)/);
+    expect(script).toMatch(/isWithinArcadePickupRadius\(item\.position, POWERUP_ARCADE_PICKUP_RADIUS\)/);
     expect(script).toMatch(/latestBoatFeelDebug = updateBoatFeel\(player, localBoatFeelState,/);
     expect(script).toMatch(/wakeRipples: wakeRippleEffect,/);
     expect(script).toMatch(/updateBoatWaterlineContact\(\s*player,\s*effectiveSignedSpeed,\s*latestBoatFeelDebug\.wake,\s*MAX_SPEED,\s*latestBoatFeelDebug\.y,\s*latestBoatFeelDebug\.surfaceY\s*\);/);
