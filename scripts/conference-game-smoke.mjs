@@ -161,7 +161,7 @@ function validateCommon(state, failures, options = {}) {
   if (!state.boatFeel || !Number.isFinite(Number(state.boatFeel.y))) failures.push("missing finite boatFeel.y");
   if (state.boatFeel) {
     const boatY = Number(state.boatFeel.y || 0);
-    if (boatY > -0.007) failures.push(`boat visual y is too high above the waterline: ${state.boatFeel.y}`);
+    if (boatY > -0.002) failures.push(`boat visual y is too high above the waterline: ${state.boatFeel.y}`);
     if (boatY < -0.034) failures.push(`boat visual y is too deeply submerged: ${state.boatFeel.y}`);
   }
   if (state.waterlineContact && state.waterlineContact.visible !== true) {
