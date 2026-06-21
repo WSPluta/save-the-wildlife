@@ -153,6 +153,7 @@ let wakeRippleEffect = null;
 let latestWakeRippleDebug = { visible: 0, capacity: 0 };
 let localWaterlineContact = null;
 let latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0, seatDepth: 0, waterlineClearance: 0 };
+const waterReflectionSuppressedObjects = new Set();
 let latestCameraCompositionDebug = { mobile: false, distanceToPlayer: 0, relativeY: 0, lookHeight: 0 };
 let shouldSnapFollowCamera = true;
 let latestEffectiveSpeed = 0;
@@ -3774,19 +3775,39 @@ function disableReflectionForSprite(sprite) {
 // Generic helper: hide any Object3D from water reflection render passes
 function disableReflectionForObject(obj) {
   if (!obj) return;
-  const prev = { visible: true };
-  obj.onBeforeRender = function (renderer) {
+  const applyToRenderable = (target) => {
+    if (!target || !target.userData || target.userData.noWaterReflectionApplied) return;
+    const isRenderable = target.isMesh || target.isLine || target.isPoints || target.isSprite;
+    if (!isRenderable) return;
+    waterReflectionSuppressedObjects.add(target);
+    target.userData.noWaterReflectionApplied = true;
+  };
+  if (typeof obj.traverse === "function") obj.traverse(applyToRenderable);
+  else applyToRenderable(obj);
+}
+
+function suppressObjectsDuringWaterReflection(waterMesh) {
+  if (!waterMesh || waterMesh.userData?.reflectionSuppressWrapperInstalled) return;
+  const originalBeforeRender = waterMesh.onBeforeRender;
+  waterMesh.onBeforeRender = function (renderer, sceneArg, cameraArg, geometryArg, materialArg, groupArg) {
+    const hidden = [];
+    for (const target of waterReflectionSuppressedObjects) {
+      if (!target) continue;
+      hidden.push([target, target.visible]);
+      target.visible = false;
+    }
     try {
-      const rt = renderer.getRenderTarget && renderer.getRenderTarget();
-      if (rt) {
-        prev.visible = obj.visible;
-        obj.visible = false;
+      if (typeof originalBeforeRender === "function") {
+        return originalBeforeRender.call(this, renderer, sceneArg, cameraArg, geometryArg, materialArg, groupArg);
       }
-    } catch (_) {}
+      return undefined;
+    } finally {
+      for (const [target, visible] of hidden) {
+        try { target.visible = visible; } catch (_) {}
+      }
+    }
   };
-  obj.onAfterRender = function () {
-    try { obj.visible = prev.visible; } catch (_) {}
-  };
+  waterMesh.userData.reflectionSuppressWrapperInstalled = true;
 }
 function updatePowerUpBadge() {
   if (!powerupBadge) return;
@@ -4121,6 +4142,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   captureGameplayCollisionBox(player);
   localBoatFeelState = createBoatFeelState();
   installBoatFeelPivot(player, [boat]);
+  // Keep the close-follow camera from reading the water reflection as a submerged duplicate hull.
+  try { disableReflectionForObject(boat); } catch (_) {}
   localWaterlineContact = createBoatWaterlineContact();
   player.add(localWaterlineContact);
   if (startPosition && typeof startPosition.x === "number" && typeof startPosition.z === "number") {
@@ -4249,6 +4272,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     fog: scene.fog !== undefined,
   });
   water.rotation.x = -Math.PI / 2;
+  suppressObjectsDuringWaterReflection(water);
   scene.add(water);
 
   // Skybox

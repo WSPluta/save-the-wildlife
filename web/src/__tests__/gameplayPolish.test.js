@@ -151,6 +151,10 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/captureGameplayCollisionBox\(player\);/);
     expect(script).toMatch(/localBoatFeelState = createBoatFeelState\(\);/);
     expect(script).toMatch(/installBoatFeelPivot\(player, \[boat\]\);/);
+    expect(script).toMatch(/disableReflectionForObject\(boat\);/);
+    expect(script).toMatch(/function suppressObjectsDuringWaterReflection\(waterMesh\)/);
+    expect(script).toMatch(/suppressObjectsDuringWaterReflection\(water\);/);
+    expect(script).toMatch(/target\.userData\.noWaterReflectionApplied = true;/);
     expect(script).toMatch(/localWaterlineContact = createBoatWaterlineContact\(\);/);
     expect(script).toMatch(/new THREE\.RingGeometry\(0\.36, 0\.47, 48, 1\);/);
     expect(script).toMatch(/opacity: 0\.11,/);
