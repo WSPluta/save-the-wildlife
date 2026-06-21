@@ -159,6 +159,7 @@ describe("game event telemetry", () => {
 
   it("ships a sequence-backed Oracle telemetry schema for live ADB compatibility", () => {
     const ddl = readFileSync(new URL("../../deploy/db/stwl_game_events.sql", import.meta.url), "utf8");
+    const runtime = readFileSync(new URL("../lib/gameEvents.js", import.meta.url), "utf8");
 
     expect(ddl).toMatch(/CREATE\s+SEQUENCE\s+stwl_game_events_seq/i);
     expect(ddl).toMatch(/event_type\s+IN\s*\(/i);
@@ -168,6 +169,8 @@ describe("game event telemetry", () => {
     expect(ddl).toMatch(/metadata_json\s+CLOB\s+CHECK\s*\(\s*metadata_json\s+IS\s+JSON\s*\)/i);
     expect(ddl).toMatch(/CREATE\s+TABLE\s+stwl_player_sessions/i);
     expect(ddl).toMatch(/sessions_json\s+CLOB\s+CHECK\s*\(\s*sessions_json\s+IS\s+JSON\s*\)/i);
+    const playerSessionDdl = runtime.match(/CREATE TABLE stwl_player_sessions \(([\s\S]*?)\)`;/)?.[1] || "";
+    expect(playerSessionDdl.match(/\broom_id\s+VARCHAR2\(64\)/gi)).toHaveLength(1);
   });
 
   it("summarizes powerups, freezes, and game over events for commentary", async () => {

@@ -2087,6 +2087,7 @@ async function getOracleSummary(sessionId, playerId, options = {}) {
     const summaryResult = await connection.execute(
       `SELECT
         session_id,
+        room_id,
         player_id,
         MAX(player_name) KEEP (DENSE_RANK LAST ORDER BY occurred_at) AS player_name,
         NVL(MAX(score) KEEP (DENSE_RANK LAST ORDER BY occurred_at), 0) AS score,
@@ -2099,7 +2100,7 @@ async function getOracleSummary(sessionId, playerId, options = {}) {
         MAX(z) KEEP (DENSE_RANK LAST ORDER BY occurred_at) AS last_z
       FROM ${GAME_EVENTS_TABLE}
       WHERE session_id = :sessionId AND player_id = :playerId
-      GROUP BY session_id, player_id`,
+      GROUP BY session_id, room_id, player_id`,
       binds
     );
     const row = summaryResult.rows?.[0];
@@ -2137,6 +2138,7 @@ async function getOracleSummary(sessionId, playerId, options = {}) {
 
     return normalizeSummary({
       session_id: row.SESSION_ID,
+      room_id: row.ROOM_ID,
       player_id: row.PLAYER_ID,
       player_name: row.PLAYER_NAME,
       score: row.SCORE,
@@ -2155,6 +2157,41 @@ async function getOracleSummary(sessionId, playerId, options = {}) {
   } finally {
     if (close) await connection.close();
   }
+}
+
+async function resolveLatestOracleIdentityForRoom(connection, roomId) {
+  const normalizedRoom = textValue(roomId);
+  if (!normalizedRoom) return null;
+  const rows = await queryOptionalRows(
+    connection,
+    `SELECT *
+     FROM (
+       SELECT
+         session_id,
+         room_id,
+         player_id,
+         MAX(player_name) KEEP (DENSE_RANK LAST ORDER BY occurred_at) AS player_name,
+         MAX(occurred_at) AS last_event_at,
+         NVL(MAX(score) KEEP (DENSE_RANK LAST ORDER BY occurred_at), 0) AS score,
+         COUNT(*) AS event_count,
+         CASE WHEN LOWER(player_id) LIKE 'bot-%' THEN 1 ELSE 0 END AS bot_rank
+       FROM ${GAME_EVENTS_TABLE}
+       WHERE room_id = :roomId
+       GROUP BY session_id, room_id, player_id
+       ORDER BY bot_rank ASC, last_event_at DESC
+     )
+     WHERE ROWNUM <= 1`,
+    { roomId: normalizedRoom }
+  );
+  const row = rows?.[0];
+  if (!row) return null;
+  return normalizeSummary({
+    session_id: row.SESSION_ID,
+    room_id: row.ROOM_ID,
+    player_id: row.PLAYER_ID,
+    player_name: row.PLAYER_NAME,
+    score: row.SCORE,
+  });
 }
 
 async function queryOptionalRows(connection, sql, binds = {}) {
@@ -2302,6 +2339,7 @@ async function buildMatchContext(body = {}, options = {}) {
   let warning = null;
   const capabilities = {
     sql_summary: false,
+    room_session_resolved: false,
     json_events: false,
     graph_facts: false,
     replay_clips: false,
@@ -2346,6 +2384,19 @@ async function buildMatchContext(body = {}, options = {}) {
   const { connection, close } = oracle;
   try {
     await ensureMatchIntelligenceSchema(connection);
+    if ((!summary.session_id || !summary.player_id) && summary.room_id) {
+      const resolved = await resolveLatestOracleIdentityForRoom(connection, summary.room_id);
+      if (resolved?.session_id && resolved?.player_id) {
+        summary = normalizeSummary({
+          ...summary,
+          ...resolved,
+          player_name: resolved.player_name || summary.player_name,
+        });
+        source = "oracle-room-latest";
+        capabilities.room_session_resolved = true;
+      }
+    }
+
     if (summary.session_id && summary.player_id && !options.skipOracleSummary) {
       const oracleSummary = await getOracleSummary(summary.session_id, summary.player_id, { ...options, oracleConnection: connection });
       if (oracleSummary) {

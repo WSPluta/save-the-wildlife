@@ -877,6 +877,119 @@ test("builds match intelligence context with SQL, graph, replay, and memory evid
   assert.ok(executeCalls.some((sql) => /STWL_AGENT_MEMORIES/i.test(sql)));
 });
 
+test("resolves room-only context to the latest SQL-backed session", async () => {
+  const executeCalls = [];
+  const oracleConnection = {
+    async execute(sql, binds) {
+      executeCalls.push({ sql, binds });
+      if (/WHERE room_id = :roomId/i.test(sql)) {
+        return {
+          rows: [
+            {
+              SESSION_ID: "S-HUMAN",
+              ROOM_ID: "ROOM-LATEST",
+              PLAYER_ID: "P-HUMAN",
+              PLAYER_NAME: "Wojtek",
+              SCORE: 1,
+              EVENT_COUNT: 4,
+            },
+          ],
+        };
+      }
+      if (/SUM\(CASE WHEN event_type = 'trash_collected'/i.test(sql)) {
+        return {
+          rows: [
+            {
+              SESSION_ID: "S-HUMAN",
+              ROOM_ID: "ROOM-LATEST",
+              PLAYER_ID: "P-HUMAN",
+              PLAYER_NAME: "Wojtek",
+              SCORE: 3,
+              TRASH_COLLECTED: 3,
+              MARINE_HITS: 0,
+              TRAIL_CROSSES: 1,
+              FREEZES: 1,
+              LAST_X: 12,
+              LAST_Y: 0,
+              LAST_Z: -4,
+            },
+          ],
+        };
+      }
+      if (/event_type = 'powerup_collected'/i.test(sql)) {
+        return {
+          rows: [
+            { METADATA_JSON: JSON.stringify({ powerup_type: "powerup_freeze" }) },
+          ],
+        };
+      }
+      if (/event_type = 'game_over'/i.test(sql)) {
+        return { rows: [{ PRIOR_BEST_SCORE: null }] };
+      }
+      if (/SELECT id, event_type/i.test(sql)) {
+        return {
+          rows: [
+            {
+              ID: 10,
+              EVENT_TYPE: "trash_collected",
+              OCCURRED_AT: "2026-06-21T15:57:00.000Z",
+              SCORE: 1,
+              X: 8,
+              Y: 0,
+              Z: -2,
+              RELATED_ITEM_ID: "TR-1",
+              METADATA_JSON: JSON.stringify({ item_type: "trash" }),
+            },
+            {
+              ID: 11,
+              EVENT_TYPE: "player_frozen",
+              OCCURRED_AT: "2026-06-21T15:57:03.000Z",
+              SCORE: 3,
+              X: 12,
+              Y: 0,
+              Z: -4,
+              RELATED_PLAYER_ID: "P-RIVAL",
+              METADATA_JSON: JSON.stringify({ freeze_ms: 2500 }),
+            },
+          ],
+        };
+      }
+      if (/FROM STWL_REPLAY_CLIPS/i.test(sql)) return { rows: [] };
+      if (/FROM STWL_AGENT_MEMORIES/i.test(sql)) return { rows: [] };
+      return { rows: [] };
+    },
+  };
+
+  await withEnv({
+    PAF_MATCH_INTELLIGENCE_ENABLED: "true",
+    PAF_MATCH_INTELLIGENCE_AUTO_INIT: "false",
+    PAF_AGENT_MEMORY_PERSIST: "false",
+    PAF_REPLAY_RETRIEVAL_ENABLED: "true",
+    PAF_VECTOR_RETRIEVAL_ENABLED: "true",
+  }, async () => {
+    const context = await buildMatchContext(
+      { roomId: "ROOM-LATEST", format: "live_line" },
+      { oracleConnection }
+    );
+
+    assert.equal(context.ok, true);
+    assert.equal(context.source, "oracle-match-intelligence");
+    assert.equal(context.capabilities.room_session_resolved, true);
+    assert.equal(context.capabilities.sql_summary, true);
+    assert.equal(context.capabilities.json_events, true);
+    assert.equal(context.summary.session_id, "S-HUMAN");
+    assert.equal(context.summary.player_id, "P-HUMAN");
+    assert.equal(context.summary.room_id, "ROOM-LATEST");
+    assert.equal(context.summary.trash_collected, 3);
+    assert.equal(context.summary.freezes, 1);
+    assert.equal(context.summary.powerups.powerup_freeze, 1);
+    assert.match(context.formats.live_line, /Trail drama|frozen/i);
+  });
+
+  assert.ok(executeCalls.some((call) => /WHERE room_id = :roomId/i.test(call.sql)));
+  assert.ok(executeCalls.some((call) => call.binds?.roomId === "ROOM-LATEST"));
+});
+
 test("does not create replay captions when no replay document exists", async () => {
   const oracleConnection = {
     async execute(sql) {
