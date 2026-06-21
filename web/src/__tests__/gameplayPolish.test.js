@@ -75,8 +75,8 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.22;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.38;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 0\.82;/);
-    expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 2\.6;/);
-    expect(script).toMatch(/const POWERUP_ARCADE_PICKUP_RADIUS = 2\.65;/);
+    expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 3\.4;/);
+    expect(script).toMatch(/const POWERUP_ARCADE_PICKUP_RADIUS = 3\.4;/);
     expect(script).toMatch(/function clampVisualScale\(size, min, max\)/);
     expect(script).toMatch(/function isWithinArcadePickupRadius\(position, radius\)/);
     expect(script).toMatch(/new THREE\.BoxGeometry\(TRASH_GEOMETRY_WIDTH, TRASH_GEOMETRY_HEIGHT, TRASH_GEOMETRY_DEPTH\)/);

@@ -38,6 +38,8 @@ describe("mobile touch controls", () => {
   it("supports physical-phone testing over the local network", () => {
     expect(webpackDev).toMatch(/const WEB_HOST = process\.env\.WEB_HOST \|\| "0\.0\.0\.0";/);
     expect(webpackDev).toMatch(/host:\s*WEB_HOST/);
+    expect(script).toMatch(/const wsURL = `\$\{scheme\}:\/\/\$\{location\.host\}`;/);
+    expect(script).not.toContain('"http://localhost:3000"');
     expect(devStart).toMatch(/WEB_HOST="\$\{WEB_HOST:-0\.0\.0\.0\}"/);
     expect(devStart).toMatch(/Phone: open http:\/\/\$\{LAN_IP\}:\$\{WEB_PORT\}\/\?room=ROOM-0001/);
     expect(devStart).toMatch(/Admin: open http:\/\/\$\{LAN_IP\}:\$\{WEB_PORT\}\/admin\?room=ROOM-0001/);

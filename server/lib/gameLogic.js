@@ -111,7 +111,7 @@ export function recomputeWorldSize(humans, worldScaleCfg) {
   return { x, z };
 }
 
-export const DEFAULT_COLLISION_VALIDATE_RADIUS = 2.8;
+export const DEFAULT_COLLISION_VALIDATE_RADIUS = 3.6;
 
 export function resolveCollisionValidateRadius(value) {
   if (value === undefined || value === null || value === "") {
@@ -138,38 +138,38 @@ export function resolveAuthoritativeBoatTypes(env = {}) {
   return {
     speed: {
       maxSpeed: positiveNumber(env.BOAT_SPEED_MAX_SPEED, 3, DEFAULT_SERVER_AUTH_SPEED_LIMIT),
-      handling: 0.8,
+      handling: 0.95,
       capacity: 5,
       mass: 1000,
       drag: 1.5,
       angularDrag: 0.05,
       acceleration: 6,
       brake: 3,
-      turnSpeed: 0.55,
+      turnSpeed: 0.82,
       driftFactor: 0.1,
     },
     fishing: {
       maxSpeed: positiveNumber(env.BOAT_FISHING_MAX_SPEED, 2.35, DEFAULT_SERVER_AUTH_SPEED_LIMIT),
-      handling: 0.6,
+      handling: 0.8,
       capacity: 15,
       mass: 2000,
       drag: 1.7,
       angularDrag: 0.15,
       acceleration: 4.5,
       brake: 3.2,
-      turnSpeed: 0.45,
+      turnSpeed: 0.72,
       driftFactor: 0.05,
     },
     rescue: {
       maxSpeed: positiveNumber(env.BOAT_RESCUE_MAX_SPEED, 2.75, DEFAULT_SERVER_AUTH_SPEED_LIMIT),
-      handling: 0.7,
+      handling: 0.85,
       capacity: 10,
       mass: 1500,
       drag: 1.6,
       angularDrag: 0.1,
       acceleration: 5.2,
       brake: 3.4,
-      turnSpeed: 0.5,
+      turnSpeed: 0.76,
       driftFactor: 0.08,
     },
   };

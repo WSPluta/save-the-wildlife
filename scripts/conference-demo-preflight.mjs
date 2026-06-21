@@ -228,7 +228,9 @@ async function checkCommentary(baseUrl, payload, timeoutMs) {
     if (response.canvas == null) warnings.push("canvas=null for this smoke response; do not claim Canvas produced this exact line");
     if (response.in_db_agent == null) warnings.push("in_db_agent=null for this smoke response; describe in-db agent as configured/fallback path unless metadata changes");
     for (const [provider, mode] of Object.entries(runtimeModes)) {
-      if (mode !== "upstream-llm") warnings.push(`${provider} runtime_mode=${mode}; keep two-live-LLM claim gated`);
+      if (mode !== "upstream-llm") {
+        warnings.push(`${provider} runtime_mode=${mode}; this smoke response did not include a completed upstream route for that provider`);
+      }
     }
     return makeCheck("commentary", failures.length ? "fail" : (warnings.length ? "warn" : "pass"), {
       failures,
@@ -371,8 +373,8 @@ function renderMarkdown(report) {
   }
   lines.push("## Presenter Boundary");
   lines.push("");
-  lines.push("- Safe to claim: live game, PAF health, Oracle AI Database evidence path, Select AI/in-db agent configuration, graph/replay/vector retrieval configuration, adapter-mode model proof, trace persistence, and grounded commentary constraints.");
-  lines.push("- Keep gated: two live private upstream LLM runtimes until strict upstream mode passes.");
+  lines.push("- Safe to claim: live game, PAF health, Oracle AI Database evidence path, Select AI/in-db agent configuration, graph/replay/vector retrieval configuration, strict model-adapter proof when the proof bundle is green, trace persistence, and grounded commentary constraints.");
+  lines.push("- For this smoke response, claim only the model routes present in response metadata; candidate shadow routes may be absent when stage-safe timeouts protect latency.");
   lines.push("- For this smoke response, do not say Canvas produced the exact line unless `canvas` becomes non-null or the response source changes accordingly.");
   lines.push("");
   return `${lines.join("\n")}`;

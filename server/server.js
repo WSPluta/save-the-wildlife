@@ -254,7 +254,7 @@ const PHYSICS_CONFIG = {
   brake: parseFloat(process.env.PHYS_BRAKE ?? "3"),
   maxSpeed: parseFloat(process.env.PHYS_MAX_SPEED ?? "3"),
   friction: parseFloat(process.env.PHYS_FRICTION ?? "1.5"),
-  turnSpeed: parseFloat(process.env.PHYS_TURN_SPEED ?? "0.523599"),
+  turnSpeed: parseFloat(process.env.PHYS_TURN_SPEED ?? "0.78"),
   driftFactor: parseFloat(process.env.PHYS_DRIFT ?? "0")
 };
 

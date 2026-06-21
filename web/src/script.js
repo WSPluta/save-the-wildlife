@@ -180,8 +180,8 @@ const TRASH_GEOMETRY_HEIGHT = 0.07;
 const TRASH_GEOMETRY_DEPTH = 0.22;
 const POWERUP_VISUAL_SCALE_MIN = 0.38;
 const POWERUP_VISUAL_SCALE_MAX = 0.82;
-const TRASH_ARCADE_PICKUP_RADIUS = 2.6;
-const POWERUP_ARCADE_PICKUP_RADIUS = 2.65;
+const TRASH_ARCADE_PICKUP_RADIUS = 3.4;
+const POWERUP_ARCADE_PICKUP_RADIUS = 3.4;
 const BOT_RENDER_MODE = "demo-visible";
 const BOT_VISUAL_SCALE = 0.28;
 const BOT_VISUAL_COLOR = 0x15c7b8;
@@ -2501,10 +2501,9 @@ async function init() {
   }
 
   // Comms
-  const isDev = location.hostname === "localhost" || location.hostname === "127.0.0.1";
   // Build base URL from page protocol to ensure wss on HTTPS and ws on HTTP
   const scheme = location.protocol === "https:" ? "https" : "http";
-  const wsURL = isDev ? "http://localhost:3000" : `${scheme}://${location.host}`;
+  const wsURL = `${scheme}://${location.host}`;
 
   worker = new Worker(new URL("./commsWorker.js", import.meta.url));
   window.__gameWorker = worker;
@@ -4838,7 +4837,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       brake: 3,
       maxSpeed: 3,
       friction: 1.5,
-      turnSpeed: 0.523599,
+      turnSpeed: 0.78,
       driftFactor: 0
     };
     const ACCELERATION_BASE = phys.acceleration;

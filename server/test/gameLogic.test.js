@@ -158,14 +158,14 @@ describe("recomputeWorldSize", () => {
 
 describe("resolveCollisionValidateRadius", () => {
   it("defaults to an arcade pickup radius that matches the visible client hitbox", () => {
-    expect(DEFAULT_COLLISION_VALIDATE_RADIUS).toBe(2.8);
-    expect(resolveCollisionValidateRadius()).toBe(2.8);
+    expect(DEFAULT_COLLISION_VALIDATE_RADIUS).toBe(3.6);
+    expect(resolveCollisionValidateRadius()).toBe(3.6);
   });
 
   it("accepts explicit positive overrides and ignores invalid values", () => {
     expect(resolveCollisionValidateRadius("2.25")).toBe(2.25);
-    expect(resolveCollisionValidateRadius("0")).toBe(2.8);
-    expect(resolveCollisionValidateRadius("bad")).toBe(2.8);
+    expect(resolveCollisionValidateRadius("0")).toBe(3.6);
+    expect(resolveCollisionValidateRadius("bad")).toBe(3.6);
   });
 });
 
@@ -183,6 +183,9 @@ describe("authoritative boat physics", () => {
     expect(boatTypes.fishing.maxSpeed).toBeLessThanOrEqual(2.5);
     expect(boatTypes.rescue.maxSpeed).toBeLessThanOrEqual(3);
     expect(boatTypes.speed.drag).toBeGreaterThanOrEqual(1);
+    expect(boatTypes.speed.turnSpeed * boatTypes.speed.handling).toBeGreaterThanOrEqual(0.75);
+    expect(boatTypes.fishing.turnSpeed * boatTypes.fishing.handling).toBeGreaterThanOrEqual(0.55);
+    expect(boatTypes.rescue.turnSpeed * boatTypes.rescue.handling).toBeGreaterThanOrEqual(0.62);
   });
 
   it("caps oversized env overrides and falls back when overrides are invalid", () => {
