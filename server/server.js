@@ -2309,15 +2309,50 @@ function scheduleRoomRefill(room, delayMs = 0) {
       try {
         roomStats = summarizeRoomsForObservability(await buildRoomsPayload());
       } catch (_) {}
-      const m = buildMetricsObject(
+      const globalMetrics = buildMetricsObject(
         info,
         counts,
         targets,
         roomStats,
         { connections: io.engine?.clientsCount || io.of("/").sockets.size || 0 }
       );
-      try { updateRuntimeMetrics(m, gameState); } catch (_) {}
-      io.volatile.compress(true).emit("server.metrics", m);
+      globalMetrics.scope = "global";
+      try { updateRuntimeMetrics(globalMetrics, gameState); } catch (_) {}
+
+      const rooms = Array.from(new Set([DEFAULT_ROOM_ID, ...listActiveRooms()]))
+        .filter((room) => room && shouldSyncVisualItems(room));
+      if (!rooms.length) {
+        io.volatile.compress(true).emit("server.metrics", globalMetrics);
+        return;
+      }
+
+      await Promise.all(rooms.map(async (room) => {
+        const roomInfo = await getPlayersInfoForRoom(room);
+        const roomCounts = await countItemsForRoom(room);
+        const roomHumans = Math.max(
+          0,
+          Object.values(roomInfo || {}).filter((value) => {
+            const name = value?.name ? String(value.name) : "";
+            return !name.toLowerCase().startsWith("bot ");
+          }).length
+        );
+        const roomMetrics = buildMetricsObject(
+          roomInfo,
+          roomCounts,
+          computeEffectiveTargets(roomHumans),
+          roomStats,
+          globalMetrics.sockets
+        );
+        roomMetrics.scope = "room";
+        roomMetrics.room = room;
+        roomMetrics.global = {
+          players: globalMetrics.players,
+          items: globalMetrics.items,
+          rooms: globalMetrics.rooms,
+          sockets: globalMetrics.sockets,
+        };
+        io.to(room).volatile.compress(true).emit("server.metrics", roomMetrics);
+      }));
     } catch (e) {
       logger.error(`server.metrics error: ${e && e.message ? e.message : e}`);
     }

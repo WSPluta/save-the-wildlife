@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { register, updateRuntimeMetrics } from "../metrics.js";
+
+const serverSource = readFileSync("server.js", "utf8");
 
 describe("observability metrics", () => {
   it("exports user, socket, and room gauges for Prometheus", async () => {
@@ -20,5 +23,15 @@ describe("observability metrics", () => {
     expect(metrics).toContain("stwl_rooms_active 3");
     expect(metrics).toContain("stwl_rooms_running 2");
     expect(metrics).toContain("stwl_game_state 2");
+  });
+
+  it("keeps Prometheus global while broadcasting room-scoped UI metrics", () => {
+    expect(serverSource).toMatch(/globalMetrics\.scope = "global"/);
+    expect(serverSource).toMatch(/updateRuntimeMetrics\(globalMetrics, gameState\)/);
+    expect(serverSource).toMatch(/const rooms = Array\.from\(new Set\(\[DEFAULT_ROOM_ID, \.\.\.listActiveRooms\(\)\]\)\)/);
+    expect(serverSource).toMatch(/const roomCounts = await countItemsForRoom\(room\)/);
+    expect(serverSource).toMatch(/roomMetrics\.scope = "room"/);
+    expect(serverSource).toMatch(/roomMetrics\.global = \{/);
+    expect(serverSource).toMatch(/io\.to\(room\)\.volatile\.compress\(true\)\.emit\("server\.metrics", roomMetrics\)/);
   });
 });
