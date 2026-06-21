@@ -6,6 +6,7 @@ ADD https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip /
 RUN mkdir -p /opt/gradle \
  && cd /opt/gradle \
  && jar -xf /tmp/gradle.zip \
+ && chmod +x /opt/gradle/gradle-${GRADLE_VERSION}/bin/gradle \
  && ln -s /opt/gradle/gradle-${GRADLE_VERSION}/bin/gradle /usr/local/bin/gradle \
  && rm /tmp/gradle.zip
 
