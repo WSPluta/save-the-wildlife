@@ -16,6 +16,10 @@ spec:
           env:
             - name: NODE_OPTIONS
               value: "--max-old-space-size=1536"
+            - name: PHYS_TURN_SPEED
+              value: "0.78"
+            - name: COLLISION_VALIDATE_RADIUS
+              value: "3.6"
           resources:
             requests:
               cpu: 500m
