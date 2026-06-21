@@ -154,6 +154,7 @@ let latestWakeRippleDebug = { visible: 0, capacity: 0 };
 let localWaterlineContact = null;
 let latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0, seatDepth: 0 };
 let latestCameraCompositionDebug = { mobile: false, distanceToPlayer: 0, relativeY: 0, lookHeight: 0 };
+let shouldSnapFollowCamera = true;
 let latestEffectiveSpeed = 0;
 let latestAuthLagMs = 0;
 let lastBotRosterVisualSyncAt = 0;
@@ -229,20 +230,20 @@ const ARCADE_ENVIRONMENT = Object.freeze({
 const FOLLOW_CAMERA_COMPOSITION = Object.freeze({
   desktop: {
     mobile: false,
-    distance: 2,
-    height: 0.5,
-    lookHeight: 0,
-    lookForward: 0,
-    spring: 0.1,
+    distance: 2.35,
+    height: 1.05,
+    lookHeight: 0.16,
+    lookForward: 0.45,
+    spring: 0.18,
     fov: 75,
   },
   mobile: {
     mobile: true,
-    distance: 2.65,
-    height: 1.05,
-    lookHeight: 0.24,
-    lookForward: 0.32,
-    spring: 0.14,
+    distance: 2.9,
+    height: 1.28,
+    lookHeight: 0.3,
+    lookForward: 0.44,
+    spring: 0.18,
     fov: 70,
   },
 });
@@ -327,7 +328,16 @@ function applyFollowCamera(root, yaw) {
   followCameraTargetPosition.setFromSpherical(followCameraSpherical);
   followCameraTargetPosition.y += composition.height;
   followCameraTargetPosition.add(root.position);
-  camera.position.lerp(followCameraTargetPosition, composition.spring);
+  const mustSnap =
+    shouldSnapFollowCamera ||
+    !Number.isFinite(camera.position.x) ||
+    camera.position.distanceTo(root.position) > 12;
+  if (mustSnap) {
+    camera.position.copy(followCameraTargetPosition);
+    shouldSnapFollowCamera = false;
+  } else {
+    camera.position.lerp(followCameraTargetPosition, composition.spring);
+  }
 
   followCameraLookTarget.copy(root.position);
   if (composition.lookForward) {
@@ -1684,6 +1694,7 @@ function prepareExistingSceneForMatch(nextStartPosition = null) {
     const p = nextStartPosition || startPosition || { x: 0, y: 0, z: 0 };
     player.position.set(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
     player.rotation.set(0, 0, 0);
+    shouldSnapFollowCamera = true;
   }
 }
 

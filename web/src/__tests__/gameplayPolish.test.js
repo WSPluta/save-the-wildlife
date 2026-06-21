@@ -172,11 +172,13 @@ describe("gameplay polish regressions", () => {
 
   it("uses a mobile-aware follow camera without changing the gameplay root", () => {
     expect(script).toMatch(/const FOLLOW_CAMERA_COMPOSITION = Object\.freeze\(\{/);
-    expect(script).toMatch(/desktop: \{[\s\S]{0,140}distance: 2,[\s\S]{0,80}height: 0\.5,[\s\S]{0,120}fov: 75,/);
-    expect(script).toMatch(/mobile: \{[\s\S]{0,140}distance: 2\.65,[\s\S]{0,80}height: 1\.05,[\s\S]{0,80}lookHeight: 0\.24,[\s\S]{0,80}lookForward: 0\.32,[\s\S]{0,120}fov: 70,/);
+    expect(script).toMatch(/desktop: \{[\s\S]{0,140}distance: 2\.35,[\s\S]{0,80}height: 1\.05,[\s\S]{0,80}lookHeight: 0\.16,[\s\S]{0,80}lookForward: 0\.45,[\s\S]{0,120}fov: 75,/);
+    expect(script).toMatch(/mobile: \{[\s\S]{0,140}distance: 2\.9,[\s\S]{0,80}height: 1\.28,[\s\S]{0,80}lookHeight: 0\.3,[\s\S]{0,80}lookForward: 0\.44,[\s\S]{0,120}fov: 70,/);
     expect(script).toMatch(/function isMobileGameViewport\(\)/);
     expect(script).toMatch(/window\.matchMedia && window\.matchMedia\("\(pointer: coarse\)"\)\.matches/);
     expect(script).toMatch(/function applyFollowCamera\(root, yaw\)/);
+    expect(script).toMatch(/let shouldSnapFollowCamera = true;/);
+    expect(script).toMatch(/camera\.position\.copy\(followCameraTargetPosition\);/);
     expect(script).toMatch(/camera\.position\.lerp\(followCameraTargetPosition, composition\.spring\);/);
     expect(script).toMatch(/followCameraLookTarget\.y \+= composition\.lookHeight;/);
     expect(script).toMatch(/camera\.lookAt\(followCameraLookTarget\);/);
