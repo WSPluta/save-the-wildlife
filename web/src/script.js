@@ -230,19 +230,19 @@ const ARCADE_ENVIRONMENT = Object.freeze({
 const FOLLOW_CAMERA_COMPOSITION = Object.freeze({
   desktop: {
     mobile: false,
-    distance: 2.35,
-    height: 1.05,
-    lookHeight: 0.16,
-    lookForward: 0.45,
+    distance: 2.15,
+    height: 1.18,
+    lookHeight: 0.22,
+    lookForward: 0.55,
     spring: 0.18,
     fov: 75,
   },
   mobile: {
     mobile: true,
-    distance: 2.9,
-    height: 1.28,
-    lookHeight: 0.3,
-    lookForward: 0.44,
+    distance: 2.75,
+    height: 1.36,
+    lookHeight: 0.34,
+    lookForward: 0.5,
     spring: 0.18,
     fov: 70,
   },
@@ -382,12 +382,12 @@ function disableGameplayInteraction(object3d) {
 }
 
 function createBoatWaterlineContact() {
-  const geometry = new THREE.RingGeometry(0.41, 0.5, 48, 1);
+  const geometry = new THREE.RingGeometry(0.43, 0.54, 48, 1);
   geometry.rotateX(-Math.PI / 2);
   const material = new THREE.MeshBasicMaterial({
     color: 0xdafcff,
     transparent: true,
-    opacity: 0.08,
+    opacity: 0.1,
     depthWrite: false,
     depthTest: true,
     blending: THREE.AdditiveBlending,
@@ -438,8 +438,8 @@ function updateBoatWaterlineContact(root, speed, wake, maxSpeed = 3, visualY = 0
   const contactY = waterY + BOAT_FEEL_DEFAULTS.surfaceRippleY;
   localWaterlineContact.visible = gameState === "RUNNING" || gameState === "STARTING";
   localWaterlineContact.position.y = contactY;
-  localWaterlineContact.material.opacity = 0.075 + wakeStrength * 0.055 + speedRatio * 0.018;
-  localWaterlineContact.scale.set(0.38 + wakeStrength * 0.035, 1, 1.06 + speedRatio * 0.08);
+  localWaterlineContact.material.opacity = 0.095 + wakeStrength * 0.06 + speedRatio * 0.02;
+  localWaterlineContact.scale.set(0.42 + wakeStrength * 0.04, 1, 1.12 + speedRatio * 0.08);
   const shadow = localWaterlineContact.userData && localWaterlineContact.userData.contactShadow;
   if (shadow && shadow.material) {
     shadow.material.opacity = 0.075 + wakeStrength * 0.035 + speedRatio * 0.015;
