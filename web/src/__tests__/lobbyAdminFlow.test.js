@@ -9,6 +9,7 @@ const lobby = readFileSync("src/lobby.js", "utf8");
 const server = readFileSync("../server/server.js", "utf8");
 const dockerfile = readFileSync("Dockerfile", "utf8");
 const nginx = readFileSync("nginx.conf", "utf8");
+const ingress = readFileSync("../deploy/k8s/base/ingress/ingress.yaml", "utf8");
 
 describe("presenter-controlled lobby flow", () => {
   it("keeps the player lobby waiting-only with a visible roster", () => {
@@ -84,5 +85,9 @@ describe("presenter-controlled lobby flow", () => {
     expect(dockerfile).toMatch(/COPY nginx\.conf \/etc\/nginx\/conf\.d\/default\.conf/);
     expect(nginx).toMatch(/try_files \$uri \$uri\/ \/index\.html;/);
     expect(nginx).toMatch(/Cache-Control "no-store, max-age=0" always/);
+  });
+
+  it("routes public Prometheus metrics to ws-server instead of the SPA", () => {
+    expect(ingress).toMatch(/path:\s*\/metrics[\s\S]*pathType:\s*Exact[\s\S]*name:\s*ws-server[\s\S]*number:\s*3000/);
   });
 });

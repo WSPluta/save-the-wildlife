@@ -27,6 +27,13 @@ spec:
             name: ws-server
             port:
               number: 3000
+      - path: /metrics
+        pathType: Exact
+        backend:
+          service:
+            name: ws-server
+            port:
+              number: 3000
       - path: /api/replay
         pathType: Prefix
         backend:
