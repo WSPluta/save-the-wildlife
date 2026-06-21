@@ -70,6 +70,12 @@ resource "oci_devops_deploy_artifact" "command_spec_deploy" {
       paf_candidate_model_provider      = var.paf_candidate_model_provider
       oci_base_model_endpoint_url       = var.oci_base_model_endpoint_url
       oci_ft_model_endpoint_url         = var.oci_ft_model_endpoint_url
+      model_ai_base_upstream_url        = var.model_ai_base_upstream_url
+      model_ai_ft_upstream_url          = var.model_ai_ft_upstream_url
+      model_ai_base_upstream_format     = var.model_ai_base_upstream_format
+      model_ai_ft_upstream_format       = var.model_ai_ft_upstream_format
+      model_ai_base_upstream_model_id   = var.model_ai_base_upstream_model_id
+      model_ai_ft_upstream_model_id     = var.model_ai_ft_upstream_model_id
       oci_model_endpoint_auth_secret_id = var.oci_model_endpoint_auth_secret_id
       oci_model_endpoint_timeout_ms     = var.oci_model_endpoint_timeout_ms
       oci_model_endpoint_verify_tls     = var.oci_model_endpoint_verify_tls

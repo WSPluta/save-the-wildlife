@@ -9,9 +9,11 @@ spec:
         - name: model-ai-inference
           env:
             - name: STWL_UPSTREAM_URL
-              value: ""
+              value: "http://stwl-ollama-fallback:11434/api/chat"
             - name: STWL_UPSTREAM_FORMAT
               value: "ollama"
+            - name: STWL_MODEL_ID
+              value: "llama3.2:1b"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -24,6 +26,8 @@ spec:
         - name: model-ai-inference
           env:
             - name: STWL_UPSTREAM_URL
-              value: ""
+              value: "http://stwl-ollama-fallback:11434/api/chat"
             - name: STWL_UPSTREAM_FORMAT
               value: "ollama"
+            - name: STWL_MODEL_ID
+              value: "llama3.2:1b-stwl"

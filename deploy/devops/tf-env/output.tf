@@ -118,3 +118,13 @@ output "model_ollama_model_id" {
   sensitive = false
   value     = var.model_ollama_custom_model_id
 }
+
+output "model_ollama_base_model_id" {
+  sensitive = false
+  value     = var.model_ollama_model_id
+}
+
+output "model_ollama_custom_model_id" {
+  sensitive = false
+  value     = var.model_ollama_custom_model_id
+}

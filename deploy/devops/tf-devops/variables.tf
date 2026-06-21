@@ -100,7 +100,7 @@ variable "paf_canvas_timeout_ms" {
 
 variable "paf_commentary_deadline_ms" {
   type        = string
-  default     = "9000"
+  default     = "30000"
   description = "End-to-end commentary budget in milliseconds before optional PAF polish is skipped."
 }
 
@@ -152,6 +152,42 @@ variable "oci_ft_model_endpoint_url" {
   description = "Private OCI fine-tuned model endpoint URL consumed by PAF."
 }
 
+variable "model_ai_base_upstream_url" {
+  type        = string
+  default     = "http://stwl-ollama-fallback:11434/api/chat"
+  description = "Ollama/OpenAI-compatible upstream URL consumed by the base private model adapter."
+}
+
+variable "model_ai_ft_upstream_url" {
+  type        = string
+  default     = "http://stwl-ollama-fallback:11434/api/chat"
+  description = "Ollama/OpenAI-compatible upstream URL consumed by the fine-tuned private model adapter."
+}
+
+variable "model_ai_base_upstream_format" {
+  type        = string
+  default     = "ollama"
+  description = "Upstream contract for the base private model adapter: ollama, openai, or internal."
+}
+
+variable "model_ai_ft_upstream_format" {
+  type        = string
+  default     = "ollama"
+  description = "Upstream contract for the fine-tuned private model adapter: ollama, openai, or internal."
+}
+
+variable "model_ai_base_upstream_model_id" {
+  type        = string
+  default     = "llama3.2:1b"
+  description = "Model id passed to the base private model adapter upstream."
+}
+
+variable "model_ai_ft_upstream_model_id" {
+  type        = string
+  default     = "llama3.2:1b-stwl"
+  description = "Model id passed to the fine-tuned private model adapter upstream."
+}
+
 variable "oci_model_endpoint_auth_secret_id" {
   type        = string
   default     = ""
@@ -161,7 +197,7 @@ variable "oci_model_endpoint_auth_secret_id" {
 
 variable "oci_model_endpoint_timeout_ms" {
   type        = string
-  default     = "15000"
+  default     = "12000"
   description = "Timeout in milliseconds for private model endpoint calls."
 }
 

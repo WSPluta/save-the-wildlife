@@ -356,6 +356,8 @@ for (const url of urls) {
     const output = runKubectl([
       "exec",
       "deploy/private-agent-factory",
+      "-c",
+      "private-agent-factory",
       "--",
       "node",
       "-e",

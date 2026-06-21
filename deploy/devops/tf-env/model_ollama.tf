@@ -65,6 +65,40 @@ resource "oci_core_network_security_group_security_rule" "model_ollama_ingress_f
   }
 }
 
+resource "oci_core_network_security_group_security_rule" "model_ollama_ingress_from_worker_subnet" {
+  count                     = var.model_ollama_enabled ? 1 : 0
+  network_security_group_id = oci_core_network_security_group.model_ollama[0].id
+  direction                 = "INGRESS"
+  protocol                  = "6"
+  source                    = local.workers_subnet_cidr
+  source_type               = "CIDR_BLOCK"
+  stateless                 = false
+
+  tcp_options {
+    destination_port_range {
+      min = var.model_ollama_port
+      max = var.model_ollama_port
+    }
+  }
+}
+
+resource "oci_core_network_security_group_security_rule" "model_ollama_ingress_from_pods" {
+  count                     = var.model_ollama_enabled ? 1 : 0
+  network_security_group_id = oci_core_network_security_group.model_ollama[0].id
+  direction                 = "INGRESS"
+  protocol                  = "6"
+  source                    = local.pods_cidr
+  source_type               = "CIDR_BLOCK"
+  stateless                 = false
+
+  tcp_options {
+    destination_port_range {
+      min = var.model_ollama_port
+      max = var.model_ollama_port
+    }
+  }
+}
+
 resource "oci_core_network_security_group_security_rule" "model_ollama_egress_all" {
   count                     = var.model_ollama_enabled ? 1 : 0
   network_security_group_id = oci_core_network_security_group.model_ollama[0].id
@@ -83,6 +117,13 @@ resource "oci_core_instance" "model_ollama" {
   shape               = var.model_ollama_shape
   freeform_tags       = local.model_ollama_tags
   metadata            = local.model_ollama_metadata
+
+  launch_options {
+    firmware                            = "UEFI_64"
+    is_consistent_volume_naming_enabled = true
+    network_type                        = "VFIO"
+    remote_data_volume_type             = "PARAVIRTUALIZED"
+  }
 
   dynamic "shape_config" {
     for_each = var.model_ollama_ocpus > 0 ? [1] : []

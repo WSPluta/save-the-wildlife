@@ -4,6 +4,7 @@ locals {
   workers_subnet_cidr        = "10.22.144.0/20"
   cp_subnet_cidr             = "10.22.0.8/29"
   vcn_cidr                   = "10.22.0.0/16"
+  pods_cidr                  = "10.244.0.0/16"
 }
 
 module "oke" {
@@ -79,7 +80,7 @@ module "oke" {
   cluster_type       = "basic"
   cni_type           = "flannel"
   kubernetes_version = local.cluster_k8s_latest_version
-  pods_cidr          = "10.244.0.0/16"
+  pods_cidr          = local.pods_cidr
   services_cidr      = "10.96.0.0/16"
   use_signed_images  = false
   use_defined_tags   = false

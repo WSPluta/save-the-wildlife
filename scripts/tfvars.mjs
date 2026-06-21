@@ -15,6 +15,9 @@ $.verbose = false;
 
 const { _ } = argv;
 const [action] = _;
+const DEFAULT_MODEL_AI_UPSTREAM_URL = "http://stwl-ollama-fallback:11434/api/chat";
+const DEFAULT_MODEL_AI_BASE_MODEL_ID = "llama3.2:1b";
+const DEFAULT_MODEL_AI_FT_MODEL_ID = "llama3.2:1b-stwl";
 
 if (action === "env") {
   await envTFvars();
@@ -58,6 +61,13 @@ async function setVariableFromEnvDefaultOrPrompt(envKey, questionText, defaultVa
     await printChoices();
   }
   return question(`${questionText}: `);
+}
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    if (value != null && String(value).trim() !== "") return String(value);
+  }
+  return "";
 }
 
 async function defaultRegionName(regions) {
@@ -257,6 +267,9 @@ async function devopsTFvars() {
     oci_model_endpoint_auth_secret_id: modelEndpointAuthSecretId,
     model_ai_base_endpoint_url: modelAiBaseEndpointUrl,
     model_ai_ft_endpoint_url: modelAiFtEndpointUrl,
+    model_ollama_chat_url: modelOllamaChatUrl,
+    model_ollama_base_model_id: modelOllamaBaseModelId,
+    model_ollama_custom_model_id: modelOllamaCustomModelId,
   } = values;
 
   await cd("../../..");
@@ -282,7 +295,7 @@ async function devopsTFvars() {
   const pafCanvasRunEndpointUrl = process.env.PAF_CANVAS_RUN_ENDPOINT_URL || "";
   const pafCanvasRoomId = process.env.PAF_CANVAS_ROOM_ID || "";
   const pafCanvasTimeoutMs = process.env.PAF_CANVAS_TIMEOUT_MS || "3000";
-  const pafCommentaryDeadlineMs = process.env.PAF_COMMENTARY_DEADLINE_MS || "9000";
+  const pafCommentaryDeadlineMs = process.env.PAF_COMMENTARY_DEADLINE_MS || "30000";
   const pafCanvasReturnReserveMs = process.env.PAF_CANVAS_RETURN_RESERVE_MS || "1000";
   const pafCanvasMinTimeoutMs = process.env.PAF_CANVAS_MIN_TIMEOUT_MS || "250";
   const pafCanvasVerifyTls = process.env.PAF_CANVAS_VERIFY_TLS || "false";
@@ -291,8 +304,30 @@ async function devopsTFvars() {
   const pafCandidateModelProvider = process.env.PAF_CANDIDATE_MODEL_PROVIDER || "oci-fine-tuned";
   const ociBaseModelEndpointUrl = process.env.OCI_BASE_MODEL_ENDPOINT_URL || modelAiBaseEndpointUrl || "";
   const ociFtModelEndpointUrl = process.env.OCI_FT_MODEL_ENDPOINT_URL || modelAiFtEndpointUrl || "";
+  const modelAiBaseUpstreamUrl = firstNonEmpty(
+    process.env.MODEL_AI_BASE_UPSTREAM_URL,
+    modelOllamaChatUrl,
+    DEFAULT_MODEL_AI_UPSTREAM_URL
+  );
+  const modelAiFtUpstreamUrl = firstNonEmpty(
+    process.env.MODEL_AI_FT_UPSTREAM_URL,
+    modelOllamaChatUrl,
+    DEFAULT_MODEL_AI_UPSTREAM_URL
+  );
+  const modelAiBaseUpstreamFormat = process.env.MODEL_AI_BASE_UPSTREAM_FORMAT || process.env.MODEL_AI_UPSTREAM_FORMAT || "ollama";
+  const modelAiFtUpstreamFormat = process.env.MODEL_AI_FT_UPSTREAM_FORMAT || process.env.MODEL_AI_UPSTREAM_FORMAT || "ollama";
+  const modelAiBaseUpstreamModelId = firstNonEmpty(
+    process.env.MODEL_AI_BASE_UPSTREAM_MODEL_ID,
+    modelOllamaBaseModelId,
+    DEFAULT_MODEL_AI_BASE_MODEL_ID
+  );
+  const modelAiFtUpstreamModelId = firstNonEmpty(
+    process.env.MODEL_AI_FT_UPSTREAM_MODEL_ID,
+    modelOllamaCustomModelId,
+    DEFAULT_MODEL_AI_FT_MODEL_ID
+  );
   const ociModelEndpointAuthSecretId = process.env.OCI_MODEL_ENDPOINT_AUTH_SECRET_ID || modelEndpointAuthSecretId || "";
-  const ociModelEndpointTimeoutMs = process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "15000";
+  const ociModelEndpointTimeoutMs = process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "12000";
   const ociModelEndpointVerifyTls = process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true";
   const pafTracePersist = process.env.PAF_TRACE_PERSIST || "true";
   const pafEvalEnabled = process.env.PAF_EVAL_ENABLED || "true";
@@ -335,6 +370,12 @@ async function devopsTFvars() {
       .replace(/PAF_CANDIDATE_MODEL_PROVIDER/g, pafCandidateModelProvider)
       .replace(/OCI_BASE_MODEL_ENDPOINT_URL/g, ociBaseModelEndpointUrl)
       .replace(/OCI_FT_MODEL_ENDPOINT_URL/g, ociFtModelEndpointUrl)
+      .replace(/MODEL_AI_BASE_UPSTREAM_URL/g, modelAiBaseUpstreamUrl)
+      .replace(/MODEL_AI_FT_UPSTREAM_URL/g, modelAiFtUpstreamUrl)
+      .replace(/MODEL_AI_BASE_UPSTREAM_FORMAT/g, modelAiBaseUpstreamFormat)
+      .replace(/MODEL_AI_FT_UPSTREAM_FORMAT/g, modelAiFtUpstreamFormat)
+      .replace(/MODEL_AI_BASE_UPSTREAM_MODEL_ID/g, modelAiBaseUpstreamModelId)
+      .replace(/MODEL_AI_FT_UPSTREAM_MODEL_ID/g, modelAiFtUpstreamModelId)
       .replace(/OCI_MODEL_ENDPOINT_AUTH_SECRET_ID/g, ociModelEndpointAuthSecretId)
       .replace(/OCI_MODEL_ENDPOINT_TIMEOUT_MS/g, ociModelEndpointTimeoutMs)
       .replace(/OCI_MODEL_ENDPOINT_VERIFY_TLS/g, ociModelEndpointVerifyTls)

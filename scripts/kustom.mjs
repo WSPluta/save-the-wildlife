@@ -8,6 +8,9 @@ $.verbose = false;
 
 const { _ } = argv;
 const [key, adbAdminPassword, adbService, adbWalletPassword = ""] = _;
+const DEFAULT_MODEL_AI_UPSTREAM_URL = "http://stwl-ollama-fallback:11434/api/chat";
+const DEFAULT_MODEL_AI_BASE_MODEL_ID = "llama3.2:1b";
+const DEFAULT_MODEL_AI_FT_MODEL_ID = "llama3.2:1b-stwl";
 
 const regionKey = key;
 const namespace = await getNamespace();
@@ -81,17 +84,19 @@ function yamlString(value) {
 }
 
 function envValue(name, fallback = "") {
-  return process.env[name] == null ? fallback : process.env[name];
+  const value = process.env[name];
+  if (value == null || String(value).trim() === "") return fallback;
+  return value;
 }
 
 async function createModelAiUpstreamPatchFile() {
   const pwdOutput = (await $`pwd`).stdout.trim();
-  const baseUpstreamUrl = envValue("MODEL_AI_BASE_UPSTREAM_URL");
-  const ftUpstreamUrl = envValue("MODEL_AI_FT_UPSTREAM_URL");
+  const baseUpstreamUrl = envValue("MODEL_AI_BASE_UPSTREAM_URL", DEFAULT_MODEL_AI_UPSTREAM_URL);
+  const ftUpstreamUrl = envValue("MODEL_AI_FT_UPSTREAM_URL", DEFAULT_MODEL_AI_UPSTREAM_URL);
   const baseFormat = envValue("MODEL_AI_BASE_UPSTREAM_FORMAT", envValue("MODEL_AI_UPSTREAM_FORMAT", "ollama"));
   const ftFormat = envValue("MODEL_AI_FT_UPSTREAM_FORMAT", envValue("MODEL_AI_UPSTREAM_FORMAT", "ollama"));
-  const baseModelId = envValue("MODEL_AI_BASE_UPSTREAM_MODEL_ID", baseUpstreamUrl ? "llama3.1:8b" : "");
-  const ftModelId = envValue("MODEL_AI_FT_UPSTREAM_MODEL_ID", ftUpstreamUrl ? "llama3.1:8b-stwl" : "");
+  const baseModelId = envValue("MODEL_AI_BASE_UPSTREAM_MODEL_ID", DEFAULT_MODEL_AI_BASE_MODEL_ID);
+  const ftModelId = envValue("MODEL_AI_FT_UPSTREAM_MODEL_ID", DEFAULT_MODEL_AI_FT_MODEL_ID);
 
   function envEntries(url, format, modelId) {
     const entries = [
@@ -214,7 +219,7 @@ async function createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService,
       TEMPLATE_PAF_CANVAS_RUN_ENDPOINT_URL: process.env.PAF_CANVAS_RUN_ENDPOINT_URL || "",
       TEMPLATE_PAF_CANVAS_ROOM_ID: process.env.PAF_CANVAS_ROOM_ID || "",
       TEMPLATE_PAF_CANVAS_TIMEOUT_MS: process.env.PAF_CANVAS_TIMEOUT_MS || "3000",
-      TEMPLATE_PAF_COMMENTARY_DEADLINE_MS: process.env.PAF_COMMENTARY_DEADLINE_MS || "9000",
+      TEMPLATE_PAF_COMMENTARY_DEADLINE_MS: process.env.PAF_COMMENTARY_DEADLINE_MS || "30000",
       TEMPLATE_PAF_CANVAS_RETURN_RESERVE_MS: process.env.PAF_CANVAS_RETURN_RESERVE_MS || "1000",
       TEMPLATE_PAF_CANVAS_MIN_TIMEOUT_MS: process.env.PAF_CANVAS_MIN_TIMEOUT_MS || "250",
       TEMPLATE_PAF_CANVAS_VERIFY_TLS: process.env.PAF_CANVAS_VERIFY_TLS || "false",
@@ -223,7 +228,7 @@ async function createPrivateAgentFactoryConfigFile(adbAdminPassword, adbService,
       TEMPLATE_PAF_CANDIDATE_MODEL_PROVIDER: process.env.PAF_CANDIDATE_MODEL_PROVIDER || "oci-fine-tuned",
       TEMPLATE_OCI_BASE_MODEL_ENDPOINT_URL: process.env.OCI_BASE_MODEL_ENDPOINT_URL || "http://stwl-base-commentary:8080",
       TEMPLATE_OCI_FT_MODEL_ENDPOINT_URL: process.env.OCI_FT_MODEL_ENDPOINT_URL || "http://stwl-ft-commentary:8080",
-      TEMPLATE_OCI_MODEL_ENDPOINT_TIMEOUT_MS: process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "15000",
+      TEMPLATE_OCI_MODEL_ENDPOINT_TIMEOUT_MS: process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "12000",
       TEMPLATE_OCI_MODEL_ENDPOINT_VERIFY_TLS: process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true",
       TEMPLATE_PAF_TRACE_PERSIST: process.env.PAF_TRACE_PERSIST || "true",
       TEMPLATE_PAF_EVAL_ENABLED: process.env.PAF_EVAL_ENABLED || "true",
