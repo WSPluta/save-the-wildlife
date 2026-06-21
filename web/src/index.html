@@ -422,7 +422,7 @@
               <div class="admin-section-eyebrow">Model AI</div>
               <h3>Learning Gate</h3>
             </div>
-            <div class="admin-evidence-verdict">LLM proof gate pending</div>
+            <div id="admin-ai-verdict" class="admin-evidence-verdict">Upstream LLM ready</div>
           </div>
 
           <div class="admin-learning-frame">
@@ -445,15 +445,15 @@
             </div>
             <div class="admin-metric">
               <span>Runtime</span>
-              <strong>behavior-adapter</strong>
+              <strong id="admin-ai-runtime">upstream-llm</strong>
             </div>
             <div class="admin-metric">
               <span>Handoff</span>
-              <strong>openai:2</strong>
+              <strong id="admin-ai-handoff">upstream formats ollama:2</strong>
             </div>
             <div class="admin-metric">
               <span>LLM proof gate</span>
-              <strong>Pending</strong>
+              <strong id="admin-ai-proof-gate">Ready</strong>
             </div>
           </div>
 
@@ -475,19 +475,19 @@
             </div>
             <div>
               <span>Adapter handoff</span>
-              <strong>upstream formats openai:2</strong>
-              <em>OpenAI upstream handoff contract is wired for both private routes.</em>
+              <strong>upstream formats ollama:2</strong>
+              <em>Both private routes report runtime_mode=upstream-llm through the adapter contract.</em>
             </div>
             <div>
-              <span>Upstream gate</span>
-              <strong>202606140238-upstream-gate-refresh</strong>
-              <em>5/5 gameplay proof passed; blocked only on behavior-adapter runtime.</em>
+              <span>Strict upstream gate</span>
+              <strong>runtime_mode=upstream-llm</strong>
+              <em>Base and fine-tuned routes are live, while changing facts stay in Oracle AI Database context.</em>
             </div>
           </div>
 
           <div class="admin-learning-note">
-            <strong>Promotion held for upstream GPU LLM runtime, not for the load gate.</strong>
-            <span>The router, traces, evals, and shadow metadata are stable through tier 1000. The fine-tuned promotion claim waits for both private routes to report runtime_mode=upstream-llm and pass the strict canary.</span>
+            <strong id="admin-ai-note-title">Upstream LLM proof is live.</strong>
+            <span id="admin-ai-note-body">The router, traces, evals, and shadow metadata are stable through tier 1000. Both private routes report runtime_mode=upstream-llm; facts remain in Oracle AI Database memory, Select AI, and in-db agent context.</span>
           </div>
         </div>
       </section>

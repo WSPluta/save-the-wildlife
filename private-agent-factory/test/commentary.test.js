@@ -18,6 +18,7 @@ const {
   modelRouterConfig,
   normalizeSummary,
   selectAiInitStatements,
+  summarizeAdapterHealth,
 } = await import("../index.js");
 
 const {
@@ -77,6 +78,21 @@ test("extracts text from common PAF Canvas response shapes", () => {
   assert.equal(extractCanvasText({ payload: { message: "Canvas line" } }), "Canvas line");
   assert.equal(extractCanvasText({ message: { content: [{ text: "Nested line" }] } }), "Nested line");
   assert.equal(extractCanvasText({ choices: [{ message: { content: "Choice line" } }] }), "Choice line");
+});
+
+test("summarizes private model adapter upstream health", () => {
+  const summary = summarizeAdapterHealth([
+    { ok: true, provider: "oci-base", runtime_mode: "upstream-llm", upstream_format: "ollama" },
+    { ok: true, provider: "oci-fine-tuned", runtime_mode: "upstream-llm", upstream_format: "ollama" },
+  ]);
+
+  assert.equal(summary.upstream_llm_ready, true);
+  assert.deepEqual(summary.provider_counts, { "oci-base": 1, "oci-fine-tuned": 1 });
+  assert.deepEqual(summary.runtime_counts, {
+    "oci-base:upstream-llm": 1,
+    "oci-fine-tuned:upstream-llm": 1,
+  });
+  assert.deepEqual(summary.upstream_format_counts, { ollama: 2 });
 });
 
 test("uses Oracle AI Database in-db agent package when configured", async () => {

@@ -686,6 +686,7 @@ function renderUI() {
   updateRoomHud();
   try { renderRoomsDirectory(); } catch (_) {}
   try { renderObservabilityRooms(); } catch (_) {}
+  try { refreshAiLearningHealth(); } catch (_) {}
   // Manage countdown lifecycle: let server drive the target; only clear when leaving STARTING
   if (currentPhase !== PHASES.STARTING) {
     clearCountdown();
@@ -1094,6 +1095,75 @@ function setTextById(id, value) {
 function formatCount(value) {
   const n = Number(value);
   return Number.isFinite(n) ? String(Math.round(n)) : "-";
+}
+
+let aiLearningHealthPromise = null;
+
+function formatHealthCountMap(counts = {}) {
+  const entries = Object.entries(counts || {});
+  if (!entries.length) return "-";
+  return entries.map(([key, value]) => `${key}:${value}`).join(", ");
+}
+
+function summarizeAiAdapterHealth(health = {}) {
+  const adapters = Array.isArray(health.model_adapters) ? health.model_adapters : [];
+  const summary = health.model_adapter_summary || {};
+  const ready = summary.upstream_llm_ready === true || (
+    adapters.length > 0 &&
+    adapters.every((adapter) => adapter && adapter.ok === true && adapter.runtime_mode === "upstream-llm")
+  );
+  const runtimes = summary.runtime_counts || adapters.reduce((acc, adapter) => {
+    const provider = adapter?.provider || "unknown";
+    const runtime = adapter?.runtime_mode || "missing";
+    acc[`${provider}:${runtime}`] = (acc[`${provider}:${runtime}`] || 0) + 1;
+    return acc;
+  }, {});
+  const formats = summary.upstream_format_counts || adapters.reduce((acc, adapter) => {
+    const format = adapter?.upstream_format || "missing";
+    acc[format] = (acc[format] || 0) + 1;
+    return acc;
+  }, {});
+  return {
+    ready,
+    runtimeText: ready ? "upstream-llm" : formatHealthCountMap(runtimes),
+    handoffText: `upstream formats ${formatHealthCountMap(formats)}`,
+    gateText: ready ? "Ready" : "Check route",
+    verdictText: ready ? "Upstream LLM ready" : "Route configured",
+  };
+}
+
+async function updateAiLearningHealth() {
+  if (!IS_AI_LEARNING_VIEW) return;
+  setTextById("admin-ai-verdict", "Checking...");
+  try {
+    const response = await fetch("/paf/healthz?deep=1", { cache: "no-store" });
+    if (!response.ok) throw new Error(`health_${response.status}`);
+    const health = await response.json();
+    const adapter = summarizeAiAdapterHealth(health);
+    setTextById("admin-ai-verdict", adapter.verdictText);
+    setTextById("admin-ai-runtime", adapter.runtimeText);
+    setTextById("admin-ai-handoff", adapter.handoffText);
+    setTextById("admin-ai-proof-gate", adapter.gateText);
+    if (adapter.ready) {
+      setTextById("admin-ai-note-title", "Upstream LLM proof is live.");
+      setTextById(
+        "admin-ai-note-body",
+        "Both private routes report runtime_mode=upstream-llm. Oracle AI Database keeps changing facts, Select AI and in-db agents ground context, and the model route shapes safe language."
+      );
+    }
+  } catch (error) {
+    setTextById("admin-ai-verdict", "Route configured");
+    setTextById("admin-ai-proof-gate", "Needs health check");
+  }
+}
+
+function refreshAiLearningHealth() {
+  if (!IS_AI_LEARNING_VIEW || aiLearningHealthPromise) return;
+  aiLearningHealthPromise = updateAiLearningHealth().finally(() => {
+    setTimeout(() => {
+      aiLearningHealthPromise = null;
+    }, 15000);
+  });
 }
 
 function updateObservabilityMetrics(m = {}) {

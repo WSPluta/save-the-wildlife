@@ -55,18 +55,18 @@ describe("admin load evaluation view", () => {
     expect(html).toContain("Facts in memory, behavior in weights");
     expect(html).toContain("oci-base");
     expect(html).toContain("oci-fine-tuned");
-    expect(html).toContain("behavior-adapter");
-    expect(html).toContain("upstream formats openai:2");
-    expect(html).toContain("OpenAI upstream handoff contract");
+    expect(html).toContain("upstream-llm");
+    expect(html).toContain("upstream formats ollama:2");
+    expect(html).toContain("Both private routes report runtime_mode=upstream-llm");
     expect(html).toContain("LLM proof gate");
     expect(html).toContain("202606132052-fastpath-full");
     expect(html).toContain("25 live examples");
     expect(html).toContain("Redacted behavior-only JSONL");
     expect(html).toContain("Trainer dry-run");
-    expect(html).toContain("202606140238-upstream-gate-refresh");
-    expect(html).toContain("blocked only on behavior-adapter runtime");
-    expect(html).toContain("Promotion held for upstream GPU LLM runtime");
+    expect(html).toContain("Strict upstream gate");
+    expect(html).toContain("Upstream LLM proof is live");
     expect(html).toContain("runtime_mode=upstream-llm");
+    expect(script).toMatch(/updateAiLearningHealth/);
   });
 
   it("styles the compact AI learning receipt panels", () => {

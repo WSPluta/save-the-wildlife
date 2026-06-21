@@ -10,10 +10,10 @@ const REQUIRED_ADMIN_TEXT = [
   "202606132052-fastpath-full",
   "25 live examples",
   "Trainer dry-run",
-  "202606140238-upstream-gate-refresh",
-  "upstream formats openai:2",
-  "OpenAI upstream handoff contract",
-  "blocked only on behavior-adapter runtime",
+  "Strict upstream gate",
+  "upstream formats ollama:2",
+  "Both private routes report runtime_mode=upstream-llm",
+  "Upstream LLM proof is live",
 ];
 const REQUIRED_REPORTS = [
   "output/prod-load/202606132052-fastpath-full/summary.md",
@@ -123,8 +123,9 @@ async function pathExists(filePath) {
 
 async function checkPafHealth(config) {
   try {
-    const health = await fetchJson(`${config.baseUrl}/paf/healthz`, config.timeoutMs);
+    const health = await fetchJson(`${config.baseUrl}/paf/healthz?deep=1`, config.timeoutMs);
     const router = health.model_router || {};
+    const adapterSummary = health.model_adapter_summary || {};
     const failures = [];
     if (!health.ok) failures.push("PAF health did not report ok=true");
     if (router.route_mode !== "shadow") failures.push(`route_mode=${router.route_mode}`);
@@ -135,7 +136,12 @@ async function checkPafHealth(config) {
     if (!router.trace_persist) failures.push("trace persistence disabled");
     if (!router.eval_enabled) failures.push("eval disabled");
     if (!router.training_capture_enabled) failures.push("training capture disabled");
-    return makeCheck("paf-health", failures.length ? "fail" : "pass", { router, failures });
+    return makeCheck("paf-health", failures.length ? "fail" : "pass", {
+      router,
+      model_adapters: health.model_adapters || [],
+      model_adapter_summary: adapterSummary,
+      failures,
+    });
   } catch (error) {
     return makeCheck("paf-health", "fail", { error: compactError(error) });
   }

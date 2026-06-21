@@ -94,6 +94,7 @@ function renderBundle({ adapterReport, strictReport, commands }) {
   const deploymentRows = renderDeploymentRows(adapterReport);
   const router = pafHealth.router || {};
   const strictExpected = strictFailureIsExpected(strictReport);
+  const strictReady = strictReport.verdict === "ready";
 
   const lines = [
     "# Save the Wildlife Model AI Proof Bundle",
@@ -157,8 +158,10 @@ function renderBundle({ adapterReport, strictReport, commands }) {
     "- Adapter `candidate_ready` means the candidate met the behavior rubric in adapter-mode shadow evaluation.",
     "- Adapter `candidate_ready` does not mean the fine-tuned model is promoted or serving as a live upstream LLM.",
     `- Strict upstream gate reasons: ${strictCanary.reasons?.join(", ") || "none"}`,
-    `- Promotion allowed now: ${strictExpected ? "no" : "review required"}`,
-    "- Promotion requires both private routes to report `runtime_mode=upstream-llm` and strict upstream canary to pass.",
+    `- Promotion allowed now: ${strictReady ? "yes" : (strictExpected ? "no" : "review required")}`,
+    strictReady
+      ? "- Strict upstream proof is green: both private routes report `runtime_mode=upstream-llm`."
+      : "- Promotion requires both private routes to report `runtime_mode=upstream-llm` and strict upstream canary to pass.",
     "",
     "## Training Evidence",
     "",
@@ -170,9 +173,13 @@ function renderBundle({ adapterReport, strictReport, commands }) {
     "",
     "## Claim Boundary",
     "",
-    "- Adapter-mode proves the PAF/Oracle AI Database harness, tier-1000 load gate, score-row proof, trace/eval metadata, training capture, and OpenAI-compatible handoff.",
-    "- It does not prove two live private LLM runtimes.",
-    "- The two-live-LLM claim becomes valid only after both private routes report `runtime_mode=upstream-llm` and strict upstream canary passes.",
+    "- Adapter-mode proves the PAF/Oracle AI Database harness, tier-1000 load gate, score-row proof, trace/eval metadata, and training capture.",
+    strictReady
+      ? "- Strict-upstream mode proves the two private model routes are live upstream LLM runtimes."
+      : "- It does not prove two live private LLM runtimes.",
+    strictReady
+      ? "- The live model claim is valid while both private routes continue to report `runtime_mode=upstream-llm`."
+      : "- The two-live-LLM claim becomes valid only after both private routes report `runtime_mode=upstream-llm` and strict upstream canary passes.",
     "",
   ];
 

@@ -182,6 +182,101 @@ function modelFastPathReady(config = modelRouterConfig()) {
   return Boolean(providerEndpoint(config.primaryProvider, config));
 }
 
+function normalizeEndpointUrl(endpoint = "") {
+  return textValue(endpoint).replace(/\/+$/, "");
+}
+
+function summarizeAdapterHealth(adapters = []) {
+  const providerCounts = {};
+  const runtimeCounts = {};
+  const upstreamFormatCounts = {};
+  for (const adapter of adapters) {
+    const provider = adapter.provider || "unknown";
+    const runtime = adapter.runtime_mode || "missing";
+    const format = adapter.upstream_format || "missing";
+    providerCounts[provider] = (providerCounts[provider] || 0) + 1;
+    runtimeCounts[`${provider}:${runtime}`] = (runtimeCounts[`${provider}:${runtime}`] || 0) + 1;
+    upstreamFormatCounts[format] = (upstreamFormatCounts[format] || 0) + 1;
+  }
+  return {
+    provider_counts: providerCounts,
+    runtime_counts: runtimeCounts,
+    upstream_format_counts: upstreamFormatCounts,
+    upstream_llm_ready: adapters.length > 0 && adapters.every((adapter) =>
+      adapter.ok === true && adapter.runtime_mode === "upstream-llm"
+    ),
+  };
+}
+
+async function probeModelAdapterHealth(provider, endpoint, options = {}) {
+  const baseUrl = normalizeEndpointUrl(endpoint);
+  if (!baseUrl) {
+    return {
+      ok: false,
+      provider,
+      configured: false,
+      runtime_mode: null,
+      upstream_format: null,
+      model_id: null,
+      error: "endpoint_not_configured",
+    };
+  }
+  const timeoutMs = boundedMs(
+    process.env.PAF_ADAPTER_HEALTH_TIMEOUT_MS || options.healthTimeoutMs || 900,
+    900,
+    100,
+    5000
+  );
+  const headers = {
+    Accept: "application/json",
+    "User-Agent": "save-the-wildlife-paf-health/1.0",
+  };
+  const authSecret = textValue(options.authSecret || process.env.OCI_MODEL_ENDPOINT_AUTH_SECRET);
+  if (authSecret) headers.Authorization = `Bearer ${authSecret}`;
+  try {
+    const response = await requestJson(`${baseUrl}/healthz`, {
+      method: "GET",
+      timeoutMs,
+      verifyTls: options.verifyTls,
+      headers,
+    });
+    const payload = response.payload || {};
+    return {
+      ok: response.status >= 200 && response.status < 300 && payload.ok === true,
+      provider: payload.provider || provider,
+      configured: true,
+      runtime_mode: payload.runtime_mode || null,
+      upstream_format: payload.upstream_format || null,
+      model_id: payload.model_id || null,
+      facts_policy: payload.facts_policy || null,
+      strict_upstream_warnings: payload.strict_upstream_warnings ?? null,
+      status: response.status,
+      elapsed_ms: response.elapsed_ms,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      provider,
+      configured: true,
+      runtime_mode: null,
+      upstream_format: null,
+      model_id: null,
+      error: error.message,
+    };
+  }
+}
+
+async function modelAdapterHealth(config = modelRouterConfig()) {
+  const adapters = await Promise.all([
+    probeModelAdapterHealth(config.primaryProvider, providerEndpoint(config.primaryProvider, config), config),
+    probeModelAdapterHealth(config.candidateProvider, providerEndpoint(config.candidateProvider, config), config),
+  ]);
+  return {
+    adapters,
+    summary: summarizeAdapterHealth(adapters),
+  };
+}
+
 function normalizePowerups(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(
@@ -2617,12 +2712,12 @@ async function buildCommentary(body = {}, options = {}) {
   });
 }
 
-app.get("/healthz", (_req, res) => {
+app.get("/healthz", async (req, res) => {
   const config = canvasConfig();
   const inDbConfig = inDbAgentConfig();
   const matchConfig = matchIntelligenceConfig();
   const modelConfig = modelRouterConfig();
-  res.json({
+  const health = {
     ok: true,
     service: "private-agent-factory",
     version: packageJson.version,
@@ -2658,7 +2753,20 @@ app.get("/healthz", (_req, res) => {
       rubric_version: modelConfig.rubricVersion,
       training_capture_enabled: modelConfig.trainingCaptureEnabled,
     },
-  });
+  };
+  const deep = ["1", "true", "yes"].includes(String(req.query?.deep || "").toLowerCase());
+  if (deep) {
+    try {
+      const adapters = await modelAdapterHealth(modelConfig);
+      health.model_adapters = adapters.adapters;
+      health.model_adapter_summary = adapters.summary;
+    } catch (error) {
+      health.model_adapters = [];
+      health.model_adapter_summary = summarizeAdapterHealth([]);
+      health.model_adapter_error = error.message;
+    }
+  }
+  res.json(health);
 });
 
 function prometheusLine(name, value, labels = {}) {
@@ -2778,5 +2886,6 @@ export {
   extractCanvasText,
   normalizeSummary,
   safeCanvasEndpoint,
+  summarizeAdapterHealth,
   startServer,
 };
