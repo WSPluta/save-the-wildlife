@@ -37,6 +37,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const BOT_VISUAL_COLOR = 0x15c7b8;/);
     expect(script).toMatch(/function isBotDisplayName\(name\)/);
     expect(script).toMatch(/function isBotPlayerId\(id\)/);
+    expect(script).toMatch(/info && info\.isBot/);
     expect(script).toMatch(/function shouldRenderRemotePlayer\(id\)/);
     expect(script).toMatch(/function removeRemotePlayerVisual\(id\)/);
     expect(script).toMatch(/let ensureBotRosterVisualsForScene = \(\) => \{\};/);
@@ -62,6 +63,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/botsVisible: botSamples\.length,/);
     expect(script).toMatch(/botsKnown: Math\.max\(knownBotCount, botSamples\.length\),/);
     expect(script).toMatch(/botRenderMode: BOT_RENDER_MODE,/);
+    expect(script).toMatch(/botPolicy: otherPlayersInfo\?\.\[id\]\?\.botPolicy/);
     expect(script).toMatch(/botSamples,/);
     expect(script).toMatch(/botRosterVisual: latestBotRosterVisualDebug,/);
   });

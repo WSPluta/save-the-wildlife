@@ -281,7 +281,7 @@ function isBotDisplayName(name) {
 function isBotPlayerId(id) {
   const playerId = String(id || "");
   const info = otherPlayersInfo && otherPlayersInfo[playerId];
-  return playerId.toLowerCase().startsWith("bot-") || isBotDisplayName(info && info.name);
+  return playerId.toLowerCase().startsWith("bot-") || !!(info && info.isBot) || isBotDisplayName(info && info.name);
 }
 
 function shouldRenderRemotePlayer(id) {
@@ -629,18 +629,22 @@ function currentPathname() {
   }
 }
 
+function isAiLearningAdminPath(path) {
+  return path === "/admin/ai-learning" || path === "/admin/ai";
+}
+
 const IS_ADMIN_VIEW = (() => {
   try {
     const path = currentPathname();
     const url = new URL(window.location.href);
-    return path === "/admin" || path === "/admin/ai-learning" || path === "/admin/observability" || url.searchParams.get("admin") === "1";
+    return path === "/admin" || isAiLearningAdminPath(path) || path === "/admin/observability" || url.searchParams.get("admin") === "1";
   } catch (_) {
     return false;
   }
 })();
 const IS_AI_LEARNING_VIEW = (() => {
   try {
-    return currentPathname() === "/admin/ai-learning";
+    return isAiLearningAdminPath(currentPathname());
   } catch (_) {
     return false;
   }
@@ -2858,7 +2862,9 @@ async function init() {
           const { id: joinedId, name: joinedName } = body || {};
           if (joinedId) {
             // Ensure name map is updated so subsequent mesh creation shows correct label
-            if (joinedName) {
+            if (body.profile && typeof body.profile === "object") {
+              otherPlayersInfo[joinedId] = body.profile;
+            } else if (joinedName) {
               otherPlayersInfo[joinedId] = { name: joinedName };
             }
             if (!shouldRenderRemotePlayer(joinedId)) {
@@ -3084,11 +3090,15 @@ async function init() {
             arr = body.map((value, index) => ({
               id: value && value.id ? String(value.id) : String(index + 1),
               name: typeof value === "string" ? value : (value && value.name ? String(value.name) : "Player"),
+              botPolicy: value && value.botPolicy ? value.botPolicy : null,
+              teacher: value && value.teacher ? String(value.teacher) : "",
             }));
           } else if (body && typeof body === "object") {
             arr = Object.entries(body).map(([id, value]) => ({
               id: String(id),
               name: value && value.name ? String(value.name) : String(id),
+              botPolicy: value && value.botPolicy ? value.botPolicy : null,
+              teacher: value && value.teacher ? String(value.teacher) : "",
             }));
           }
           for (const p of arr) {
@@ -3097,7 +3107,10 @@ async function init() {
             name.textContent = p.name || "Player";
             const id = document.createElement("span");
             id.className = "hud-item";
-            id.textContent = p.id || "";
+            const policy = p.botPolicy || null;
+            id.textContent = policy && policy.id
+              ? `${policy.name || policy.id} · ${policy.source || p.teacher || "paf"}`
+              : (p.id || "");
             li.appendChild(name);
             li.appendChild(id);
             list.appendChild(li);
@@ -5385,6 +5398,15 @@ function renderGameToText() {
     .map(([id, mesh]) => ({
       id,
       name: otherPlayersInfo?.[id]?.name || id,
+      botPolicy: otherPlayersInfo?.[id]?.botPolicy
+        ? {
+            id: otherPlayersInfo[id].botPolicy.id || null,
+            name: otherPlayersInfo[id].botPolicy.name || null,
+            source: otherPlayersInfo[id].botPolicy.source || null,
+            version: otherPlayersInfo[id].botPolicy.version || null,
+            objective: otherPlayersInfo[id].botPolicy.objective || otherPlayersInfo[id].botPolicy.notes || null,
+          }
+        : null,
       x: Number((mesh.position?.x || 0).toFixed(3)),
       y: Number((mesh.position?.y || 0).toFixed(3)),
       z: Number((mesh.position?.z || 0).toFixed(3)),

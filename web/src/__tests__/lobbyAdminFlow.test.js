@@ -24,7 +24,7 @@ describe("presenter-controlled lobby flow", () => {
     expect(html).toContain('id="btn-admin-start"');
     expect(html).toContain('id="btn-admin-end"');
     expect(html).toContain('id="admin-player-list"');
-    expect(script).toMatch(/path === "\/admin" \|\| path === "\/admin\/ai-learning" \|\| path === "\/admin\/observability"/);
+    expect(script).toMatch(/path === "\/admin" \|\| isAiLearningAdminPath\(path\) \|\| path === "\/admin\/observability"/);
     expect(script).toMatch(/ADMIN:\s*"ADMIN"/);
     expect(script).toMatch(/if \(!IS_ADMIN_VIEW && !clientGameStarted\)/);
     expect(styles).toMatch(/body\.phase-admin #hud/);

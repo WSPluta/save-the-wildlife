@@ -32,6 +32,7 @@ describe("admin load evaluation view", () => {
     expect(html).toContain("Load Gate Proof");
     expect(html).toContain("Tier 1000 pass");
     expect(script).toContain('path === "/admin/observability"');
+    expect(script).toContain('path === "/admin/ai"');
     expect(script).toMatch(/const IS_AI_LEARNING_VIEW =/);
   });
 
@@ -66,6 +67,8 @@ describe("admin load evaluation view", () => {
     expect(html).toContain("Strict upstream gate");
     expect(html).toContain("Upstream LLM proof is live");
     expect(html).toContain("runtime_mode=upstream-llm");
+    expect(script).toMatch(/function isAiLearningAdminPath\(path\)/);
+    expect(script).toMatch(/path === "\/admin\/ai-learning" \|\| path === "\/admin\/ai"/);
     expect(script).toMatch(/updateAiLearningHealth/);
   });
 
@@ -100,5 +103,11 @@ describe("admin load evaluation view", () => {
     expect(html).toContain('id="btn-admin-grant"');
     expect(script).toMatch(/requestPresenterGrant/);
     expect(worker).toMatch(/admin\.presenter\.grant/);
+  });
+
+  it("shows PAF-trained bot persona metadata in the admin roster", () => {
+    expect(script).toMatch(/botPolicy: value && value\.botPolicy/);
+    expect(script).toMatch(/\$\{policy\.name \|\| policy\.id\} · \$\{policy\.source \|\| p\.teacher \|\| "paf"\}/);
+    expect(script).toMatch(/otherPlayersInfo\[joinedId\] = body\.profile;/);
   });
 });
