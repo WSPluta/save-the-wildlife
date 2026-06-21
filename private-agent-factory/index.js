@@ -1030,6 +1030,43 @@ async function runModelRoute({ summary, context, legacy, outputFormatValue, maxC
   return route;
 }
 
+function skippedModelRoute(summary, context = {}, legacy = {}, outputFormatValue = "live_line", maxChars = COMMENTARY_MAX_CHARS, reason = "model_route_skipped") {
+  const config = modelRouterConfig();
+  const traceId = newTraceId(summary);
+  const evidence = buildModelEvidence(summary, context || {}, legacy || {});
+  const prompt = buildModelPrompt(summary, context || {}, legacy || {}, outputFormatValue, maxChars);
+  const evalScores = evaluateModelOutputs(null, null, summary, config, maxChars);
+  return {
+    trace_id: traceId,
+    route_mode: config.routeMode,
+    primary_provider: config.primaryProvider,
+    candidate_provider: config.candidateProvider || null,
+    model_id: null,
+    latency_ms: null,
+    evidence_hash: compactHash(stableJson(evidence)),
+    prompt_hash: compactHash(prompt),
+    eval_scores: evalScores,
+    promotion_verdict: evalScores.verdict,
+    primary: {
+      ok: false,
+      provider: config.primaryProvider,
+      skipped: true,
+      error: reason,
+    },
+    candidate: config.candidateProvider ? {
+      ok: false,
+      provider: config.candidateProvider,
+      skipped: true,
+      error: reason,
+    } : null,
+    request: {
+      prompt,
+      evidence,
+    },
+    trace_persisted: false,
+  };
+}
+
 function requestJson(url, { method = "GET", headers = {}, body = null, timeoutMs = DEFAULT_CANVAS_TIMEOUT_MS, verifyTls = false } = {}) {
   return new Promise((resolveRequest, rejectRequest) => {
     let parsed;
@@ -2687,6 +2724,11 @@ async function buildCommentary(body = {}, options = {}) {
   let diagnosticWarnings = [];
   let matchContext = null;
   const matchConfig = matchIntelligenceConfig();
+  const skipRoomLiveLineModelRoute = () => Boolean(
+    requestedOutput === "live_line"
+    && matchContext?.capabilities?.room_session_resolved
+    && !boolEnv("PAF_ROOM_LIVE_LINE_MODEL_ROUTE_ENABLED", false)
+  );
 
   if (!options.skipOracleSummary && bodySummary.session_id && bodySummary.player_id) {
     try {
@@ -2728,7 +2770,7 @@ async function buildCommentary(body = {}, options = {}) {
     }
   }
 
-  if (["live_line", "post_match_recap"].includes(requestedOutput) && modelFastPathReady()) {
+  if (["live_line", "post_match_recap"].includes(requestedOutput) && modelFastPathReady() && !skipRoomLiveLineModelRoute()) {
     const { formats, legacySource, legacy } = buildLegacyEnvelope(summary, matchContext || {}, {
       source,
       maxChars,
@@ -2861,16 +2903,25 @@ async function buildCommentary(body = {}, options = {}) {
     canvas,
     maxChars,
   });
-  const modelRoute = await runModelRoute(
-    {
-      summary,
-      context: matchContext || {},
-      legacy,
-      outputFormatValue: requestedOutput,
-      maxChars,
-    },
-    options
-  );
+  const modelRoute = skipRoomLiveLineModelRoute()
+    ? skippedModelRoute(
+        summary,
+        matchContext || {},
+        legacy,
+        requestedOutput,
+        maxChars,
+        "room_live_line_uses_sql_context"
+      )
+    : await runModelRoute(
+        {
+          summary,
+          context: matchContext || {},
+          legacy,
+          outputFormatValue: requestedOutput,
+          maxChars,
+        },
+        options
+      );
   const primaryGate = modelOutputGate(modelRoute.primary, summary, maxChars);
   const primaryDiagnostics = modelRoute.primary?.ok && !primaryGate.ok
     ? [`${modelRoute.primary.provider}:model_output_rejected_${primaryGate.reason}`]
