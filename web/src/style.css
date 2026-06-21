@@ -890,6 +890,20 @@ body.observability-view #admin-ai-learning {
   display: none !important;
 }
 
+body.observability-view .admin-grid,
+body.observability-view .admin-actions,
+body.observability-view .admin-roster,
+body.ai-learning-view .admin-grid,
+body.ai-learning-view .admin-actions,
+body.ai-learning-view .admin-roster {
+  display: none !important;
+}
+
+body.observability-view #admin-status,
+body.ai-learning-view #admin-status {
+  margin: -4px 0 0;
+}
+
 #screen-admin.admin-panel {
   align-items: stretch;
   justify-content: flex-start;

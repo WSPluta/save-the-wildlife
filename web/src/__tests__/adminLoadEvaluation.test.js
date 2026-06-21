@@ -75,6 +75,8 @@ describe("admin load evaluation view", () => {
   it("styles the compact AI learning receipt panels", () => {
     expect(styles).toMatch(/\.admin-proof-receipts\s*{/);
     expect(styles).toMatch(/\.admin-learning-note\s*{/);
+    expect(styles).toMatch(/body\.ai-learning-view \.admin-grid/);
+    expect(styles).toMatch(/body\.ai-learning-view \.admin-roster/);
   });
 
   it("adds a compact OCI observability route for live user analytics", () => {
@@ -87,6 +89,8 @@ describe("admin load evaluation view", () => {
     expect(script).toMatch(/const IS_OBSERVABILITY_VIEW =/);
     expect(script).toMatch(/updateObservabilityMetrics/);
     expect(styles).toMatch(/body\.admin-view:not\(\.observability-view\) #admin-observability/);
+    expect(styles).toMatch(/body\.observability-view \.admin-grid/);
+    expect(styles).toMatch(/body\.observability-view \.admin-roster/);
   });
 
   it("keeps observability explanation text under 30 words", () => {

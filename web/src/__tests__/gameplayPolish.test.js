@@ -152,9 +152,9 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/localBoatFeelState = createBoatFeelState\(\);/);
     expect(script).toMatch(/installBoatFeelPivot\(player, \[boat\]\);/);
     expect(script).toMatch(/localWaterlineContact = createBoatWaterlineContact\(\);/);
-    expect(script).toMatch(/new THREE\.RingGeometry\(0\.43, 0\.54, 48, 1\);/);
+    expect(script).toMatch(/new THREE\.RingGeometry\(0\.36, 0\.47, 48, 1\);/);
     expect(script).toMatch(/depthTest: true,/);
-    expect(script).toMatch(/localWaterlineContact\.scale\.set\(0\.42 \+ wakeStrength \* 0\.04, 1, 1\.12 \+ speedRatio \* 0\.08\);/);
+    expect(script).toMatch(/localWaterlineContact\.scale\.set\(0\.36 \+ wakeStrength \* 0\.035, 1, 1\.02 \+ speedRatio \* 0\.07\);/);
     expect(script).toMatch(/player\.add\(localWaterlineContact\);/);
     expect(script).toMatch(/const playerBox = getPlayerCollisionBox\(\);/);
     expect(script).toMatch(/isWithinArcadePickupRadius\(item\.position, TRASH_ARCADE_PICKUP_RADIUS\)/);
@@ -174,8 +174,8 @@ describe("gameplay polish regressions", () => {
 
   it("uses a mobile-aware follow camera without changing the gameplay root", () => {
     expect(script).toMatch(/const FOLLOW_CAMERA_COMPOSITION = Object\.freeze\(\{/);
-    expect(script).toMatch(/desktop: \{[\s\S]{0,140}distance: 2\.15,[\s\S]{0,80}height: 1\.18,[\s\S]{0,80}lookHeight: 0\.22,[\s\S]{0,80}lookForward: 0\.55,[\s\S]{0,120}fov: 75,/);
-    expect(script).toMatch(/mobile: \{[\s\S]{0,140}distance: 2\.75,[\s\S]{0,80}height: 1\.36,[\s\S]{0,80}lookHeight: 0\.34,[\s\S]{0,80}lookForward: 0\.5,[\s\S]{0,120}fov: 70,/);
+    expect(script).toMatch(/desktop: \{[\s\S]{0,140}distance: 1\.9,[\s\S]{0,80}height: 1\.12,[\s\S]{0,80}lookHeight: 0\.2,[\s\S]{0,80}lookForward: 0\.52,[\s\S]{0,120}fov: 68,/);
+    expect(script).toMatch(/mobile: \{[\s\S]{0,140}distance: 2\.55,[\s\S]{0,80}height: 1\.32,[\s\S]{0,80}lookHeight: 0\.32,[\s\S]{0,80}lookForward: 0\.5,[\s\S]{0,120}fov: 68,/);
     expect(script).toMatch(/function isMobileGameViewport\(\)/);
     expect(script).toMatch(/window\.matchMedia && window\.matchMedia\("\(pointer: coarse\)"\)\.matches/);
     expect(script).toMatch(/function applyFollowCamera\(root, yaw\)/);

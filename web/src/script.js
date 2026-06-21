@@ -230,21 +230,21 @@ const ARCADE_ENVIRONMENT = Object.freeze({
 const FOLLOW_CAMERA_COMPOSITION = Object.freeze({
   desktop: {
     mobile: false,
-    distance: 2.15,
-    height: 1.18,
-    lookHeight: 0.22,
-    lookForward: 0.55,
+    distance: 1.9,
+    height: 1.12,
+    lookHeight: 0.2,
+    lookForward: 0.52,
     spring: 0.18,
-    fov: 75,
+    fov: 68,
   },
   mobile: {
     mobile: true,
-    distance: 2.75,
-    height: 1.36,
-    lookHeight: 0.34,
+    distance: 2.55,
+    height: 1.32,
+    lookHeight: 0.32,
     lookForward: 0.5,
     spring: 0.18,
-    fov: 70,
+    fov: 68,
   },
 });
 const ENVIRONMENT_PROP_LIMITS = Object.freeze({
@@ -382,12 +382,12 @@ function disableGameplayInteraction(object3d) {
 }
 
 function createBoatWaterlineContact() {
-  const geometry = new THREE.RingGeometry(0.43, 0.54, 48, 1);
+  const geometry = new THREE.RingGeometry(0.36, 0.47, 48, 1);
   geometry.rotateX(-Math.PI / 2);
   const material = new THREE.MeshBasicMaterial({
     color: 0xdafcff,
     transparent: true,
-    opacity: 0.1,
+    opacity: 0.075,
     depthWrite: false,
     depthTest: true,
     blending: THREE.AdditiveBlending,
@@ -402,15 +402,15 @@ function createBoatWaterlineContact() {
   mesh.renderOrder = 24;
   mesh.userData.noCollision = true;
   mesh.userData.visualOnly = true;
-  mesh.scale.set(0.38, 1, 1.06);
+  mesh.scale.set(0.34, 1, 0.98);
   mesh.position.y = BOAT_FEEL_DEFAULTS.waterSurfaceY + BOAT_FEEL_DEFAULTS.surfaceRippleY;
 
-  const shadowGeometry = new THREE.CircleGeometry(0.44, 44);
+  const shadowGeometry = new THREE.CircleGeometry(0.38, 44);
   shadowGeometry.rotateX(-Math.PI / 2);
   const shadowMaterial = new THREE.MeshBasicMaterial({
     color: 0x084f7a,
     transparent: true,
-    opacity: 0.08,
+    opacity: 0.055,
     depthWrite: false,
     depthTest: true,
     side: THREE.DoubleSide,
@@ -438,11 +438,11 @@ function updateBoatWaterlineContact(root, speed, wake, maxSpeed = 3, visualY = 0
   const contactY = waterY + BOAT_FEEL_DEFAULTS.surfaceRippleY;
   localWaterlineContact.visible = gameState === "RUNNING" || gameState === "STARTING";
   localWaterlineContact.position.y = contactY;
-  localWaterlineContact.material.opacity = 0.095 + wakeStrength * 0.06 + speedRatio * 0.02;
-  localWaterlineContact.scale.set(0.42 + wakeStrength * 0.04, 1, 1.12 + speedRatio * 0.08);
+  localWaterlineContact.material.opacity = 0.075 + wakeStrength * 0.045 + speedRatio * 0.015;
+  localWaterlineContact.scale.set(0.36 + wakeStrength * 0.035, 1, 1.02 + speedRatio * 0.07);
   const shadow = localWaterlineContact.userData && localWaterlineContact.userData.contactShadow;
   if (shadow && shadow.material) {
-    shadow.material.opacity = 0.075 + wakeStrength * 0.035 + speedRatio * 0.015;
+    shadow.material.opacity = 0.055 + wakeStrength * 0.025 + speedRatio * 0.01;
   }
   const seatDepth = contactY - (Number.isFinite(Number(visualY)) ? Number(visualY) : 0);
   latestWaterlineContactDebug = {
