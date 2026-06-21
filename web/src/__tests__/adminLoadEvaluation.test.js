@@ -113,5 +113,6 @@ describe("admin load evaluation view", () => {
     expect(script).toMatch(/botPolicy: value && value\.botPolicy/);
     expect(script).toMatch(/\$\{policy\.name \|\| policy\.id\} · \$\{policy\.source \|\| p\.teacher \|\| "paf"\}/);
     expect(script).toMatch(/otherPlayersInfo\[joinedId\] = body\.profile;/);
+    expect(readFileSync("../bots/index.js", "utf8")).toMatch(/botPolicy: profile\.botPolicy/);
   });
 });

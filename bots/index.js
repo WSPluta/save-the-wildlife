@@ -188,6 +188,9 @@ function createBotInstance(index) {
       playerName: name,
       clientSessionId: profile.clientSessionId,
       gameplaySessionId: profile.gameplaySessionId,
+      isBot: profile.isBot,
+      teacher: profile.teacher,
+      botPolicy: profile.botPolicy,
     });
   }
 

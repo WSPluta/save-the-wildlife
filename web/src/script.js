@@ -239,10 +239,10 @@ const FOLLOW_CAMERA_COMPOSITION = Object.freeze({
   },
   mobile: {
     mobile: true,
-    distance: 2.55,
-    height: 1.32,
-    lookHeight: 0.32,
-    lookForward: 0.5,
+    distance: 2.2,
+    height: 1.16,
+    lookHeight: 0.24,
+    lookForward: 0.32,
     spring: 0.18,
     fov: 68,
   },
@@ -387,7 +387,7 @@ function createBoatWaterlineContact() {
   const material = new THREE.MeshBasicMaterial({
     color: 0xdafcff,
     transparent: true,
-    opacity: 0.075,
+    opacity: 0.11,
     depthWrite: false,
     depthTest: true,
     blending: THREE.AdditiveBlending,
@@ -410,7 +410,7 @@ function createBoatWaterlineContact() {
   const shadowMaterial = new THREE.MeshBasicMaterial({
     color: 0x084f7a,
     transparent: true,
-    opacity: 0.055,
+    opacity: 0.075,
     depthWrite: false,
     depthTest: true,
     side: THREE.DoubleSide,
@@ -438,11 +438,11 @@ function updateBoatWaterlineContact(root, speed, wake, maxSpeed = 3, visualY = 0
   const contactY = waterY + BOAT_FEEL_DEFAULTS.surfaceRippleY;
   localWaterlineContact.visible = gameState === "RUNNING" || gameState === "STARTING";
   localWaterlineContact.position.y = contactY;
-  localWaterlineContact.material.opacity = 0.075 + wakeStrength * 0.045 + speedRatio * 0.015;
+  localWaterlineContact.material.opacity = 0.11 + wakeStrength * 0.055 + speedRatio * 0.02;
   localWaterlineContact.scale.set(0.36 + wakeStrength * 0.035, 1, 1.02 + speedRatio * 0.07);
   const shadow = localWaterlineContact.userData && localWaterlineContact.userData.contactShadow;
   if (shadow && shadow.material) {
-    shadow.material.opacity = 0.055 + wakeStrength * 0.025 + speedRatio * 0.01;
+    shadow.material.opacity = 0.075 + wakeStrength * 0.035 + speedRatio * 0.015;
   }
   const seatDepth = contactY - (Number.isFinite(Number(visualY)) ? Number(visualY) : 0);
   latestWaterlineContactDebug = {
@@ -1690,9 +1690,9 @@ function prepareExistingSceneForMatch(nextStartPosition = null) {
   try { if (localBoatFeelState) resetBoatFeel(localBoatFeelState); } catch (_) {}
   if (localWaterlineContact) {
     localWaterlineContact.visible = false;
-    localWaterlineContact.material.opacity = 0.07;
+    localWaterlineContact.material.opacity = 0.11;
     const shadow = localWaterlineContact.userData && localWaterlineContact.userData.contactShadow;
-    if (shadow && shadow.material) shadow.material.opacity = 0.06;
+    if (shadow && shadow.material) shadow.material.opacity = 0.075;
   }
   if (player) {
     const p = nextStartPosition || startPosition || { x: 0, y: 0, z: 0 };
