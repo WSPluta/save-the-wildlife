@@ -931,6 +931,24 @@ function modelOutputGate(output, summary = {}, maxChars = COMMENTARY_MAX_CHARS) 
   return { ok, reason, scores, meta_leak: metaLeak };
 }
 
+function evidenceFactGate(text, summary = {}, maxChars = COMMENTARY_MAX_CHARS) {
+  const scores = scoreTextAgainstEvidence(text, summary, maxChars);
+  const ok = Boolean(
+    scores.no_hallucinated_game_facts &&
+    scores.commentary_quality &&
+    scores.confidence_calibrated &&
+    scores.safe_for_stage
+  );
+  let reason = "accepted";
+  if (!ok) {
+    if (!scores.no_hallucinated_game_facts) reason = "unsupported_game_fact";
+    else if (!scores.commentary_quality) reason = "quality_gate";
+    else if (!scores.confidence_calibrated) reason = "overconfident";
+    else if (!scores.safe_for_stage) reason = "safety_gate";
+  }
+  return { ok, reason, scores };
+}
+
 function booleanScore(scores = {}) {
   return Object.entries(scores)
     .filter(([key]) => !key.endsWith("_count") && key !== "token_count")
@@ -2863,6 +2881,16 @@ async function buildCommentary(body = {}, options = {}) {
         "indb_agent"
       );
       if (inDbAgent?.summary) summary = inDbAgent.summary;
+      if (inDbAgent?.commentary) {
+        const inDbGate = evidenceFactGate(inDbAgent.commentary, summary, maxChars);
+        if (!inDbGate.ok) {
+          diagnosticWarnings = combineWarnings(
+            diagnosticWarnings,
+            `${inDbAgent.source || "oracle-ai-database-agent"}:in_db_output_rejected_${inDbGate.reason}`
+          );
+          inDbAgent = null;
+        }
+      }
     } catch (error) {
       warning = [warning, error.message].filter(Boolean).join("; ");
     }

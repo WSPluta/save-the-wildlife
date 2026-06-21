@@ -1201,6 +1201,109 @@ test("skips slow model routing for room-resolved live commentary", async () => {
   });
 });
 
+test("rejects unsupported Select AI commentary before returning room live line", async () => {
+  const oracleConnection = {
+    async execute(sql) {
+      if (/WHERE room_id = :roomId/i.test(sql)) {
+        return {
+          rows: [
+            {
+              SESSION_ID: "S-HUMAN",
+              ROOM_ID: "ROOM-LATEST",
+              PLAYER_ID: "P-HUMAN",
+              PLAYER_NAME: "Wojtek",
+              SCORE: 1,
+              EVENT_COUNT: 4,
+            },
+          ],
+        };
+      }
+      if (/SUM\(CASE WHEN event_type = 'trash_collected'/i.test(sql)) {
+        return {
+          rows: [
+            {
+              SESSION_ID: "S-HUMAN",
+              ROOM_ID: "ROOM-LATEST",
+              PLAYER_ID: "P-HUMAN",
+              PLAYER_NAME: "Wojtek",
+              SCORE: 3,
+              TRASH_COLLECTED: 3,
+              MARINE_HITS: 0,
+              TRAIL_CROSSES: 0,
+              FREEZES: 0,
+              LAST_X: 12,
+              LAST_Y: 0,
+              LAST_Z: -4,
+            },
+          ],
+        };
+      }
+      if (/event_type = 'powerup_collected'/i.test(sql)) {
+        return { rows: [{ METADATA_JSON: JSON.stringify({ powerup_type: "powerup_speed" }) }] };
+      }
+      if (/event_type = 'game_over'/i.test(sql)) return { rows: [{ PRIOR_BEST_SCORE: null }] };
+      if (/SELECT id, event_type/i.test(sql)) {
+        return {
+          rows: [
+            {
+              ID: 10,
+              EVENT_TYPE: "trash_collected",
+              OCCURRED_AT: "2026-06-21T15:57:00.000Z",
+              SCORE: 1,
+              X: 8,
+              Y: 0,
+              Z: -2,
+              RELATED_ITEM_ID: "TR-1",
+              METADATA_JSON: JSON.stringify({ item_type: "trash" }),
+            },
+          ],
+        };
+      }
+      if (/FROM STWL_REPLAY_CLIPS/i.test(sql)) return { rows: [] };
+      if (/FROM STWL_AGENT_MEMORIES/i.test(sql)) return { rows: [] };
+      if (/build_script_json/i.test(sql)) {
+        return {
+          outBinds: {
+            result: JSON.stringify({
+              ok: true,
+              source: "select-ai",
+              commentary: "Wojtek cleaned trash while navigating the trail with precision.",
+            }),
+          },
+        };
+      }
+      return { rows: [] };
+    },
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MODEL_ROUTE_MODE: "shadow",
+    PAF_MODEL_FAST_PATH_ENABLED: "true",
+    OCI_BASE_MODEL_ENDPOINT_URL: "https://model.example.test/base",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "true",
+    PAF_MATCH_INTELLIGENCE_AUTO_INIT: "false",
+    PAF_AGENT_MEMORY_PERSIST: "false",
+  }, async () => {
+    const response = await buildCommentary(
+      { roomId: "ROOM-LATEST", format: "live_line" },
+      {
+        oracleConnection,
+        oracledb: { BIND_OUT: 3003, STRING: 2001 },
+      }
+    );
+
+    assert.equal(response.source, "oracle-match-intelligence");
+    assert.equal(response.in_db_agent, null);
+    assert.equal(response.commentary, "Powerup run: speed boosted a 3 finish.");
+    assert.ok(!/trail/i.test(response.commentary));
+    assert.match(response.warnings.join("; "), /select-ai:in_db_output_rejected_unsupported_game_fact/);
+  });
+});
+
 test("does not create replay captions when no replay document exists", async () => {
   const oracleConnection = {
     async execute(sql) {
