@@ -3,12 +3,15 @@ import * as dotenv from "dotenv";
 import short from "short-uuid";
 import pino from "pino";
 import {
+  botPolicyForIndex,
   buildGameEvent,
   buildTrace,
   computeInputToward,
   desiredBotCount,
+  effectiveBotConfigForPolicy,
   integrateBotMotion,
   parseBotConfig,
+  parseBotPolicies,
   planBotPoolSize,
   selectTargetItem,
   syntheticMechanicForTick,
@@ -43,6 +46,7 @@ logger.info({
 let botPool = [];
 let playerCounts = { total: 0, humans: 0, bots: 0 };
 let resizeState = {};
+let botPolicies = config.botPolicies;
 
 function socketOptions() {
   return {
@@ -71,6 +75,57 @@ function emitWithAck(socket, eventName, payload, timeoutMs = 2500) {
   });
 }
 
+function publicBotPolicy(policy) {
+  return policy ? {
+    id: policy.id,
+    name: policy.name,
+    source: policy.source,
+    version: policy.version,
+    targetPriority: policy.targetPriority,
+    risk: policy.risk,
+    aggression: policy.aggression,
+    throttle: policy.throttle,
+    objective: policy.notes,
+  } : null;
+}
+
+function applyPolicyToBot(bot) {
+  if (!bot) return null;
+  bot.policy = botPolicyForIndex(bot.index, botPolicies);
+  bot.strategy = bot.policy?.id || "paf-trained";
+  return bot.policy;
+}
+
+async function refreshBotPolicies(reason = "startup") {
+  if (!config.botPolicyUrl) {
+    botPolicies = parseBotPolicies(config.botPolicies);
+    return botPolicies;
+  }
+  try {
+    const response = await fetch(config.botPolicyUrl, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!response.ok) throw new Error(`http_${response.status}`);
+    botPolicies = parseBotPolicies(await response.json());
+    botPool.forEach(applyPolicyToBot);
+    logger.info({
+      reason,
+      url: config.botPolicyUrl,
+      policies: botPolicies.map((policy) => policy.id),
+    }, "loaded PAF bot policy catalog");
+  } catch (error) {
+    botPolicies = parseBotPolicies(config.botPolicies);
+    logger.warn({
+      reason,
+      url: config.botPolicyUrl,
+      error: error.message,
+      fallbackPolicies: botPolicies.map((policy) => policy.id),
+    }, "using local bot policy catalog fallback");
+  }
+  return botPolicies;
+}
+
 function createBotInstance(index) {
   const id = `bot-${short.generate()}`;
   const shortId = id.slice(4, 10);
@@ -97,7 +152,8 @@ function createBotInstance(index) {
     seq: 0,
     target: null,
     targetAt: 0,
-    strategy: index % 3 === 0 ? "powerup_first" : index % 3 === 1 ? "trash_collector" : "trail_drama",
+    strategy: "paf-trained",
+    policy: null,
     items: {},
     players: {},
     mechanicTick: 0,
@@ -107,6 +163,7 @@ function createBotInstance(index) {
     lastAuthoritativeStateAt: 0,
     lastMotionAt: Date.now(),
   };
+  applyPolicyToBot(bot);
 
   function joinRoom() {
     if (!socket.connected) return;
@@ -121,6 +178,9 @@ function createBotInstance(index) {
       room: roomId,
       clientSessionId: `client:${sessionId}`,
       gameplaySessionId: sessionId,
+      isBot: true,
+      teacher: bot.policy?.source || "paf",
+      botPolicy: publicBotPolicy(bot.policy),
     };
     socket.emit("player.info.joining", profile);
     socket.emit("game.start", {
@@ -158,21 +218,20 @@ function createBotInstance(index) {
       metadata: {
         target_item_id: bot.target?.id || null,
         target_kind: bot.target?.kind || null,
+        target_type: bot.target?.type || bot.target?.itemType || null,
+        bot_policy_target_priority: bot.policy?.targetPriority || [],
       },
     });
   }
 
   function updateTarget(now) {
     if (bot.target && now - bot.targetAt < config.targetRefreshMs) return bot.target;
-    const preferences = bot.strategy === "powerup_first"
-      ? ["powerup", "trash", "marine"]
-      : bot.strategy === "trail_drama"
-        ? ["trash", "powerup", "marine"]
-        : ["trash", "powerup", "marine"];
+    const preferences = bot.policy?.targetPriority || ["trash", "powerup", "marine"];
     bot.target = selectTargetItem(bot.position, bot.items, preferences, {
       rankOffset: bot.index,
       pickWindow: 6,
       jitter: bot.index * 0.08,
+      risk: bot.policy?.risk || "medium",
     });
     bot.targetAt = now;
     return bot.target;
@@ -198,13 +257,14 @@ function createBotInstance(index) {
     const now = Date.now();
     if (!socket.connected || !bot.joined) return;
     const target = bot.active ? updateTarget(now) : null;
+    const effectiveConfig = effectiveBotConfigForPolicy(config, bot.policy);
     const input = bot.active
-      ? computeInputToward(bot.position, bot.rotationY, target, config)
+      ? computeInputToward(bot.position, bot.rotationY, target, effectiveConfig)
       : { throttle: 0, steer: 0, brake: false };
     const dt = Math.max(0.001, Math.min(0.25, (now - (bot.lastMotionAt || now)) / 1000));
     bot.lastMotionAt = now;
     if (bot.active && now - (bot.lastAuthoritativeStateAt || 0) > 1000) {
-      integrateBotMotion(bot, input, config, dt);
+      integrateBotMotion(bot, input, effectiveConfig, dt);
     }
 
     socket.emit("player.input", {
@@ -273,6 +333,8 @@ function createBotInstance(index) {
         metadata: {
           final_score: bot.score,
           bot_strategy: bot.strategy,
+          bot_policy: publicBotPolicy(bot.policy),
+          learning_outcome: bot.score > 0 ? "policy_collected_items" : "policy_needs_more_evidence",
           generated_for: "commentary_training",
         },
       }).catch((error) => logger.debug({ bot: id, error: error.message }, "bot game_over emit failed"));
@@ -354,6 +416,15 @@ function updateBotPool() {
 }
 
 const managerSocket = io(webSocketServerUrl, socketOptions());
+
+await refreshBotPolicies("startup");
+if (config.botPolicyUrl) {
+  setInterval(() => {
+    refreshBotPolicies("interval").catch((error) =>
+      logger.warn({ error: error.message }, "bot policy refresh failed")
+    );
+  }, 60000).unref?.();
+}
 
 managerSocket.on("connect", () => {
   logger.info("bot manager connected");

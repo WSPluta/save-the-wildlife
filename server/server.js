@@ -1033,7 +1033,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
     }
 
 
-    socket.on("player.info.joining", async ({ id, name, room, clientSessionId, gameplaySessionId } = {}) => {
+    socket.on("player.info.joining", async ({ id, name, room, clientSessionId, gameplaySessionId, isBot, teacher, botPolicy } = {}) => {
       // Track the playerId bound to this socket for chat attribution/throttling
       if (!id) return;
       playerIdForSocket = id;
@@ -1058,6 +1058,9 @@ function scheduleRoomRefill(room, delayMs = 0) {
         room: currentRoom,
         clientSessionId,
         gameplaySessionId,
+        isBot,
+        teacher,
+        botPolicy,
       });
       socket.emit("player.session", profile);
       // Seed chat history for this socket's current room
@@ -1231,7 +1234,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       }
     });
 
-    socket.on("game.start", async ({ playerId, playerName, clientSessionId, gameplaySessionId } = {}) => {
+    socket.on("game.start", async ({ playerId, playerName, clientSessionId, gameplaySessionId, isBot, teacher, botPolicy } = {}) => {
       if (!playerId) return;
       playerIdForSocket = playerId;
       mapPlayerSockets[playerId] = socket;
@@ -1246,6 +1249,9 @@ function scheduleRoomRefill(room, delayMs = 0) {
         room,
         clientSessionId: clientSessionId || (socket.data && socket.data.clientSessionId),
         gameplaySessionId: gameplaySessionId || sessionIdForRoom(room),
+        isBot,
+        teacher,
+        botPolicy,
       });
       socket.emit("player.session", profile);
       io.to(room).emit("player.info.joined", {

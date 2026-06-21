@@ -56,6 +56,8 @@ spec:
               value: "2500"
             - name: BOT_NAME_PREFIX
               value: "Bot Data"
+            - name: BOT_POLICY_URL
+              value: "http://private-agent-factory:8080/api/bot-policies"
           resources:
             requests:
               cpu: 100m

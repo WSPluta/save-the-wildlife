@@ -376,6 +376,30 @@ describe("player session name profiles", () => {
     expect(updated.sessions[0].firstSeenAt).toBe("2026-06-15T00:00:00.000Z");
   });
 
+  it("keeps PAF-trained bot policy metadata in roster session profiles", () => {
+    const profile = buildPlayerSessionProfile({}, {
+      id: "bot-1",
+      name: "Bot Data abc123",
+      room: "ROOM-0001",
+      clientSessionId: "client:bot-1",
+      gameplaySessionId: "BOT:ROOM-0001:bot-1",
+      isBot: true,
+      teacher: "paf",
+      botPolicy: {
+        id: "shield-hunter-v1",
+        name: "PAF Shield Hunter",
+        source: "paf",
+        version: "1.0.0",
+      },
+    }, "2026-06-15T00:02:00.000Z");
+
+    expect(profile.isBot).toBe(true);
+    expect(profile.teacher).toBe("paf");
+    expect(profile.botPolicy.id).toBe("shield-hunter-v1");
+    expect(profile.sessions[0].isBot).toBe(true);
+    expect(profile.sessions[0].botPolicy.name).toBe("PAF Shield Hunter");
+  });
+
   it("keeps bounded per-player session history across rooms and gameplay sessions", () => {
     let profile = {};
     for (let i = 0; i < MAX_PLAYER_SESSION_HISTORY + 3; i += 1) {

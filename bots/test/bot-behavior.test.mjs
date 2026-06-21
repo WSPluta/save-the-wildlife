@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  botPolicyForIndex,
   buildGameEvent,
   computeInputToward,
   desiredBotCount,
+  effectiveBotConfigForPolicy,
   integrateBotMotion,
   itemKind,
+  normalizeBotPolicy,
   normalizeRoom,
+  parseBotPolicies,
   parseBotConfig,
   planBotPoolSize,
   selectTargetItem,
@@ -25,6 +29,8 @@ test("parses production bot defaults for persistent demo data generation", () =>
   assert.equal(config.spawnFanoutRadius, 7.5);
   assert.equal(config.scaleDownGraceMs, 15000);
   assert.equal(config.scaleDownCooldownMs, 2500);
+  assert.equal(config.botPolicies.length, 4);
+  assert.equal(config.botPolicies[0].source, "paf");
 });
 
 test("normalizes room ids and computes desired bot count from humans", () => {
@@ -90,6 +96,56 @@ test("selects high-value powerups before equally distant trash for commentary da
   assert.equal(selectTargetItem(position, items).id, "power1");
 });
 
+test("normalizes PAF bot policies into bounded stage-safe cards", () => {
+  const policy = normalizeBotPolicy({
+    id: "Shield Hunter!!!",
+    name: "Unsafe shit policy",
+    source: "paf-canvas",
+    target_priority: ["shield", "unknown", "trash", "trash"],
+    risk: "extreme",
+    aggression: 4,
+    throttle: 9,
+    notes: "bad shit should not be shown",
+  });
+
+  assert.equal(policy.id, "shield-hunter");
+  assert.equal(policy.name, "PAF Bot Policy");
+  assert.deepEqual(policy.targetPriority, ["powerup_shield", "trash"]);
+  assert.equal(policy.risk, "medium");
+  assert.equal(policy.aggression, 1);
+  assert.equal(policy.throttle, 1);
+  assert.equal(policy.notes, "Approved deterministic bot policy.");
+});
+
+test("parses policy catalogs from PAF response shapes", () => {
+  const catalog = parseBotPolicies({
+    policies: [
+      {
+        id: "shield-hunter-v1",
+        targetPriority: ["powerup_shield", "trash"],
+        throttle: 0.7,
+      },
+    ],
+  });
+
+  assert.equal(catalog.length, 1);
+  assert.equal(catalog[0].id, "shield-hunter-v1");
+  assert.deepEqual(catalog[0].targetPriority, ["powerup_shield", "trash"]);
+  assert.equal(botPolicyForIndex(2, catalog).id, "shield-hunter-v1");
+});
+
+test("policy-specific targeting can prioritize shield powerups over generic powerups", () => {
+  const position = { x: 0, y: 0, z: 0 };
+  const items = {
+    speed: { type: "powerup_speed", position: { x: 1, y: 0, z: 0 } },
+    shield: { type: "powerup_shield", position: { x: 2, y: 0, z: 0 } },
+    trash: { type: "trash", position: { x: 1.5, y: 0, z: 0 } },
+  };
+
+  const target = selectTargetItem(position, items, ["powerup_shield", "trash"], { pickWindow: 1 });
+  assert.equal(target.id, "shield");
+});
+
 test("spreads bot targets across nearby candidates for richer telemetry", () => {
   const position = { x: 0, y: 0, z: 0 };
   const items = {
@@ -143,6 +199,15 @@ test("integrates bot motion locally when server-authoritative state is absent", 
   assert.ok(Math.abs(bot.position.z) <= 10);
 });
 
+test("policy throttle changes effective deterministic movement config only", () => {
+  const config = parseBotConfig({ BOT_THROTTLE: "0.9" });
+  const policyConfig = effectiveBotConfigForPolicy(config, { id: "slow", throttle: 0.42 });
+
+  assert.equal(config.throttle, 0.9);
+  assert.equal(policyConfig.throttle, 0.42);
+  assert.equal(policyConfig.maxSpeed, config.maxSpeed);
+});
+
 test("builds bot simulation events with training-safe metadata", () => {
   const bot = {
     id: "bot-1",
@@ -153,12 +218,21 @@ test("builds bot simulation events with training-safe metadata", () => {
     score: 12,
     position: { x: 1, y: 0, z: -2 },
     strategy: "trail_drama",
+    policy: {
+      id: "shield-hunter-v1",
+      name: "PAF Shield Hunter",
+      source: "paf",
+      version: "1.0.0",
+      notes: "Prioritize shields, then clean nearby trash.",
+    },
   };
 
   const event = buildGameEvent("position_sample", bot);
   assert.equal(event.playerId, "bot-1");
   assert.equal(event.metadata.source, "bot_simulation");
   assert.equal(event.metadata.bot_strategy, "trail_drama");
+  assert.equal(event.metadata.bot_policy_id, "shield-hunter-v1");
+  assert.equal(event.metadata.bot_policy_source, "paf");
   assert.equal(event.position.z, -2);
 
   const synthetic = syntheticMechanicForTick(bot, 1);

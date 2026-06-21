@@ -6,6 +6,7 @@ process.env.PAF_DISABLE_SERVER = "1";
 
 const {
   buildCanvasMessage,
+  buildBotPolicyCatalog,
   buildCommentary,
   buildMatchContext,
   callInDbAgent,
@@ -72,6 +73,25 @@ test("builds a Canvas prompt from recorded SQL gameplay telemetry", () => {
     inDbCommentary: "Select AI draft: shield, freeze, and 42 points.",
   });
   assert.match(withDraft, /oracle_ai_database_draft=Select AI draft/);
+});
+
+test("serves approved PAF-trained bot policy cards", () => {
+  const catalog = buildBotPolicyCatalog();
+
+  assert.equal(catalog.ok, true);
+  assert.equal(catalog.schema_version, "stwl.bot-policy.v1");
+  assert.equal(catalog.teacher, "Oracle Private Agent Factory");
+  assert.equal(catalog.deterministic_execution, true);
+  assert.ok(catalog.runtime_contract.includes("deterministically"));
+  assert.ok(catalog.policies.length >= 4);
+  assert.ok(catalog.policies.some((policy) => policy.id === "shield-hunter-v1"));
+  for (const policy of catalog.policies) {
+    assert.ok(policy.throttle >= 0.15 && policy.throttle <= 1);
+    assert.ok(policy.aggression >= 0 && policy.aggression <= 1);
+    assert.ok(["low", "medium", "high"].includes(policy.risk));
+    assert.ok(Array.isArray(policy.targetPriority));
+    assert.ok(!/\b(fuck|shit|bitch|asshole|bastard|dick|cunt)\b/i.test(`${policy.name} ${policy.notes}`));
+  }
 });
 
 test("extracts text from common PAF Canvas response shapes", () => {

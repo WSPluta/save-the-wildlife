@@ -446,6 +446,11 @@ export function buildPlayerSessionProfile(existing = {}, input = {}, nowIso = ne
   const name = normalizePlayerName(input.name ?? existing.name);
   const clientSessionId = input.clientSessionId || existing.clientSessionId || id || null;
   const gameplaySessionId = input.gameplaySessionId || existing.gameplaySessionId || null;
+  const isBot = input.isBot ?? existing.isBot ?? false;
+  const teacher = input.teacher || existing.teacher || null;
+  const botPolicy = input.botPolicy && typeof input.botPolicy === "object"
+    ? input.botPolicy
+    : (existing.botPolicy && typeof existing.botPolicy === "object" ? existing.botPolicy : null);
   const sessionKey = [clientSessionId || "client", gameplaySessionId || "lobby", room].join(":");
   const prior = Array.isArray(existing.sessions) ? existing.sessions.slice() : [];
   const sessions = prior.filter((entry) => entry && entry.sessionKey !== sessionKey);
@@ -457,6 +462,9 @@ export function buildPlayerSessionProfile(existing = {}, input = {}, nowIso = ne
     gameplaySessionId,
     room,
     name,
+    isBot,
+    teacher,
+    botPolicy,
     firstSeenAt: previous.firstSeenAt || nowIso,
     updatedAt: nowIso,
   });
@@ -469,6 +477,9 @@ export function buildPlayerSessionProfile(existing = {}, input = {}, nowIso = ne
     room,
     clientSessionId,
     gameplaySessionId,
+    isBot,
+    teacher,
+    botPolicy,
     updatedAt: nowIso,
     sessions: trimmedSessions,
   };

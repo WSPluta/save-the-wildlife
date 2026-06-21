@@ -31,6 +31,53 @@ const AGENT_MEMORIES_TABLE = safeIdentifier(process.env.AGENT_MEMORIES_TABLE || 
 const ORACLE_CONFIG_DIR = process.env.ORACLE_CONFIG_DIR || process.env.TNS_ADMIN || (existsSync("/wallet") ? "/wallet" : "");
 const profanityPattern = /\b(fuck|shit|bitch|asshole|bastard|dick|cunt)\b/i;
 const commentaryMetaPattern = /\b(oracle|database|sql|model|models|telemetry|evidence|prediction|predictions|agent|select ai|genai|llm)\b/i;
+const BOT_POLICY_SCHEMA_VERSION = "stwl.bot-policy.v1";
+const APPROVED_BOT_POLICY_CATALOG = [
+  {
+    id: "efficient-cleaner-v1",
+    name: "PAF Efficient Cleaner",
+    source: "paf",
+    version: "1.0.0",
+    targetPriority: ["trash", "powerup_magnet", "powerup_speed"],
+    risk: "low",
+    aggression: 0.18,
+    throttle: 0.74,
+    notes: "Clean nearby trash first, use magnet or speed only when it improves safe collection.",
+  },
+  {
+    id: "shield-hunter-v1",
+    name: "PAF Shield Hunter",
+    source: "paf",
+    version: "1.0.0",
+    targetPriority: ["powerup_shield", "trash", "powerup_freeze"],
+    risk: "medium",
+    aggression: 0.35,
+    throttle: 0.82,
+    notes: "Prioritize shields, then clean nearby trash, avoid marine hits.",
+  },
+  {
+    id: "freeze-ambusher-v1",
+    name: "PAF Freeze Ambusher",
+    source: "paf",
+    version: "1.0.0",
+    targetPriority: ["powerup_freeze", "trash", "powerup_shield"],
+    risk: "medium",
+    aggression: 0.58,
+    throttle: 0.78,
+    notes: "Seek freeze powerups and create trail-crossing moments without reckless marine contact.",
+  },
+  {
+    id: "risk-taker-v1",
+    name: "PAF Risk Taker",
+    source: "paf",
+    version: "1.0.0",
+    targetPriority: ["powerup_speed", "trash", "powerup_freeze", "marine"],
+    risk: "high",
+    aggression: 0.74,
+    throttle: 0.9,
+    notes: "Chase high tempo pickups for richer evaluation data while keeping movement bounded.",
+  },
+];
 const DEFAULT_CANVAS_TIMEOUT_MS = 8000;
 const DEFAULT_COMMENTARY_DEADLINE_MS = 9000;
 const DEFAULT_CANVAS_RETURN_RESERVE_MS = 1000;
@@ -56,6 +103,89 @@ function numberValue(value, fallback = 0) {
 function textValue(value, fallback = "") {
   if (value == null) return fallback;
   return String(value).trim();
+}
+
+function clampNumber(value, fallback, min, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function slugValue(value, fallback) {
+  const slug = textValue(value, fallback)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return slug || fallback;
+}
+
+function stageSafePolicyText(value, fallback, maxLength) {
+  const text = textValue(value, fallback).replace(/\s+/g, " ");
+  if (profanityPattern.test(text)) return fallback.slice(0, maxLength);
+  return text.slice(0, maxLength);
+}
+
+function normalizePolicyPriority(value, fallback = ["trash", "powerup_shield", "powerup_freeze"]) {
+  const valid = new Set([
+    "trash",
+    "marine",
+    "powerup",
+    "powerup_speed",
+    "powerup_shield",
+    "powerup_magnet",
+    "powerup_freeze",
+  ]);
+  const raw = Array.isArray(value) ? value : String(value || "").split(",");
+  const normalized = raw
+    .map((entry) => String(entry || "").trim().toLowerCase())
+    .map((entry) => entry.startsWith("shield") ? "powerup_shield" : entry)
+    .filter((entry) => valid.has(entry));
+  return normalized.length ? [...new Set(normalized)].slice(0, 6) : fallback.slice();
+}
+
+function normalizeApprovedBotPolicy(value = {}, fallback = APPROVED_BOT_POLICY_CATALOG[0]) {
+  const sourcePolicy = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const base = fallback && typeof fallback === "object" ? fallback : APPROVED_BOT_POLICY_CATALOG[0];
+  const risk = String(sourcePolicy.risk || base.risk || "medium").toLowerCase();
+  return {
+    id: slugValue(sourcePolicy.id || base.id, "bot-policy-v1"),
+    name: stageSafePolicyText(sourcePolicy.name || base.name, "PAF Bot Policy", 48),
+    source: stageSafePolicyText(sourcePolicy.source || base.source, "paf", 24),
+    version: stageSafePolicyText(sourcePolicy.version || base.version, "1.0.0", 24),
+    targetPriority: normalizePolicyPriority(sourcePolicy.targetPriority || sourcePolicy.target_priority, base.targetPriority),
+    risk: ["low", "medium", "high"].includes(risk) ? risk : "medium",
+    aggression: clampNumber(sourcePolicy.aggression, Number(base.aggression) || 0.35, 0, 1),
+    throttle: clampNumber(sourcePolicy.throttle, Number(base.throttle) || 0.82, 0.15, 1),
+    notes: stageSafePolicyText(sourcePolicy.notes || base.notes, "Approved deterministic bot policy.", 180),
+  };
+}
+
+function configuredBotPolicies() {
+  const raw = textValue(process.env.PAF_BOT_POLICIES_JSON || process.env.BOT_POLICIES_JSON);
+  if (!raw) return APPROVED_BOT_POLICY_CATALOG;
+  try {
+    const parsed = JSON.parse(raw);
+    const policies = Array.isArray(parsed) ? parsed : parsed?.policies;
+    return Array.isArray(policies) && policies.length ? policies : APPROVED_BOT_POLICY_CATALOG;
+  } catch (_) {
+    return APPROVED_BOT_POLICY_CATALOG;
+  }
+}
+
+function buildBotPolicyCatalog(options = {}) {
+  const policies = configuredBotPolicies()
+    .map((policy, index) => normalizeApprovedBotPolicy(policy, APPROVED_BOT_POLICY_CATALOG[index % APPROVED_BOT_POLICY_CATALOG.length]))
+    .slice(0, 12);
+  return {
+    ok: true,
+    schema_version: BOT_POLICY_SCHEMA_VERSION,
+    source: textValue(options.source || "paf-approved-catalog"),
+    teacher: "Oracle Private Agent Factory",
+    deterministic_execution: true,
+    runtime_contract: "PAF approves bounded policy cards; bot code executes movement deterministically without per-frame LLM calls.",
+    policies,
+  };
 }
 
 function boolEnv(name, defaultValue = false) {
@@ -2741,6 +2871,8 @@ app.get("/healthz", async (req, res) => {
     vector_top_k: matchConfig.vectorTopK,
     replay_clips_table: matchConfig.replayClipsTable,
     agent_memories_table: matchConfig.agentMemoriesTable,
+    bot_policy_schema_version: BOT_POLICY_SCHEMA_VERSION,
+    bot_policy_count: buildBotPolicyCatalog().policies.length,
     model_router: {
       route_mode: modelConfig.routeMode,
       primary_provider: modelConfig.primaryProvider,
@@ -2828,6 +2960,10 @@ app.post("/api/context", async (req, res) => {
   }
 });
 
+app.get("/api/bot-policies", (_req, res) => {
+  res.json(buildBotPolicyCatalog());
+});
+
 app.get("/api/commentary", async (req, res) => {
   pafMetrics.commentaryRequests++;
   try {
@@ -2867,6 +3003,7 @@ export {
   buildCanvasMessage,
   buildCommentary,
   buildMatchContext,
+  buildBotPolicyCatalog,
   buildModelPrompt,
   callPafCanvas,
   callInDbAgent,
