@@ -1,11 +1,19 @@
-# Builder stage: replay is built from this directory, so use a Gradle/JDK 25 image.
-FROM --platform=linux/amd64 gradle:9.5.1-jdk25 AS build
+# Builder stage: use Oracle OpenJDK 25 from OCR to avoid Docker Hub rate limits.
+FROM --platform=linux/amd64 container-registry.oracle.com/java/openjdk:25 AS build
+
+ARG GRADLE_VERSION=9.5.1
+ADD https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip /tmp/gradle.zip
+RUN mkdir -p /opt/gradle \
+ && cd /opt/gradle \
+ && jar -xf /tmp/gradle.zip \
+ && ln -s /opt/gradle/gradle-${GRADLE_VERSION}/bin/gradle /usr/local/bin/gradle \
+ && rm /tmp/gradle.zip
+
 WORKDIR /workspace
 COPY . /workspace
 RUN gradle clean build
 
-# Runtime stage: JRE base image
-FROM --platform=linux/amd64 eclipse-temurin:25-jre
+FROM --platform=linux/amd64 container-registry.oracle.com/java/openjdk:25
 
 VOLUME /tmp
 # Copy built jar (exclude plain classifier if present)

@@ -1,11 +1,11 @@
-FROM --platform=linux/amd64 eclipse-temurin:25-jdk AS build
+FROM --platform=linux/amd64 container-registry.oracle.com/java/openjdk:25 AS build
 
-RUN mkdir /opt/src 
+RUN mkdir /opt/src
 COPY . /opt/src
 WORKDIR /opt/src
 RUN ./gradlew clean build
 
-FROM --platform=linux/amd64 eclipse-temurin:25-jre
+FROM --platform=linux/amd64 container-registry.oracle.com/java/openjdk:25
 
 VOLUME /tmp
 COPY --from=build /opt/src/build/libs/*.jar /tmp/
