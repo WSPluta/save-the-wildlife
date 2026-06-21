@@ -3,14 +3,14 @@ import { getHeightAndNormalInto } from "./buoyancy";
 
 export const BOAT_FEEL_DEFAULTS = Object.freeze({
   waterSurfaceY: 0,
-  waterlineOffset: 0.004,
-  minVisualY: -0.006,
-  maxVisualY: 0.008,
-  surfaceRippleY: 0.011,
+  waterlineOffset: 0.088,
+  minVisualY: 0.062,
+  maxVisualY: 0.112,
+  surfaceRippleY: 0.012,
   sampleForward: 0.82,
   sampleSide: 0.34,
-  verticalWaveStrength: 0.025,
-  speedSettleDepth: 0.0005,
+  verticalWaveStrength: 0.018,
+  speedSettleDepth: 0.002,
   maxPitch: 0.075,
   maxRoll: 0.14,
   wavePitchStrength: 1.45,
@@ -71,6 +71,7 @@ export function createBoatFeelState(options = {}) {
     debug: {
       y: Number(initialY.toFixed(3)),
       surfaceY: Number(mergedOptions.waterSurfaceY.toFixed(3)),
+      waterlineClearance: Number((initialY - mergedOptions.surfaceRippleY).toFixed(3)),
       pitch: 0,
       roll: 0,
       wake: 0,
@@ -236,6 +237,7 @@ export function updateBoatFeel(root, state, input = {}) {
 
   state.debug.y = Number(state.y.toFixed(3));
   state.debug.surfaceY = Number(opts.waterSurfaceY.toFixed(3));
+  state.debug.waterlineClearance = Number((state.y - opts.surfaceRippleY).toFixed(3));
   state.debug.pitch = Number(state.pitch.toFixed(3));
   state.debug.roll = Number(state.roll.toFixed(3));
   state.debug.wake = Number(state.wake.toFixed(3));
@@ -260,6 +262,7 @@ export function resetBoatFeel(state) {
   state.debug = {
     y: Number(state.y.toFixed(3)),
     surfaceY: Number((opts.waterSurfaceY || 0).toFixed(3)),
+    waterlineClearance: Number((state.y - (opts.surfaceRippleY || 0)).toFixed(3)),
     pitch: 0,
     roll: 0,
     wake: 0,
@@ -267,10 +270,13 @@ export function resetBoatFeel(state) {
 }
 
 export function getBoatFeelDebug(state) {
-  if (!state || !state.debug) return { y: 0, pitch: 0, roll: 0, wake: 0 };
+  if (!state || !state.debug) {
+    return { y: 0, surfaceY: 0, waterlineClearance: 0, pitch: 0, roll: 0, wake: 0 };
+  }
   return {
     y: Number(state.debug.y || 0),
     surfaceY: Number(state.debug.surfaceY || 0),
+    waterlineClearance: Number(state.debug.waterlineClearance || 0),
     pitch: Number(state.debug.pitch || 0),
     roll: Number(state.debug.roll || 0),
     wake: Number(state.debug.wake || 0),

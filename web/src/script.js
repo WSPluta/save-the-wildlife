@@ -148,11 +148,11 @@ let powerupInstances = null;
 let environmentPropGroup = null;
 let environmentPropStats = { total: 0, buoys: 0, rocks: 0, markers: 0 };
 let localBoatFeelState = null;
-let latestBoatFeelDebug = { y: 0, pitch: 0, roll: 0, wake: 0 };
+let latestBoatFeelDebug = { y: 0, surfaceY: 0, waterlineClearance: 0, pitch: 0, roll: 0, wake: 0 };
 let wakeRippleEffect = null;
 let latestWakeRippleDebug = { visible: 0, capacity: 0 };
 let localWaterlineContact = null;
-let latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0, seatDepth: 0 };
+let latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0, seatDepth: 0, waterlineClearance: 0 };
 let latestCameraCompositionDebug = { mobile: false, distanceToPlayer: 0, relativeY: 0, lookHeight: 0 };
 let shouldSnapFollowCamera = true;
 let latestEffectiveSpeed = 0;
@@ -445,12 +445,14 @@ function updateBoatWaterlineContact(root, speed, wake, maxSpeed = 3, visualY = 0
     shadow.material.opacity = 0.075 + wakeStrength * 0.035 + speedRatio * 0.015;
   }
   const seatDepth = contactY - (Number.isFinite(Number(visualY)) ? Number(visualY) : 0);
+  const waterlineClearance = (Number.isFinite(Number(visualY)) ? Number(visualY) : 0) - contactY;
   latestWaterlineContactDebug = {
     visible: !!localWaterlineContact.visible,
     y: Number(localWaterlineContact.position.y.toFixed(3)),
     surfaceY: Number(waterY.toFixed(3)),
     opacity: Number(localWaterlineContact.material.opacity.toFixed(3)),
     seatDepth: Number(seatDepth.toFixed(3)),
+    waterlineClearance: Number(waterlineClearance.toFixed(3)),
   };
 }
 
@@ -1682,11 +1684,11 @@ function prepareExistingSceneForMatch(nextStartPosition = null) {
     remainingTime = Number(gameDuration);
     renderTimeValue(remainingTime);
   }
-  latestBoatFeelDebug = { y: 0, pitch: 0, roll: 0, wake: 0 };
+  latestBoatFeelDebug = { y: 0, surfaceY: 0, waterlineClearance: 0, pitch: 0, roll: 0, wake: 0 };
   latestWakeRippleDebug = wakeRippleEffect && typeof wakeRippleEffect.stats === "function"
     ? wakeRippleEffect.stats()
     : { visible: 0, capacity: 0 };
-  latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0, seatDepth: 0 };
+  latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0, seatDepth: 0, waterlineClearance: 0 };
   try { if (localBoatFeelState) resetBoatFeel(localBoatFeelState); } catch (_) {}
   if (localWaterlineContact) {
     localWaterlineContact.visible = false;

@@ -161,16 +161,21 @@ function validateCommon(state, failures, options = {}) {
   if (!state.boatFeel || !Number.isFinite(Number(state.boatFeel.y))) failures.push("missing finite boatFeel.y");
   if (state.boatFeel) {
     const boatY = Number(state.boatFeel.y || 0);
-    if (boatY > 0.01) failures.push(`boat visual y is too high above the waterline: ${state.boatFeel.y}`);
-    if (boatY < -0.012) failures.push(`boat visual y is too deeply submerged: ${state.boatFeel.y}`);
+    if (boatY > 0.13) failures.push(`boat visual y is too high above the waterline: ${state.boatFeel.y}`);
+    if (boatY < 0.045) failures.push(`boat visual y is too deeply submerged: ${state.boatFeel.y}`);
+    if (Number.isFinite(Number(state.boatFeel.waterlineClearance))) {
+      const clearance = Number(state.boatFeel.waterlineClearance);
+      if (clearance < 0.035) failures.push(`boat waterline clearance too shallow: ${clearance}`);
+      if (clearance > 0.115) failures.push(`boat waterline clearance too high: ${clearance}`);
+    }
   }
   if (state.waterlineContact && state.waterlineContact.visible !== true) {
     failures.push("expected visible waterline contact");
   }
-  if (state.waterlineContact && Number.isFinite(Number(state.waterlineContact.seatDepth))) {
-    const seatDepth = Number(state.waterlineContact.seatDepth);
-    if (seatDepth < 0.003) failures.push(`boat waterline seat depth too shallow: ${seatDepth}`);
-    if (seatDepth > 0.018) failures.push(`boat waterline seat depth too deep: ${seatDepth}`);
+  if (state.waterlineContact && Number.isFinite(Number(state.waterlineContact.waterlineClearance))) {
+    const clearance = Number(state.waterlineContact.waterlineClearance);
+    if (clearance < 0.035) failures.push(`boat waterline contact clearance too shallow: ${clearance}`);
+    if (clearance > 0.115) failures.push(`boat waterline contact clearance too high: ${clearance}`);
   }
 }
 
