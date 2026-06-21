@@ -990,6 +990,123 @@ test("resolves room-only context to the latest SQL-backed session", async () => 
   assert.ok(executeCalls.some((call) => call.binds?.roomId === "ROOM-LATEST"));
 });
 
+test("builds room-only commentary from the latest SQL-backed room session", async () => {
+  const executeCalls = [];
+  const oracleConnection = {
+    async execute(sql, binds) {
+      executeCalls.push({ sql, binds });
+      if (/WHERE room_id = :roomId/i.test(sql)) {
+        return {
+          rows: [
+            {
+              SESSION_ID: "S-HUMAN",
+              ROOM_ID: "ROOM-LATEST",
+              PLAYER_ID: "P-HUMAN",
+              PLAYER_NAME: "Wojtek",
+              SCORE: 1,
+              EVENT_COUNT: 4,
+            },
+          ],
+        };
+      }
+      if (/SUM\(CASE WHEN event_type = 'trash_collected'/i.test(sql)) {
+        return {
+          rows: [
+            {
+              SESSION_ID: "S-HUMAN",
+              ROOM_ID: "ROOM-LATEST",
+              PLAYER_ID: "P-HUMAN",
+              PLAYER_NAME: "Wojtek",
+              SCORE: 3,
+              TRASH_COLLECTED: 3,
+              MARINE_HITS: 0,
+              TRAIL_CROSSES: 1,
+              FREEZES: 1,
+              LAST_X: 12,
+              LAST_Y: 0,
+              LAST_Z: -4,
+            },
+          ],
+        };
+      }
+      if (/event_type = 'powerup_collected'/i.test(sql)) {
+        return {
+          rows: [
+            { METADATA_JSON: JSON.stringify({ powerup_type: "powerup_freeze" }) },
+          ],
+        };
+      }
+      if (/event_type = 'game_over'/i.test(sql)) {
+        return { rows: [{ PRIOR_BEST_SCORE: null }] };
+      }
+      if (/SELECT id, event_type/i.test(sql)) {
+        return {
+          rows: [
+            {
+              ID: 10,
+              EVENT_TYPE: "trash_collected",
+              OCCURRED_AT: "2026-06-21T15:57:00.000Z",
+              SCORE: 1,
+              X: 8,
+              Y: 0,
+              Z: -2,
+              RELATED_ITEM_ID: "TR-1",
+              METADATA_JSON: JSON.stringify({ item_type: "trash" }),
+            },
+            {
+              ID: 11,
+              EVENT_TYPE: "player_frozen",
+              OCCURRED_AT: "2026-06-21T15:57:03.000Z",
+              SCORE: 3,
+              X: 12,
+              Y: 0,
+              Z: -4,
+              RELATED_PLAYER_ID: "P-RIVAL",
+              METADATA_JSON: JSON.stringify({ freeze_ms: 2500 }),
+            },
+          ],
+        };
+      }
+      if (/FROM STWL_REPLAY_CLIPS/i.test(sql)) return { rows: [] };
+      if (/FROM STWL_AGENT_MEMORIES/i.test(sql)) return { rows: [] };
+      return { rows: [] };
+    },
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MODEL_ROUTE_MODE: "off",
+    PAF_TRACE_PERSIST: "false",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "true",
+    PAF_MATCH_INTELLIGENCE_AUTO_INIT: "false",
+    PAF_AGENT_MEMORY_PERSIST: "false",
+    PAF_REPLAY_RETRIEVAL_ENABLED: "true",
+    PAF_VECTOR_RETRIEVAL_ENABLED: "true",
+  }, async () => {
+    const response = await buildCommentary(
+      { roomId: "ROOM-LATEST", format: "live_line" },
+      { oracleConnection }
+    );
+
+    assert.equal(response.ok, true);
+    assert.equal(response.source, "oracle-match-intelligence");
+    assert.equal(response.summary.session_id, "S-HUMAN");
+    assert.equal(response.summary.player_id, "P-HUMAN");
+    assert.equal(response.summary.room_id, "ROOM-LATEST");
+    assert.equal(response.summary.trash_collected, 3);
+    assert.equal(response.summary.freezes, 1);
+    assert.equal(response.capabilities.room_session_resolved, true);
+    assert.equal(response.capabilities.sql_summary, true);
+    assert.equal(response.evidence.json_event_count, 2);
+    assert.match(response.commentary, /Trail drama|frozen/i);
+    assert.ok(response.commentary.length <= 200);
+  });
+
+  assert.ok(executeCalls.some((call) => /WHERE room_id = :roomId/i.test(call.sql)));
+});
+
 test("does not create replay captions when no replay document exists", async () => {
   const oracleConnection = {
     async execute(sql) {

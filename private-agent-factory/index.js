@@ -2686,6 +2686,7 @@ async function buildCommentary(body = {}, options = {}) {
   let warning = null;
   let diagnosticWarnings = [];
   let matchContext = null;
+  const matchConfig = matchIntelligenceConfig();
 
   if (!options.skipOracleSummary && bodySummary.session_id && bodySummary.player_id) {
     try {
@@ -2703,15 +2704,39 @@ async function buildCommentary(body = {}, options = {}) {
     }
   }
 
+  if (matchConfig.enabled && (!summary.session_id || !summary.player_id) && summary.room_id) {
+    try {
+      matchContext = await withTimeout(
+        buildMatchContext(
+          {
+            ...body,
+            summary,
+            output_format: requestedOutput,
+            max_chars: maxChars,
+          },
+          options
+        ),
+        matchConfig.timeoutMs,
+        "match_context"
+      );
+      if (matchContext?.summary) {
+        summary = normalizeSummary(matchContext.summary);
+        source = matchContext.source || source;
+      }
+    } catch (error) {
+      warning = [warning, error.message].filter(Boolean).join("; ");
+    }
+  }
+
   if (["live_line", "post_match_recap"].includes(requestedOutput) && modelFastPathReady()) {
-    const { formats, legacySource, legacy } = buildLegacyEnvelope(summary, null, {
+    const { formats, legacySource, legacy } = buildLegacyEnvelope(summary, matchContext || {}, {
       source,
       maxChars,
     });
     const modelRoute = await runModelRoute(
       {
         summary,
-        context: {},
+        context: matchContext || {},
         legacy,
         outputFormatValue: requestedOutput,
         maxChars,
@@ -2737,7 +2762,7 @@ async function buildCommentary(body = {}, options = {}) {
         canvas: null,
         summary,
         formats,
-        matchContext: null,
+        matchContext,
         maxChars,
       });
     }
@@ -2754,7 +2779,7 @@ async function buildCommentary(body = {}, options = {}) {
         canvas: null,
         summary,
         formats,
-        matchContext: null,
+        matchContext,
         maxChars,
       });
     }
@@ -2763,7 +2788,7 @@ async function buildCommentary(body = {}, options = {}) {
     }
   }
 
-  if (matchIntelligenceConfig().enabled && summary.session_id && summary.player_id) {
+  if (matchConfig.enabled && !matchContext && summary.session_id && summary.player_id) {
     try {
       matchContext = await withTimeout(
         buildMatchContext(
@@ -2775,11 +2800,12 @@ async function buildCommentary(body = {}, options = {}) {
           },
           { ...options, skipOracleSummary: true }
         ),
-        matchIntelligenceConfig().timeoutMs,
+        matchConfig.timeoutMs,
         "match_context"
       );
       if (matchContext?.summary) {
         summary = normalizeSummary(matchContext.summary);
+        source = matchContext.source || source;
       }
     } catch (error) {
       warning = [warning, error.message].filter(Boolean).join("; ");
