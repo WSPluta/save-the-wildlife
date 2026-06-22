@@ -152,6 +152,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/localBoatFeelState = createBoatFeelState\(\);/);
     expect(script).toMatch(/installBoatFeelPivot\(player, \[boat\]\);/);
     expect(script).toMatch(/disableReflectionForObject\(boat\);/);
+    expect(script).toMatch(/try \{ disableReflectionForObject\(group\); \} catch \(_\) \{\}/);
     expect(script).toMatch(/function suppressObjectsDuringWaterReflection\(waterMesh\)/);
     expect(script).toMatch(/suppressObjectsDuringWaterReflection\(water\);/);
     expect(script).toMatch(/target\.userData\.noWaterReflectionApplied = true;/);
@@ -215,6 +216,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/mobile: 8,/);
     expect(script).toMatch(/child\.userData\.environmentProp = true;/);
     expect(script).toMatch(/child\.userData\.noCollision = true;/);
+    expect(script).toMatch(/try \{ disableReflectionForObject\(group\); \} catch \(_\) \{\}/);
     expect(script).toMatch(/environmentPropsVisible: environmentPropStats\.total \|\| 0,/);
   });
 });

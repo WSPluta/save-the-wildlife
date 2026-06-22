@@ -544,6 +544,7 @@ function createArcadeEnvironmentProps(isMobileViewport) {
     stats[kind] += 1;
     stats.total += 1;
   }
+  try { disableReflectionForObject(group); } catch (_) {}
   return { group, stats };
 }
 
@@ -3388,6 +3389,7 @@ async function init() {
         ? otherPlayersInfo[id].name
         : (id ? id.substring(0, 4) : "Player");
     addNameTag(group, label);
+    try { disableReflectionForObject(group); } catch (_) {}
     return group;
   }
 

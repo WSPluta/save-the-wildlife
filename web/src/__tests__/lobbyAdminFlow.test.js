@@ -87,6 +87,11 @@ describe("presenter-controlled lobby flow", () => {
     expect(nginx).toMatch(/Cache-Control "no-store, max-age=0" always/);
   });
 
+  it("serves stale nested admin asset URLs as real root assets instead of the SPA shell", () => {
+    expect(nginx).toMatch(/location ~ \^\/admin\/\(\.\+\\\.\(\?:css\|js\|map/);
+    expect(nginx).toMatch(/try_files \/\$1 =404;/);
+  });
+
   it("routes public Prometheus metrics to ws-server instead of the SPA", () => {
     expect(ingress).toMatch(/path:\s*\/metrics[\s\S]*pathType:\s*Exact[\s\S]*name:\s*ws-server[\s\S]*number:\s*3000/);
   });
