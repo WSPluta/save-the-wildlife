@@ -537,6 +537,78 @@ test("routes base and fine-tuned OCI model endpoints in shadow mode", async () =
   assert.match(calls[0].body.prompt, /Facts stay in Oracle AI Database memory|Model comparison task/);
 });
 
+test("runs shadow primary and candidate model calls concurrently", async () => {
+  const calls = [];
+  const started = Date.now();
+  const modelRequestJson = async (url) => {
+    calls.push({ url, started_at_ms: Date.now() - started });
+    await sleep(150);
+    const isFineTuned = url.includes("fine-tuned");
+    return {
+      status: 200,
+      headers: {},
+      elapsed_ms: 150,
+      payload: {
+        ok: true,
+        provider: isFineTuned ? "oci-fine-tuned" : "oci-base",
+        model_id: isFineTuned ? "stwl-ft-concurrent" : "stwl-base-concurrent",
+        text: isFineTuned
+          ? "Ada held 42 points after one recorded freeze."
+          : "Ada finished with 42 points after one recorded freeze.",
+        tokens: isFineTuned ? 8 : 9,
+        finish_reason: "stop",
+        runtime_mode: "upstream-llm",
+        upstream_configured: true,
+        facts_policy: "facts-in-memory-behavior-in-weights",
+      },
+    };
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "shadow",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
+    PAF_TRACE_PERSIST: "false",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-CONCURRENT-MODEL",
+          player_id: "P-CONCURRENT-MODEL",
+          player_name: "Ada",
+          score: 42,
+          freezes: 1,
+        },
+      },
+      {
+        skipOracleSummary: true,
+        traceId: "TRACE-CONCURRENT-MODEL",
+        modelRequestJson,
+      }
+    );
+
+    const elapsed = Date.now() - started;
+    assert.equal(response.source, "oci-base");
+    assert.equal(response.model_route.primary.model_id, "stwl-base-concurrent");
+    assert.equal(response.model_route.candidate.model_id, "stwl-ft-concurrent");
+    assert.equal(calls.length, 2);
+    assert.ok(
+      elapsed < 260,
+      `shadow route should be concurrent; elapsed ${elapsed}ms looked serial`
+    );
+    assert.ok(
+      Math.abs(calls[0].started_at_ms - calls[1].started_at_ms) < 50,
+      `shadow calls should start together: ${JSON.stringify(calls)}`
+    );
+  });
+});
+
 test("keeps shadow candidate timeout as diagnostics when primary model returns commentary", async () => {
   const modelRequestJson = async (url) => {
     if (url.includes("fine-tuned")) {

@@ -1124,9 +1124,15 @@ async function runModelRoute({ summary, context, legacy, outputFormatValue, maxC
   let primary = null;
   let candidate = null;
   if (config.routeMode !== "off") {
-    primary = await callModelProvider(config.primaryProvider, requestPayload, config, options, legacy);
-    if (config.routeMode === "shadow" && config.candidateProvider && config.candidateProvider !== config.primaryProvider) {
-      candidate = await callModelProvider(config.candidateProvider, requestPayload, config, options, legacy);
+    const primaryPromise = callModelProvider(config.primaryProvider, requestPayload, config, options, legacy);
+    const shouldRunCandidate = config.routeMode === "shadow" && config.candidateProvider && config.candidateProvider !== config.primaryProvider;
+    if (shouldRunCandidate) {
+      [primary, candidate] = await Promise.all([
+        primaryPromise,
+        callModelProvider(config.candidateProvider, requestPayload, config, options, legacy),
+      ]);
+    } else {
+      primary = await primaryPromise;
     }
   }
 
