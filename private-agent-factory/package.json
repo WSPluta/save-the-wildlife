@@ -1,6 +1,6 @@
 {
   "name": "private-agent-factory",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "Oracle Private Agent Factory commentary adapter for Save the Wildlife",
   "main": "index.js",
   "type": "module",

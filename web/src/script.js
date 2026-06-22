@@ -174,12 +174,12 @@ let triggerReplayMomentCallback = () => {};
 const pendingItemCollisions = new Map();
 const scoredItemCollisions = new Set();
 const COLLISION_PENDING_TIMEOUT_MS = 1500;
-const TRASH_VISUAL_SCALE_MIN = 0.34;
-const TRASH_VISUAL_SCALE_MAX = 0.74;
-const TRASH_FLOAT_Y = 0.028;
-const TRASH_GEOMETRY_WIDTH = 0.34;
-const TRASH_GEOMETRY_HEIGHT = 0.07;
-const TRASH_GEOMETRY_DEPTH = 0.22;
+const TRASH_VISUAL_SCALE_MIN = 0.5;
+const TRASH_VISUAL_SCALE_MAX = 0.95;
+const TRASH_FLOAT_Y = 0.052;
+const TRASH_GEOMETRY_WIDTH = 0.42;
+const TRASH_GEOMETRY_HEIGHT = 0.085;
+const TRASH_GEOMETRY_DEPTH = 0.28;
 const POWERUP_VISUAL_SCALE_MIN = 0.38;
 const POWERUP_VISUAL_SCALE_MAX = 0.82;
 const TRASH_ARCADE_PICKUP_RADIUS = 3.4;
@@ -187,6 +187,10 @@ const POWERUP_ARCADE_PICKUP_RADIUS = 3.4;
 const BOT_RENDER_MODE = "demo-visible";
 const BOT_VISUAL_SCALE = 0.28;
 const BOT_VISUAL_COLOR = 0x15c7b8;
+const NAME_TAG_SCALE = Object.freeze({ x: 1.22, y: 0.3, z: 1 });
+const NAME_TAG_POSITION_Y = 1.16;
+const BOT_NAME_TAG_SCALE = Object.freeze({ x: 0.42, y: 0.13, z: 1 });
+const BOT_NAME_TAG_POSITION_Y = 0.82;
 const trashTmpMatrix = new THREE.Matrix4();
 const trashTmpPos = new THREE.Vector3();
 const trashTmpScale = new THREE.Vector3();
@@ -287,6 +291,10 @@ function isBotPlayerId(id) {
 
 function shouldRenderRemotePlayer(id) {
   return !(BOT_RENDER_MODE === "data-only" && isBotPlayerId(id));
+}
+
+function botDemoLabel() {
+  return "BOT";
 }
 
 function keepBotRemoteBoatVisible(group) {
@@ -3384,7 +3392,7 @@ async function init() {
     installBoatFeelPivot(group, [mesh, lodLow]);
     const label =
       isBotPlayerId(id)
-        ? `BOT ${String(id || "").slice(4, 8)}`
+        ? botDemoLabel()
         : (otherPlayersInfo[id] && otherPlayersInfo[id].name)
         ? otherPlayersInfo[id].name
         : (id ? id.substring(0, 4) : "Player");
@@ -3639,7 +3647,7 @@ function createNameSprite(text) {
   texture.minFilter = THREE.LinearFilter;
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(1.6, 0.4, 1);
+  sprite.scale.set(NAME_TAG_SCALE.x, NAME_TAG_SCALE.y, NAME_TAG_SCALE.z);
   sprite.userData.canvas = canvas;
   sprite.userData.ctx = ctx;
   setNameSpriteText(sprite, text || "");
@@ -3678,18 +3686,31 @@ function ensureUiPools() {
     reset: (sprite) => {
       if (!sprite) return;
       sprite.visible = false;
-      sprite.position.set(0, 1.4, 0);
+      sprite.position.set(0, NAME_TAG_POSITION_Y, 0);
+      sprite.scale.set(NAME_TAG_SCALE.x, NAME_TAG_SCALE.y, NAME_TAG_SCALE.z);
+      sprite.userData.isBotNameTag = false;
       setNameSpriteText(sprite, "");
     },
   });
 }
+
+function configureNameTagForOwner(sprite, object3d) {
+  if (!sprite) return;
+  const isBotTag = !!(object3d && object3d.userData && object3d.userData.isBot);
+  const scale = isBotTag ? BOT_NAME_TAG_SCALE : NAME_TAG_SCALE;
+  const y = isBotTag ? BOT_NAME_TAG_POSITION_Y : NAME_TAG_POSITION_Y;
+  sprite.position.set(0, y, 0);
+  sprite.scale.set(scale.x, scale.y, scale.z);
+  sprite.userData.isBotNameTag = isBotTag;
+}
+
 function addNameTag(object3d, name) {
   ensureUiPools();
   const sprite = uiNameTagPool ? uiNameTagPool.acquire() : createNameSprite(name);
   if (!sprite) return null;
   sprite.name = "nameTag";
+  configureNameTagForOwner(sprite, object3d);
   setNameSpriteText(sprite, name || "");
-  sprite.position.set(0, 1.4, 0);
   sprite.visible = true;
   try { disableReflectionForSprite(sprite); } catch (_) {}
   object3d.add(sprite);
@@ -3710,6 +3731,7 @@ function updateNameTag(object3d, name) {
     addNameTag(object3d, name);
     return;
   }
+  configureNameTagForOwner(tag, object3d);
   setNameSpriteText(tag, name || "");
   tag.visible = true;
 }
@@ -3719,7 +3741,7 @@ function refreshNameTagForPlayer(id) {
   if (!group) return;
   const label =
     isBotPlayerId(id)
-      ? `BOT ${String(id || "").slice(4, 8)}`
+      ? botDemoLabel()
       : (otherPlayersInfo[id] && otherPlayersInfo[id].name)
       ? otherPlayersInfo[id].name
       : (id ? id.substring(0, 4) : "Player");

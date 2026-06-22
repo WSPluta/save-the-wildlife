@@ -432,6 +432,99 @@ export function buildStartPositionItemRelocations({
   return relocations;
 }
 
+export function buildOpeningCollectiblePositions({
+  startPosition,
+  existingItems = {},
+  count = 3,
+  ringRadius = 8,
+  clearRadius = DEFAULT_START_POSITION_ITEM_CLEAR_RADIUS,
+  minSpacing = 3.5,
+  worldSizeX = 88,
+  worldSizeZ = 22,
+} = {}) {
+  const start = {
+    x: Number(startPosition?.x),
+    z: Number(startPosition?.z),
+  };
+  if (!Number.isFinite(start.x) || !Number.isFinite(start.z)) return [];
+
+  const wanted = Math.max(0, Math.floor(Number(count) || 0));
+  if (wanted <= 0) return [];
+
+  const boundsX = worldAxisBounds(worldSizeX);
+  const boundsZ = worldAxisBounds(worldSizeZ);
+  const safeRadius = Math.max(0, Number(clearRadius) || 0);
+  const radius = Math.max(safeRadius + 1.25, Number(ringRadius) || 8);
+  const spacing = Math.max(0, Number(minSpacing) || 0);
+  const selected = [];
+  const existingPositions = normalizePositions(
+    Object.values(existingItems || {}).map((item) => item?.position || item)
+  );
+
+  const clampPosition = (candidate) => ({
+    x: clampNum(Math.round(candidate.x), boundsX.min, boundsX.max),
+    y: 0,
+    z: clampNum(Math.round(candidate.z), boundsZ.min, boundsZ.max),
+  });
+  const canUse = (position) => {
+    if (isPositionWithinRadius2d(position, start, safeRadius)) return false;
+    if (spacing > 0 && existingPositions.some((existing) => isPositionWithinRadius2d(position, existing, spacing))) {
+      return false;
+    }
+    if (spacing > 0 && selected.some((existing) => isPositionWithinRadius2d(position, existing, spacing))) {
+      return false;
+    }
+    return true;
+  };
+  const addCandidate = (candidate) => {
+    if (selected.length >= wanted) return;
+    const position = clampPosition(candidate);
+    if (canUse(position)) selected.push(position);
+  };
+
+  const ringOffsets = [
+    { x: 0, z: radius },
+    { x: -radius * 0.72, z: radius * 0.46 },
+    { x: radius * 0.72, z: radius * 0.46 },
+    { x: -radius * 0.54, z: -radius * 0.64 },
+    { x: radius * 0.54, z: -radius * 0.64 },
+    { x: -radius, z: 0 },
+    { x: radius, z: 0 },
+    { x: 0, z: -radius },
+  ];
+  for (const offset of ringOffsets) {
+    addCandidate({ x: start.x + offset.x, z: start.z + offset.z });
+  }
+
+  if (selected.length >= wanted) return selected;
+
+  const fallback = [];
+  for (let x = boundsX.min; x <= boundsX.max; x += 1) {
+    for (let z = boundsZ.min; z <= boundsZ.max; z += 1) {
+      const position = { x, y: 0, z };
+      if (!canUse(position)) continue;
+      fallback.push({
+        position,
+        ringError: Math.abs(Math.sqrt(distanceSq2d(position, start)) - radius),
+        centerDistanceSq: distanceSq2d(position, { x: 0, z: 0 }),
+      });
+    }
+  }
+  fallback.sort((a, b) => {
+    if (a.ringError !== b.ringError) return a.ringError - b.ringError;
+    if (a.centerDistanceSq !== b.centerDistanceSq) return a.centerDistanceSq - b.centerDistanceSq;
+    if (a.position.x !== b.position.x) return a.position.x - b.position.x;
+    return a.position.z - b.position.z;
+  });
+
+  for (const entry of fallback) {
+    addCandidate(entry.position);
+    if (selected.length >= wanted) break;
+  }
+
+  return selected;
+}
+
 export const MAX_PLAYER_SESSION_HISTORY = 20;
 
 export function normalizePlayerName(value, fallback = "Player") {

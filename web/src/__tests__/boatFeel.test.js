@@ -30,9 +30,9 @@ describe("boat feel layer", () => {
     expect(debug.y).toBeGreaterThanOrEqual(BOAT_FEEL_DEFAULTS.minVisualY);
     expect(debug.y).toBe(Number(BOAT_FEEL_DEFAULTS.waterlineOffset.toFixed(3)));
     expect(debug.surfaceY).toBe(Number(BOAT_FEEL_DEFAULTS.waterSurfaceY.toFixed(3)));
-    expect(debug.waterlineClearance).toBeGreaterThanOrEqual(0.06);
-    expect(debug.waterlineClearance).toBeLessThanOrEqual(0.09);
-    expect(BOAT_FEEL_DEFAULTS.maxVisualY).toBeGreaterThan(0.09);
+    expect(debug.waterlineClearance).toBeGreaterThanOrEqual(0.09);
+    expect(debug.waterlineClearance).toBeLessThanOrEqual(0.11);
+    expect(BOAT_FEEL_DEFAULTS.maxVisualY).toBeGreaterThan(0.12);
   });
 
   it("samples water into reusable objects with finite normals", () => {
@@ -100,10 +100,10 @@ describe("boat feel layer", () => {
     const debug = getBoatFeelDebug(state);
     expect(debug.y).toBeGreaterThanOrEqual(BOAT_FEEL_DEFAULTS.minVisualY);
     expect(debug.y).toBeLessThanOrEqual(BOAT_FEEL_DEFAULTS.maxVisualY);
-    expect(debug.y).toBeGreaterThanOrEqual(0.062);
-    expect(debug.y).toBeLessThanOrEqual(0.112);
-    expect(debug.waterlineClearance).toBeGreaterThanOrEqual(0.04);
-    expect(debug.waterlineClearance).toBeLessThanOrEqual(0.1);
+    expect(debug.y).toBeGreaterThanOrEqual(0.092);
+    expect(debug.y).toBeLessThanOrEqual(0.146);
+    expect(debug.waterlineClearance).toBeGreaterThanOrEqual(0.07);
+    expect(debug.waterlineClearance).toBeLessThanOrEqual(0.12);
   });
 
   it("tracks wake strength and emits bounded ripple visuals through the adapter", () => {

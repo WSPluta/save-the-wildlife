@@ -18,6 +18,7 @@ import {
   countMirroredMapEntries,
   chooseSpawnPositionAwayFromPlayers,
   buildStartPositionItemRelocations,
+  buildOpeningCollectiblePositions,
   isPositionWithinRadius2d,
 } from "../lib/gameLogic.js";
 
@@ -346,6 +347,55 @@ describe("safe opening item relocation", () => {
     expect(relocations).toHaveLength(1);
     expect(relocations[0].id).toBe("trash_near");
     expect(isPositionWithinRadius2d(relocations[0].position, { x: -3, z: 2 }, 6)).toBe(false);
+  });
+});
+
+describe("opening collectible seeding", () => {
+  it("places demo trash near the start but outside the player safety buffer", () => {
+    const positions = buildOpeningCollectiblePositions({
+      startPosition: { x: 0, z: 0 },
+      count: 3,
+      ringRadius: 8,
+      clearRadius: 6,
+      minSpacing: 3.5,
+      worldSizeX: 88,
+      worldSizeZ: 22,
+    });
+
+    expect(positions).toHaveLength(3);
+    for (const position of positions) {
+      expect(isPositionWithinRadius2d(position, { x: 0, z: 0 }, 6)).toBe(false);
+      expect(Math.hypot(position.x, position.z)).toBeLessThanOrEqual(9);
+    }
+    expect(isPositionWithinRadius2d(positions[0], positions[1], 3.5)).toBe(false);
+    expect(isPositionWithinRadius2d(positions[1], positions[2], 3.5)).toBe(false);
+  });
+
+  it("avoids existing opening items and still finds bounded positions near map edges", () => {
+    const positions = buildOpeningCollectiblePositions({
+      startPosition: { x: 4, z: 4 },
+      existingItems: {
+        turtle: { position: { x: 4, z: -4 } },
+        trash: { position: { x: -4, z: 4 } },
+      },
+      count: 2,
+      ringRadius: 7,
+      clearRadius: 5,
+      minSpacing: 4,
+      worldSizeX: 12,
+      worldSizeZ: 12,
+    });
+
+    expect(positions).toHaveLength(2);
+    for (const position of positions) {
+      expect(position.x).toBeGreaterThanOrEqual(-5);
+      expect(position.x).toBeLessThanOrEqual(6);
+      expect(position.z).toBeGreaterThanOrEqual(-5);
+      expect(position.z).toBeLessThanOrEqual(6);
+      expect(isPositionWithinRadius2d(position, { x: 4, z: 4 }, 5)).toBe(false);
+      expect(isPositionWithinRadius2d(position, { x: 4, z: -4 }, 4)).toBe(false);
+      expect(isPositionWithinRadius2d(position, { x: -4, z: 4 }, 4)).toBe(false);
+    }
   });
 });
 

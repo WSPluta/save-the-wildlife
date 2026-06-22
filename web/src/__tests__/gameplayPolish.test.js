@@ -44,7 +44,10 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/function styleBotRemoteBoat\(group, mesh, lodLow\)/);
     expect(script).toMatch(/function keepBotRemoteBoatVisible\(group\)/);
     expect(script).toMatch(/function ensureBotRosterVisuals\(\)/);
-    expect(script).toMatch(/`BOT \$\{String\(id \|\| ""\)\.slice\(4, 8\)\}`/);
+    expect(script).toMatch(/function botDemoLabel\(\) \{\s*return "BOT";\s*\}/);
+    expect(script).toMatch(/const BOT_NAME_TAG_SCALE = Object\.freeze\(\{ x: 0\.42, y: 0\.13, z: 1 \}\);/);
+    expect(script).toMatch(/function configureNameTagForOwner\(sprite, object3d\)/);
+    expect(script).toMatch(/sprite\.scale\.set\(scale\.x, scale\.y, scale\.z\);/);
     expect(script).toMatch(/const botIds = Object\.keys\(otherPlayersInfo \|\| \{\}\)\.filter/);
     expect(script).toMatch(/rosterFallback: true,/);
     expect(script).toMatch(/group\.scale\.setScalar\(BOT_VISUAL_SCALE\);/);
@@ -69,12 +72,12 @@ describe("gameplay polish regressions", () => {
   });
 
   it("clamps trash and power-up visual scale so bad telemetry cannot become walls", () => {
-    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 0\.34;/);
-    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 0\.74;/);
-    expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.028;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_WIDTH = 0\.34;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_HEIGHT = 0\.07;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.22;/);
+    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 0\.5;/);
+    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 0\.95;/);
+    expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.052;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_WIDTH = 0\.42;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_HEIGHT = 0\.085;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.28;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.38;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 0\.82;/);
     expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 3\.4;/);

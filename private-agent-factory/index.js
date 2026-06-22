@@ -417,9 +417,76 @@ function normalizePowerups(value) {
   );
 }
 
+function normalizePolicyTargetPriority(value) {
+  const priority = normalizePolicyPriority(value || []);
+  return Array.isArray(priority) ? priority.slice(0, 6) : [];
+}
+
+function normalizeBotPolicyEvidence(value = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const nested = source.bot_policy && typeof source.bot_policy === "object" && !Array.isArray(source.bot_policy)
+    ? source.bot_policy
+    : (source.botPolicy && typeof source.botPolicy === "object" && !Array.isArray(source.botPolicy) ? source.botPolicy : {});
+  const policy = { ...source, ...nested };
+  const id = slugValue(policy.id || policy.policy_id || policy.bot_policy_id || policy.botPolicyId, "");
+  const name = stageSafePolicyText(policy.name || policy.policy_name || policy.bot_policy_name || policy.botPolicyName, "", 64);
+  const policySource = stageSafePolicyText(policy.source || policy.teacher || policy.bot_policy_source || policy.botPolicySource, "", 32);
+  const version = stageSafePolicyText(policy.version || policy.policy_version || policy.bot_policy_version || policy.botPolicyVersion, "", 32);
+  const objective = stageSafePolicyText(policy.objective || policy.notes || policy.bot_objective || policy.botPolicyObjective, "", 180);
+  const priority = normalizePolicyTargetPriority(policy.targetPriority || policy.target_priority || policy.bot_policy_target_priority);
+  const risk = textValue(policy.risk).toLowerCase();
+  const throttle = policy.throttle == null ? null : clampNumber(policy.throttle, null, 0.15, 1);
+  const evidence = {
+    id: id || null,
+    name: name || null,
+    source: policySource || null,
+    version: version || null,
+    targetPriority: priority,
+    risk: ["low", "medium", "high"].includes(risk) ? risk : null,
+    throttle,
+    objective: objective || null,
+  };
+  const hasEvidence = Boolean(
+    evidence.id || evidence.name || evidence.source || evidence.version ||
+    evidence.targetPriority.length || evidence.risk || evidence.throttle != null || evidence.objective
+  );
+  return hasEvidence ? evidence : null;
+}
+
+function mergeBotPolicyEvidence(current, next) {
+  if (!current) return next || null;
+  if (!next) return current;
+  return {
+    id: current.id || next.id || null,
+    name: current.name || next.name || null,
+    source: current.source || next.source || null,
+    version: current.version || next.version || null,
+    targetPriority: current.targetPriority?.length ? current.targetPriority : (next.targetPriority || []),
+    risk: current.risk || next.risk || null,
+    throttle: current.throttle != null ? current.throttle : (next.throttle ?? null),
+    objective: current.objective || next.objective || null,
+  };
+}
+
+function botPolicyPhrase(summary = {}) {
+  const policy = summary.bot_policy || summary.botPolicy;
+  if (!policy) return "";
+  const label = policy.name || policy.id;
+  if (!label) return "";
+  const details = [
+    policy.source ? `source=${policy.source}` : "",
+    policy.risk ? `risk=${policy.risk}` : "",
+    policy.targetPriority?.length ? `targets=${policy.targetPriority.slice(0, 3).join(",")}` : "",
+  ].filter(Boolean).join(";");
+  return details ? `${label} (${details})` : label;
+}
+
 function normalizeSummary(value = {}) {
   const summary = value && typeof value === "object" ? value : {};
   const lastPosition = summary.last_position || summary.lastPosition || null;
+  const directPolicyLike = summary.bot_policy_id || summary.botPolicyId || summary.bot_policy_name ||
+    summary.botPolicyName || summary.bot_policy_source || summary.botPolicySource || summary.bot_objective;
+  const botPolicy = normalizeBotPolicyEvidence(summary.bot_policy || summary.botPolicy || (directPolicyLike ? summary : null));
   return {
     session_id: textValue(summary.session_id || summary.sessionId),
     room_id: textValue(summary.room_id || summary.roomId),
@@ -441,6 +508,9 @@ function normalizeSummary(value = {}) {
     prior_best_score: summary.prior_best_score == null && summary.priorBestScore == null
       ? null
       : numberValue(summary.prior_best_score ?? summary.priorBestScore, null),
+    bot_policy: botPolicy,
+    bot_strategy: textValue(summary.bot_strategy || summary.botStrategy),
+    bot_learning_outcome: textValue(summary.bot_learning_outcome || summary.botLearningOutcome || summary.learning_outcome || summary.learningOutcome),
   };
 }
 
@@ -536,7 +606,28 @@ function compactEvent(row = {}) {
 function compactGraphFacts(events = [], summary = {}) {
   const facts = [];
   const player = summary.player_name || summary.player_id || "Player";
+  const seenPolicyIds = new Set();
+  const addPolicyFact = (policy, metadata = {}) => {
+    if (!policy) return;
+    const key = policy.id || policy.name || JSON.stringify(policy);
+    if (!key || seenPolicyIds.has(key)) return;
+    seenPolicyIds.add(key);
+    facts.push({
+      type: "bot_policy_guided_player",
+      subject: player,
+      object: policy.name || policy.id || "bot_policy",
+      policy_id: policy.id,
+      source: policy.source,
+      objective: policy.objective || null,
+      learning_outcome: textValue(metadata.learning_outcome || metadata.learningOutcome || metadata.bot_learning_outcome) || null,
+    });
+  };
+  addPolicyFact(summary.bot_policy, {
+    learning_outcome: summary.bot_learning_outcome,
+  });
   for (const event of events) {
+    const eventPolicy = normalizeBotPolicyEvidence(event.metadata || {});
+    addPolicyFact(eventPolicy, event.metadata || {});
     if (event.type === "powerup_collected") {
       const powerup = textValue(event.metadata.powerup_type || event.metadata.powerupType, "powerup");
       facts.push({
@@ -629,6 +720,8 @@ function formatList(items, mapper, empty = "none") {
 
 function buildEvidenceFormats(summary, context = {}, maxChars = COMMENTARY_MAX_CHARS) {
   const powerups = compactPowerupNames(summary.powerups);
+  const policy = summary.bot_policy || null;
+  const policyLabel = policy ? (policy.name || policy.id) : "";
   const topReplay = (context.replay_clips || [])[0] || null;
   const topMemory = (context.vector_memories || [])[0] || null;
   const replayCaption = topReplay
@@ -646,9 +739,11 @@ function buildEvidenceFormats(summary, context = {}, maxChars = COMMENTARY_MAX_C
   const liveLine = deterministicScript(summary, maxChars);
   const recapParts = [
     `${summary.player_name || "Player"} finished with ${summary.score} points`,
+    policyLabel ? `${policyLabel} policy evidence` : "",
     powerups.length ? `used ${powerups.join(", ")}` : "",
     summary.trail_crosses ? `${summary.trail_crosses} trail crossing(s)` : "",
     summary.freezes ? `${summary.freezes} freeze event(s)` : "",
+    summary.bot_learning_outcome ? `outcome ${summary.bot_learning_outcome.replace(/_/g, " ")}` : "",
     topReplay ? "replay evidence captured" : "",
     topMemory ? "similar prior memory found" : "",
   ].filter(Boolean);
@@ -680,6 +775,8 @@ function buildCanvasMessage(summary, options = {}) {
     .map(([name, count]) => `${name}:${count}`)
     .join(",") || "none";
   const prior = summary.prior_best_score == null ? "none" : String(summary.prior_best_score);
+  const policy = botPolicyPhrase(summary) || "none";
+  const policyOutcome = summary.bot_learning_outcome || "none";
   const inDbDraft = textValue(options.inDbCommentary);
   const requestedOutput = outputFormat(options.outputFormat);
   const context = compactContextForPrompt(options.context || {});
@@ -690,10 +787,12 @@ function buildCanvasMessage(summary, options = {}) {
       ? "Return one profanity-free post-match recap grounded in evidence."
       : "Return one profanity-free commentator line under 200 characters.",
     "Mention powerups, trail crossing/freezing, coordinates, or prior best only when present.",
+    "Mention bot policy/persona only when bot_policy is not none.",
     "Mention replay clips only when replay_evidence is not none.",
     `requested_output=${requestedOutput}`,
     inDbDraft ? `oracle_ai_database_draft=${inDbDraft}` : "oracle_ai_database_draft=none",
     `telemetry: session=${summary.session_id || "unknown"}; player=${summary.player_name || summary.player_id || "Player"}; score=${summary.score}; trash=${summary.trash_collected}; marine_hits=${summary.marine_hits}; powerups=${powerups}; trail_crosses=${summary.trail_crosses}; freezes=${summary.freezes}; ${coordinatePhrase(summary.last_position)}; prior_best=${prior}.`,
+    `bot_policy=${policy}; bot_strategy=${summary.bot_strategy || "none"}; bot_learning_outcome=${policyOutcome}.`,
     `graph_facts=${context.graph}`,
     `replay_evidence=${context.replay}`,
     `vector_memories=${context.memory}`,
@@ -883,20 +982,30 @@ async function callModelProvider(provider, requestPayload, config, options = {},
 function scoreTextAgainstEvidence(text, summary = {}, maxChars = COMMENTARY_MAX_CHARS) {
   const normalized = String(text || "").toLowerCase();
   const powerups = compactPowerupNames(summary.powerups);
+  const policy = summary.bot_policy || null;
+  const policyTerms = [
+    policy?.id,
+    policy?.name,
+    policy?.source,
+    ...(policy?.targetPriority || []),
+  ].filter(Boolean).map((item) => String(item).toLowerCase());
   const mentionsScore = normalized.includes(String(summary.score));
   const mentionsPlayer = summary.player_name && normalized.includes(String(summary.player_name).toLowerCase());
   const mentionsPowerup = /powerup|shield|magnet|freeze|boost/.test(normalized);
   const mentionsFreeze = /frozen|freeze/.test(normalized);
   const mentionsTrail = /trail|cross/.test(normalized);
+  const mentionsPolicy = /\b(policy|persona|trained|hunter|cleaner|ambusher|risk taker)\b/.test(normalized)
+    || policyTerms.some((term) => term && normalized.includes(term.replace(/^powerup_/, "")));
   const mentionsWin = /\b(win|wins|won|victory|champion)\b/.test(normalized);
   const unsupportedFreeze = mentionsFreeze && !summary.freezes && !powerups.includes("freeze");
   const unsupportedPowerup = mentionsPowerup && powerups.length === 0 && !summary.freezes;
   const unsupportedTrail = mentionsTrail && !summary.trail_crosses;
+  const unsupportedPolicy = mentionsPolicy && !policy;
   const unsupportedOutcome = mentionsWin;
   const tokenCount = estimateTokens(text);
   return {
-    uses_retrieved_evidence: Boolean(mentionsScore || mentionsPlayer || (summary.freezes && mentionsFreeze) || (summary.trail_crosses && mentionsTrail) || (powerups.length && mentionsPowerup)),
-    no_hallucinated_game_facts: !(unsupportedFreeze || unsupportedPowerup || unsupportedTrail || unsupportedOutcome),
+    uses_retrieved_evidence: Boolean(mentionsScore || mentionsPlayer || (summary.freezes && mentionsFreeze) || (summary.trail_crosses && mentionsTrail) || (powerups.length && mentionsPowerup) || (policy && mentionsPolicy)),
+    no_hallucinated_game_facts: !(unsupportedFreeze || unsupportedPowerup || unsupportedTrail || unsupportedPolicy || unsupportedOutcome),
     unique_commentary: Boolean(normalized && normalized !== normalizeSummary({}).player_name.toLowerCase()),
     commentary_quality: Boolean(text && text.length >= 24 && text.length <= Math.max(40, Math.min(200, maxChars))),
     confidence_calibrated: !/\b(definitely|guaranteed|certainly|undeniably)\b/i.test(text || ""),
@@ -2140,6 +2249,19 @@ async function getOracleConnection(options = {}) {
 function deterministicScript(summary, maxChars) {
   const powerups = compactPowerupNames(summary.powerups);
   const hist = historyPhrase(summary);
+  const policy = summary.bot_policy;
+  if (policy?.name || policy?.id) {
+    const label = policy.name || policy.id;
+    const mechanics = [
+      summary.trash_collected ? `${summary.trash_collected} pickups` : "",
+      summary.freezes ? `${summary.freezes} freeze event(s)` : "",
+      summary.trail_crosses ? `${summary.trail_crosses} trail cross(es)` : "",
+    ].filter(Boolean).join(", ");
+    return enforceCommentary(
+      `${label} produced ${summary.score} pts${mechanics ? ` with ${mechanics}` : ""}${hist}.`,
+      maxChars
+    );
+  }
   if (summary.freezes > 0) {
     return enforceCommentary(
       `Trail drama: frozen ${summary.freezes}x after ${summary.trail_crosses} crossing(s), finished ${summary.score}${hist}.`,
@@ -2220,6 +2342,31 @@ async function getOracleSummary(sessionId, playerId, options = {}) {
       }
     }
 
+    let botPolicy = null;
+    let botStrategy = "";
+    let botLearningOutcome = "";
+    const metadataResult = await connection.execute(
+      `SELECT *
+       FROM (
+         SELECT event_type, metadata_json
+         FROM ${GAME_EVENTS_TABLE}
+         WHERE session_id = :sessionId
+           AND player_id = :playerId
+           AND metadata_json IS NOT NULL
+         ORDER BY occurred_at DESC
+       )
+       WHERE ROWNUM <= 80`,
+      binds
+    );
+    for (const metadataRow of metadataResult.rows || []) {
+      const metadata = parseMetadata(metadataRow.METADATA_JSON || "{}");
+      botPolicy = mergeBotPolicyEvidence(botPolicy, normalizeBotPolicyEvidence(metadata));
+      botStrategy = botStrategy || textValue(metadata.bot_strategy || metadata.botStrategy);
+      botLearningOutcome = botLearningOutcome || textValue(
+        metadata.learning_outcome || metadata.learningOutcome || metadata.bot_learning_outcome || metadata.botLearningOutcome
+      );
+    }
+
     const priorResult = await connection.execute(
       `SELECT MAX(score) AS prior_best_score
       FROM ${GAME_EVENTS_TABLE}
@@ -2247,6 +2394,9 @@ async function getOracleSummary(sessionId, playerId, options = {}) {
         z: row.LAST_Z,
       },
       prior_best_score: priorBest == null ? null : priorBest,
+      bot_policy: botPolicy,
+      bot_strategy: botStrategy,
+      bot_learning_outcome: botLearningOutcome,
     });
   } finally {
     if (close) await connection.close();
@@ -2366,11 +2516,14 @@ async function getVectorMemories(connection, summary, config) {
 async function persistSessionMemory(connection, summary, context, config) {
   if (!config.persistMemory || !summary.session_id || !summary.player_id) return false;
   const powerups = compactPowerupNames(summary.powerups);
+  const policy = summary.bot_policy || null;
   const content = [
     `${summary.player_name || summary.player_id || "Player"} scored ${summary.score}`,
+    policy?.name || policy?.id ? `bot_policy=${policy.name || policy.id}` : "",
     powerups.length ? `powerups=${powerups.join(",")}` : "",
     summary.trail_crosses ? `trail_crosses=${summary.trail_crosses}` : "",
     summary.freezes ? `freezes=${summary.freezes}` : "",
+    summary.bot_learning_outcome ? `learning_outcome=${summary.bot_learning_outcome}` : "",
     (context.replay_clips || []).length ? `replay_clips=${context.replay_clips.length}` : "",
   ].filter(Boolean).join("; ");
   const metadata = {
@@ -2378,6 +2531,9 @@ async function persistSessionMemory(connection, summary, context, config) {
     graph_fact_count: (context.graph_facts || []).length,
     replay_clip_count: (context.replay_clips || []).length,
     powerups: summary.powerups || {},
+    bot_policy: policy,
+    bot_strategy: summary.bot_strategy || null,
+    bot_learning_outcome: summary.bot_learning_outcome || null,
   };
   try {
     await connection.execute(

@@ -21,6 +21,7 @@ import {
   resolveAuthoritativeBoatTypes,
   chooseSpawnPositionAwayFromPlayers,
   buildStartPositionItemRelocations,
+  buildOpeningCollectiblePositions,
   countMirroredMapEntries,
   resolveCollisionValidateRadius,
   resolveServerAuthSpeedLimit,
@@ -100,6 +101,15 @@ const SPAWN_PLAYER_CLEAR_RADIUS = process.env.SPAWN_PLAYER_CLEAR_RADIUS
 const START_POSITION_ITEM_CLEAR_RADIUS = process.env.START_POSITION_ITEM_CLEAR_RADIUS
   ? parseFloat(process.env.START_POSITION_ITEM_CLEAR_RADIUS)
   : Math.max(6, SPAWN_PLAYER_CLEAR_RADIUS);
+const OPENING_TRASH_COUNT = process.env.OPENING_TRASH_COUNT
+  ? parseInt(process.env.OPENING_TRASH_COUNT)
+  : 3;
+const OPENING_TRASH_RADIUS = process.env.OPENING_TRASH_RADIUS
+  ? parseFloat(process.env.OPENING_TRASH_RADIUS)
+  : Math.max(8, START_POSITION_ITEM_CLEAR_RADIUS + 1.5);
+const OPENING_TRASH_MIN_SPACING = process.env.OPENING_TRASH_MIN_SPACING
+  ? parseFloat(process.env.OPENING_TRASH_MIN_SPACING)
+  : 3.5;
 
 const ITEM_MAX_SIZE = process.env.ITEM_MAX_SIZE
   ? parseFloat(process.env.ITEM_MAX_SIZE)
@@ -819,6 +829,53 @@ export async function start(
     return { relocated: relocations.length };
   }
 
+  async function seedOpeningTrashNearStart(room, startPosition) {
+    if (!shouldSyncVisualItems(room)) return { seeded: 0 };
+    const want = room || GLOBAL_ROOM;
+    const currentItems = await getItemsForRoom(want);
+    const nearbyTrash = Object.values(currentItems || {}).filter((item) => {
+      if (!item || item.type !== "trash" || !item.position) return false;
+      const dx = Number(item.position.x || 0) - Number(startPosition?.x || 0);
+      const dz = Number(item.position.z || 0) - Number(startPosition?.z || 0);
+      return Math.hypot(dx, dz) <= OPENING_TRASH_RADIUS + 1.5;
+    }).length;
+    const needed = Math.max(0, OPENING_TRASH_COUNT - nearbyTrash);
+    if (needed <= 0) return { seeded: 0, nearbyTrash };
+
+    const positions = buildOpeningCollectiblePositions({
+      startPosition,
+      existingItems: currentItems,
+      count: needed,
+      ringRadius: OPENING_TRASH_RADIUS,
+      clearRadius: START_POSITION_ITEM_CLEAR_RADIUS,
+      minSpacing: OPENING_TRASH_MIN_SPACING,
+      worldSizeX,
+      worldSizeZ,
+    });
+
+    let seeded = 0;
+    for (const position of positions) {
+      const obj = itemPool.getObject();
+      if (!obj) continue;
+      reinitItem(obj, "trash");
+      obj.position = { x: position.x, y: 0, z: position.z };
+      obj.room = want;
+      await writeRoomItem("trash", obj.id, obj);
+      io.to(want).emit("item.new", { id: obj.id, data: obj });
+      seeded += 1;
+    }
+    if (seeded > 0) {
+      io.to(want).emit("items.all", await getItemsForRoom(want));
+      logger.info({
+        room: want,
+        seeded,
+        nearbyTrash,
+        radius: OPENING_TRASH_RADIUS,
+      }, "opening collectible seed");
+    }
+    return { seeded, nearbyTrash };
+  }
+
   // Per-room match lifecycle: separate STARTING/RUNNING/ENDED timers per room (time only; items remain global)
 function broadcastRoomState(room, state, extra = {}) {
   if (!room) return;
@@ -919,6 +976,8 @@ function startRoomMatch(room) {
     }
     await clearOpeningItemsNearStart(room, { x: startX, y: 0, z: startZ })
       .catch((error) => logAsyncFailure("room.start.openingItemSweep", error));
+    await seedOpeningTrashNearStart(room, { x: startX, y: 0, z: startZ })
+      .catch((error) => logAsyncFailure("room.start.openingTrashSeed", error));
     rs.startTime = startTime;
     rs.startingAt = null;
     broadcastRoomState(room, 'RUNNING', { startPosition: { x: startX, y: 0, z: startZ } });

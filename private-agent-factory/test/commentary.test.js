@@ -94,6 +94,48 @@ test("serves approved PAF-trained bot policy cards", () => {
   }
 });
 
+test("carries PAF-trained bot policy evidence into prompts and commentary", async () => {
+  const summary = normalizeSummary({
+    session_id: "S-BOT",
+    player_id: "bot-1",
+    player_name: "Bot Data 1",
+    score: 12,
+    trash_collected: 4,
+    freezes: 1,
+    bot_policy: {
+      id: "shield-hunter-v1",
+      name: "PAF Shield Hunter",
+      source: "paf",
+      risk: "medium",
+      targetPriority: ["powerup_shield", "trash"],
+      objective: "Prioritize shields, then clean nearby trash.",
+    },
+    bot_learning_outcome: "policy_collected_items",
+  });
+
+  const message = buildCanvasMessage(summary);
+  assert.match(message, /bot_policy=PAF Shield Hunter/);
+  assert.match(message, /targets=powerup_shield,trash/);
+  assert.match(message, /bot_learning_outcome=policy_collected_items/);
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "false",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "off",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+  }, async () => {
+    const response = await buildCommentary(
+      { summary, output_format: "live_line" },
+      { skipOracleSummary: true }
+    );
+
+    assert.equal(response.ok, true);
+    assert.match(response.commentary, /PAF Shield Hunter produced 12 pts/);
+    assert.ok(response.commentary.length <= 200);
+  });
+});
+
 test("extracts text from common PAF Canvas response shapes", () => {
   assert.equal(extractCanvasText({ payload: { message: "Canvas line" } }), "Canvas line");
   assert.equal(extractCanvasText({ message: { content: [{ text: "Nested line" }] } }), "Nested line");
@@ -1001,6 +1043,25 @@ test("resolves room-only context to the latest SQL-backed session", async () => 
           ],
         };
       }
+      if (/SELECT event_type, metadata_json/i.test(sql)) {
+        return {
+          rows: [
+            {
+              EVENT_TYPE: "game_over",
+              METADATA_JSON: JSON.stringify({
+                bot_policy: {
+                  id: "shield-hunter-v1",
+                  name: "PAF Shield Hunter",
+                  source: "paf",
+                  targetPriority: ["powerup_shield", "trash"],
+                },
+                bot_strategy: "shield-hunter-v1",
+                learning_outcome: "policy_collected_items",
+              }),
+            },
+          ],
+        };
+      }
       if (/event_type = 'game_over'/i.test(sql)) {
         return { rows: [{ PRIOR_BEST_SCORE: null }] };
       }
@@ -1061,7 +1122,10 @@ test("resolves room-only context to the latest SQL-backed session", async () => 
     assert.equal(context.summary.trash_collected, 3);
     assert.equal(context.summary.freezes, 1);
     assert.equal(context.summary.powerups.powerup_freeze, 1);
-    assert.match(context.formats.live_line, /Trail drama|frozen/i);
+    assert.equal(context.summary.bot_policy.id, "shield-hunter-v1");
+    assert.equal(context.summary.bot_learning_outcome, "policy_collected_items");
+    assert.ok(context.graph_facts.some((fact) => fact.type === "bot_policy_guided_player"));
+    assert.match(context.formats.live_line, /PAF Shield Hunter produced 3 pts/);
   });
 
   assert.ok(executeCalls.some((call) => /WHERE room_id = :roomId/i.test(call.sql)));
