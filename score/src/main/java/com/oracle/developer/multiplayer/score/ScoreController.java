@@ -30,9 +30,12 @@ public class ScoreController {
         logger.info("GET /api/top/score");
         List<ScoreDAO> all = new ArrayList<>();
         Sort sortByScore = Sort.by(Sort.Direction.DESC, "score");
-        Pageable topResults = PageRequest.of(0,10, sortByScore);
+        Pageable topResults = PageRequest.of(0, ScoreVisibilityPolicy.PUBLIC_LEADERBOARD_SCAN_LIMIT, sortByScore);
         repository
                 .findAll(topResults)
+                .stream()
+                .filter(ScoreVisibilityPolicy::isPublicScore)
+                .limit(ScoreVisibilityPolicy.PUBLIC_LEADERBOARD_LIMIT)
                 .forEach(s -> all.add(new ScoreDAO(s.getUuid(),s.getName(), s.getScore() )));
         return all;
     }

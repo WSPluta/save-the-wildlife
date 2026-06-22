@@ -5,7 +5,7 @@
 
 function escapeHtml(str) {
   const div = document.createElement("div");
-  div.innerText = String(str ?? "");
+  div.textContent = String(str ?? "");
   return div.innerHTML;
 }
 
@@ -20,7 +20,9 @@ export async function getLeaderBoard() {
     if (!tbody) return;
 
     tbody.innerHTML = "";
-    rows
+    const publicRows = rows.filter((entry) => isPublicLeaderboardName(entry?.name ?? entry?.uuid ?? ""));
+
+    publicRows
       .slice(0, 20)
       .forEach((entry) => {
         const name = entry?.name ?? entry?.uuid ?? "Player";
@@ -32,7 +34,7 @@ export async function getLeaderBoard() {
         tbody.appendChild(tr);
       });
 
-    if (rows.length === 0) {
+    if (publicRows.length === 0) {
       tbody.innerHTML = `<tr><td colspan="2" style="opacity:0.8;">No scores yet. Be the first!</td></tr>`;
     }
   } catch (e) {
@@ -41,6 +43,26 @@ export async function getLeaderBoard() {
       tbody.innerHTML = `<tr><td colspan="2" style="opacity:0.8;">Leaderboard unavailable</td></tr>`;
     }
   }
+}
+
+export function isPublicLeaderboardName(name) {
+  const normalized = String(name ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+  if (!normalized || normalized === "player") return false;
+  if (normalized.includes("smoke") || normalized.includes("test")) return false;
+  return ![
+    "trashcollector",
+    "trashrecheck",
+    "incidentcollector",
+    "devcyclerunner",
+    "devcycleender",
+    "mobilepolish",
+    "arcadeenv",
+    "obssmoke",
+    "restarttester",
+  ].some((prefix) => normalized.startsWith(prefix));
 }
 
 /**

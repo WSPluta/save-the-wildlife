@@ -65,15 +65,17 @@ public class CurrentScoreController {
         CurrentScore authoritative = deduplicateCurrentScores(uuid);
 
         // Sync high score table with current score (create if missing, promote if >=)
-        Optional<Score> existingTop = scoreRepository.findByUuid(uuid);
-        Score top = existingTop.orElse(new Score(uuid, authoritative.getName(), 0L));
-        Long cur = authoritative.getScore();
-        Long best = top.getScore();
-        boolean shouldUpsert = (cur != null) && (!existingTop.isPresent() || best == null || cur >= best);
-        if (shouldUpsert) {
-            top.setScore(cur != null ? cur : 0L);
-            top.setName(authoritative.getName());
-            scoreRepository.save(top);
+        if (ScoreVisibilityPolicy.isPublicScoreName(authoritative.getName())) {
+            Optional<Score> existingTop = scoreRepository.findByUuid(uuid);
+            Score top = existingTop.orElse(new Score(uuid, authoritative.getName(), 0L));
+            Long cur = authoritative.getScore();
+            Long best = top.getScore();
+            boolean shouldUpsert = (cur != null) && (!existingTop.isPresent() || best == null || cur >= best);
+            if (shouldUpsert) {
+                top.setScore(cur != null ? cur : 0L);
+                top.setName(authoritative.getName());
+                scoreRepository.save(top);
+            }
         }
 
         return new CurrentScoreDAO(authoritative.getUuid(), authoritative.getName(), authoritative.getScore());
@@ -86,12 +88,14 @@ public class CurrentScoreController {
         CurrentScore currentScoreFromStore = deduplicateCurrentScores(uuid);
         if (currentScoreFromStore == null) throw new NotAuthorizedOrNotFound();
 
-        Score scoreFromStore = scoreRepository.findByUuid(uuid).orElse(new Score(uuid,
-                currentScoreFromStore.getName(), 0L));
-        if (currentScoreFromStore.getScore() > scoreFromStore.getScore()) {
-            scoreFromStore.setScore(currentScoreFromStore.getScore());
-            scoreFromStore.setName(currentScoreFromStore.getName());
-            scoreRepository.save(scoreFromStore);
+        if (ScoreVisibilityPolicy.isPublicScoreName(currentScoreFromStore.getName())) {
+            Score scoreFromStore = scoreRepository.findByUuid(uuid).orElse(new Score(uuid,
+                    currentScoreFromStore.getName(), 0L));
+            if (currentScoreFromStore.getScore() > scoreFromStore.getScore()) {
+                scoreFromStore.setScore(currentScoreFromStore.getScore());
+                scoreFromStore.setName(currentScoreFromStore.getName());
+                scoreRepository.save(scoreFromStore);
+            }
         }
         // Remove all rows for this uuid (in case duplicates existed)
         currentScoreRepository.deleteByUuid(uuid);
