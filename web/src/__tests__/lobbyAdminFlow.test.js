@@ -96,4 +96,13 @@ describe("presenter-controlled lobby flow", () => {
   it("routes public Prometheus metrics to ws-server instead of the SPA", () => {
     expect(ingress).toMatch(/path:\s*\/metrics[\s\S]*pathType:\s*Exact[\s\S]*name:\s*ws-server[\s\S]*number:\s*3000/);
   });
+
+  it("broadcasts commentary to the room so presenter admin can list lines per player", () => {
+    expect(server).toMatch(/const roomCommentaryHistory = new Map\(\);/);
+    expect(server).toMatch(/function rememberRoomCommentary\(room, payload = \{\}\)/);
+    expect(server).toMatch(/socket\.emit\("commentary\.history", commentaryHistoryForRoom\(wanted\)\)/);
+    expect(server).toMatch(/io\.to\(room\)\.emit\("commentary\.ready", commentaryPayload\)/);
+    expect(script).toMatch(/case "commentary\.history":/);
+    expect(script).toMatch(/rememberAdminCommentaryHistory\(body \|\| \[\]\)/);
+  });
 });

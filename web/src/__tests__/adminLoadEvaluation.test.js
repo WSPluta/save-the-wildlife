@@ -52,8 +52,10 @@ describe("admin load evaluation view", () => {
 
   it("adds the AI learning route evidence for base versus fine-tuned PAF", () => {
     expect(html).toContain('id="admin-ai-learning"');
-    expect(html).toContain("Learning Gate");
-    expect(html).toContain("Facts in memory, behavior in weights");
+    expect(html).toContain("Live Commentary");
+    expect(html).toContain('id="admin-commentary-feed"');
+    expect(html).toContain('id="admin-ai-commentary-count"');
+    expect(html).toContain("Gameplay facts stay in Oracle AI Database");
     expect(html).toContain("oci-base");
     expect(html).toContain("oci-fine-tuned");
     expect(html).toContain("health + generation probe");
@@ -69,12 +71,18 @@ describe("admin load evaluation view", () => {
     expect(script).toMatch(/function isAiLearningAdminPath\(path\)/);
     expect(script).toMatch(/path === "\/admin\/ai-learning" \|\| path === "\/admin\/ai"/);
     expect(script).toMatch(/updateAiLearningHealth/);
+    expect(script).toMatch(/rememberAdminCommentary/);
+    expect(script).toMatch(/renderAdminCommentaryFeed/);
+    expect(worker).toMatch(/commentary\.history/);
     expect(script).toMatch(/generation_ready/);
   });
 
   it("styles the compact AI learning receipt panels", () => {
     expect(styles).toMatch(/\.admin-proof-receipts\s*{/);
     expect(styles).toMatch(/\.admin-learning-note\s*{/);
+    expect(styles).toMatch(/body\.ai-learning-view #admin-load-evaluation/);
+    expect(styles).toMatch(/\.admin-commentary-feed\s*{/);
+    expect(styles).toMatch(/\.admin-ai-route-metrics \.admin-metric strong/);
     expect(styles).toMatch(/body\.ai-learning-view \.admin-grid/);
     expect(styles).toMatch(/body\.ai-learning-view \.admin-roster/);
   });

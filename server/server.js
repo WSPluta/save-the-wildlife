@@ -284,6 +284,8 @@ const POWERUP_FREEZE_OTHER_MULT = parseFloat(process.env.POWERUP_FREEZE_OTHER_MU
  // Lobby chat (per-room buffer) and settings
  const CHAT_HISTORY_LIMIT = 100;
  const roomChats = new Map();
+const COMMENTARY_HISTORY_LIMIT = 80;
+const roomCommentaryHistory = new Map();
  // We reuse mapPlayersInfo as the lobby roster; emit 'lobby.players' when it changes.
 
 let gameState = 'WAITING';
@@ -305,6 +307,25 @@ function normalizeRoom(r) {
   // Keep A-Z 0-9 - _ and length clamp
   const cleaned = s.replace(/[^A-Z0-9\-_]/g, "").slice(0, 24);
   return cleaned || null;
+}
+
+function rememberRoomCommentary(room, payload = {}) {
+  const key = normalizeRoom(room) || DEFAULT_ROOM_ID;
+  const entry = {
+    ...payload,
+    room: key,
+    at: payload.at || new Date().toISOString(),
+  };
+  const list = roomCommentaryHistory.get(key) || [];
+  list.push(entry);
+  while (list.length > COMMENTARY_HISTORY_LIMIT) list.shift();
+  roomCommentaryHistory.set(key, list);
+  return entry;
+}
+
+function commentaryHistoryForRoom(room) {
+  const key = normalizeRoom(room) || DEFAULT_ROOM_ID;
+  return [...(roomCommentaryHistory.get(key) || [])];
 }
 
 function isLoadCanaryRoom(room) {
@@ -1128,6 +1149,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           const r = getSocketRoom(socket);
           const hist = roomChats.get(r) || [];
           socket.emit("chat.history", hist);
+          socket.emit("commentary.history", commentaryHistoryForRoom(r));
         } catch (_) {}
         // Broadcast updated lobby roster only to this room.
         await emitLobbyPlayersForRoom(currentRoom);
@@ -1287,6 +1309,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         try {
           const hist = roomChats.get(wanted) || [];
           socket.emit("chat.history", hist);
+          socket.emit("commentary.history", commentaryHistoryForRoom(wanted));
         } catch (_) {}
       } catch (e) {
         logger.error(`room.join error: ${e && e.message ? e.message : e}`);
@@ -1435,11 +1458,14 @@ function scheduleRoomRefill(room, delayMs = 0) {
         let commentary = null;
         if (result.event && result.event.event_type === "game_over") {
           commentary = await buildCommentary(result.event.session_id, result.event.player_id);
-          socket.emit("commentary.ready", {
+          const commentaryPayload = rememberRoomCommentary(room, {
             session_id: result.event.session_id,
             player_id: result.event.player_id,
+            player_name: commentary?.summary?.player_name || canonicalPlayerName || result.event.player_name || "Player",
+            score: commentary?.summary?.score ?? result.event.score,
             ...commentary,
           });
+          io.to(room).emit("commentary.ready", commentaryPayload);
         }
         const response = { ...result, commentary };
         try { if (typeof ack === "function") ack(response); } catch (_) {}

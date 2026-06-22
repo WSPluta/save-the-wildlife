@@ -420,17 +420,36 @@
           <div class="admin-evidence-header">
             <div>
               <div class="admin-section-eyebrow">Model AI</div>
-              <h3>Learning Gate</h3>
+              <h3>Live Commentary</h3>
             </div>
             <div id="admin-ai-verdict" class="admin-evidence-verdict">Checking route</div>
           </div>
 
           <div class="admin-learning-frame">
-            <strong>Facts in memory, behavior in weights.</strong>
-            <span>Oracle AI Database stores changing game facts, evidence references, traces, evals, training examples, and promotion decisions. The candidate is judged on commentary behavior only.</span>
+            <strong>Gameplay facts stay in Oracle AI Database. The model only shapes grounded language.</strong>
+            <span>Use this view while people play: every finished run appears below by player, with the route and source visible for the presenter.</span>
           </div>
 
-          <div class="admin-evidence-metrics" aria-label="Model learning summary">
+          <div class="admin-commentary-panel" aria-label="Live commentary by player">
+            <div class="admin-commentary-summary">
+              <div>
+                <span>Players with lines</span>
+                <strong id="admin-ai-commentary-players">0</strong>
+              </div>
+              <div>
+                <span>Commentary lines</span>
+                <strong id="admin-ai-commentary-count">0</strong>
+              </div>
+              <div>
+                <span>Latest source</span>
+                <strong id="admin-ai-commentary-source">Waiting</strong>
+              </div>
+            </div>
+            <div id="admin-commentary-empty" class="admin-commentary-empty">Waiting for game-over commentary in this room.</div>
+            <div id="admin-commentary-feed" class="admin-commentary-feed"></div>
+          </div>
+
+          <div class="admin-evidence-metrics admin-ai-route-metrics" aria-label="Model learning summary">
             <div class="admin-metric">
               <span>Route mode</span>
               <strong>Shadow</strong>

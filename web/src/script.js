@@ -1115,6 +1115,9 @@ let observabilityMetricsPromise = null;
 let lastObservabilityMetricsFetchAt = 0;
 let latestGlobalObservabilityMetrics = null;
 let latestRoomObservabilityMetrics = null;
+const adminCommentaryEntries = [];
+const adminCommentaryKeys = new Set();
+const ADMIN_COMMENTARY_LIMIT = 80;
 
 function formatHealthCountMap(counts = {}) {
   const entries = Object.entries(counts || {});
@@ -1187,11 +1190,129 @@ async function updateAiLearningHealth() {
 
 function refreshAiLearningHealth() {
   if (!IS_AI_LEARNING_VIEW || aiLearningHealthPromise) return;
+  renderAdminCommentaryFeed();
   aiLearningHealthPromise = updateAiLearningHealth().finally(() => {
     setTimeout(() => {
       aiLearningHealthPromise = null;
     }, 15000);
   });
+}
+
+function normalizeCommentaryText(value) {
+  return String(value == null ? "" : value).trim();
+}
+
+function commentaryEntryFromPayload(payload = {}) {
+  const summary = payload.summary && typeof payload.summary === "object" ? payload.summary : {};
+  const commentary = normalizeCommentaryText(payload.commentary || payload.text || payload.script);
+  if (!commentary) return null;
+  const playerId = normalizeCommentaryText(payload.player_id || payload.playerId || summary.player_id || summary.playerId || "player");
+  const playerName = normalizeCommentaryText(
+    payload.player_name ||
+    payload.playerName ||
+    summary.player_name ||
+    summary.playerName ||
+    playerId ||
+    "Player"
+  );
+  const score = Number(payload.score ?? summary.score);
+  const at = normalizeCommentaryText(payload.at || payload.ts || payload.timestamp || new Date().toISOString());
+  return {
+    key: [
+      normalizeCommentaryText(payload.session_id || payload.sessionId || summary.session_id || summary.sessionId),
+      playerId,
+      commentary,
+    ].join("|"),
+    playerId,
+    playerName,
+    commentary,
+    source: normalizeCommentaryText(payload.source || payload.fallback_source || "commentary"),
+    score: Number.isFinite(score) ? score : null,
+    at,
+  };
+}
+
+function rememberAdminCommentary(payload = {}) {
+  const entry = commentaryEntryFromPayload(payload);
+  if (!entry || adminCommentaryKeys.has(entry.key)) return false;
+  adminCommentaryKeys.add(entry.key);
+  adminCommentaryEntries.unshift(entry);
+  while (adminCommentaryEntries.length > ADMIN_COMMENTARY_LIMIT) {
+    const removed = adminCommentaryEntries.pop();
+    if (removed) adminCommentaryKeys.delete(removed.key);
+  }
+  renderAdminCommentaryFeed();
+  return true;
+}
+
+function rememberAdminCommentaryHistory(payload = []) {
+  const entries = Array.isArray(payload)
+    ? payload
+    : (Array.isArray(payload?.entries) ? payload.entries : []);
+  for (const entry of entries) {
+    rememberAdminCommentary(entry);
+  }
+  renderAdminCommentaryFeed();
+}
+
+function formatCommentaryTime(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function renderAdminCommentaryFeed() {
+  if (!IS_AI_LEARNING_VIEW) return;
+  const feed = document.getElementById("admin-commentary-feed");
+  const empty = document.getElementById("admin-commentary-empty");
+  if (!feed) return;
+  feed.innerHTML = "";
+  if (empty) empty.style.display = adminCommentaryEntries.length ? "none" : "";
+
+  const byPlayer = new Map();
+  for (const entry of adminCommentaryEntries) {
+    const key = entry.playerId || entry.playerName || "player";
+    if (!byPlayer.has(key)) byPlayer.set(key, { name: entry.playerName || "Player", entries: [] });
+    byPlayer.get(key).entries.push(entry);
+  }
+
+  setTextById("admin-ai-commentary-players", byPlayer.size);
+  setTextById("admin-ai-commentary-count", adminCommentaryEntries.length);
+  setTextById("admin-ai-commentary-source", adminCommentaryEntries[0]?.source || "Waiting");
+
+  for (const group of byPlayer.values()) {
+    const section = document.createElement("section");
+    section.className = "admin-commentary-player";
+
+    const header = document.createElement("div");
+    header.className = "admin-commentary-player-header";
+    const title = document.createElement("strong");
+    title.textContent = group.name;
+    const count = document.createElement("span");
+    count.textContent = `${group.entries.length} line${group.entries.length === 1 ? "" : "s"}`;
+    header.appendChild(title);
+    header.appendChild(count);
+    section.appendChild(header);
+
+    const list = document.createElement("ul");
+    list.className = "admin-commentary-list";
+    group.entries.slice(0, 6).forEach((entry) => {
+      const item = document.createElement("li");
+      const line = document.createElement("div");
+      line.className = "admin-commentary-line";
+      line.textContent = entry.commentary;
+      const meta = document.createElement("div");
+      meta.className = "admin-commentary-meta";
+      const score = entry.score == null ? "score -" : `score ${entry.score}`;
+      const time = formatCommentaryTime(entry.at);
+      meta.textContent = [score, entry.source, time].filter(Boolean).join(" · ");
+      item.appendChild(line);
+      item.appendChild(meta);
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    feed.appendChild(section);
+  }
 }
 
 function updateObservabilityMetrics(m = {}) {
@@ -2863,6 +2984,7 @@ async function init() {
         break;
       case "commentary.ready": {
         const text = body && (body.commentary || body.text || body.script);
+        rememberAdminCommentary(body || {});
         let el = document.getElementById("results-commentary");
         if (!el) {
           const summary = document.getElementById("results-summary");
@@ -2877,6 +2999,9 @@ async function init() {
         appendEventConsole("commentary.ready", body);
         break;
       }
+      case "commentary.history":
+        rememberAdminCommentaryHistory(body || []);
+        break;
       case "server.info":
         serverVersion = body.version;
         gameDuration = body.gameDuration;

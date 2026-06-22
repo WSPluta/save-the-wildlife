@@ -225,6 +225,10 @@ function init(wsURL, yourId, yourName, room, clientSessionId = null, debugWorker
     postMessage({ type: "commentary.ready", body: data });
   });
 
+  socket.on("commentary.history", (data) => {
+    postMessage({ type: "commentary.history", body: data });
+  });
+
   socket.on("items.all", (data) => {
     postMessage({ type: "items.all", body: data });
   });
