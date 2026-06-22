@@ -80,8 +80,8 @@ steps:
       export BOTS_VERSION=$(jq -r '.version' bots/package.json)
       echo "BOTS_VERSION: $BOTS_VERSION"
 
-      export MODEL_AI_TRAINING_VERSION="${MODEL_AI_TRAINING_VERSION:-latest}"
-      export MODEL_AI_INFERENCE_VERSION="${MODEL_AI_INFERENCE_VERSION:-latest}"
+      export MODEL_AI_TRAINING_VERSION="${MODEL_AI_TRAINING_VERSION:-$(cat model-ai/training/VERSION 2>/dev/null || echo latest)}"
+      export MODEL_AI_INFERENCE_VERSION="${MODEL_AI_INFERENCE_VERSION:-$(cat model-ai/inference/VERSION 2>/dev/null || echo latest)}"
       echo "MODEL_AI_TRAINING_VERSION: $MODEL_AI_TRAINING_VERSION"
       echo "MODEL_AI_INFERENCE_VERSION: $MODEL_AI_INFERENCE_VERSION"
 
