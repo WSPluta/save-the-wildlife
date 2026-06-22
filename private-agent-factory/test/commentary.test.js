@@ -144,17 +144,30 @@ test("extracts text from common PAF Canvas response shapes", () => {
 
 test("summarizes private model adapter upstream health", () => {
   const summary = summarizeAdapterHealth([
-    { ok: true, provider: "oci-base", runtime_mode: "upstream-llm", upstream_format: "ollama" },
-    { ok: true, provider: "oci-fine-tuned", runtime_mode: "upstream-llm", upstream_format: "ollama" },
+    { ok: true, provider: "oci-base", runtime_mode: "upstream-llm", upstream_format: "ollama", generation_ready: true },
+    { ok: true, provider: "oci-fine-tuned", runtime_mode: "upstream-llm", upstream_format: "ollama", generation_ready: true },
   ]);
 
   assert.equal(summary.upstream_llm_ready, true);
+  assert.equal(summary.generation_ready, true);
   assert.deepEqual(summary.provider_counts, { "oci-base": 1, "oci-fine-tuned": 1 });
   assert.deepEqual(summary.runtime_counts, {
     "oci-base:upstream-llm": 1,
     "oci-fine-tuned:upstream-llm": 1,
   });
   assert.deepEqual(summary.upstream_format_counts, { ollama: 2 });
+  assert.deepEqual(summary.generation_ready_counts, { ready: 2, failed: 0, unknown: 0 });
+});
+
+test("does not mark private model adapters ready when generation probe fails", () => {
+  const summary = summarizeAdapterHealth([
+    { ok: true, provider: "oci-base", runtime_mode: "upstream-llm", upstream_format: "ollama", generation_ready: true },
+    { ok: true, provider: "oci-fine-tuned", runtime_mode: "upstream-llm", upstream_format: "ollama", generation_ready: false },
+  ]);
+
+  assert.equal(summary.upstream_llm_ready, false);
+  assert.equal(summary.generation_ready, false);
+  assert.deepEqual(summary.generation_ready_counts, { ready: 1, failed: 1, unknown: 0 });
 });
 
 test("uses Oracle AI Database in-db agent package when configured", async () => {

@@ -2,6 +2,7 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -14,6 +15,9 @@ UPSTREAM_FORMAT = os.environ.get("STWL_UPSTREAM_FORMAT", "openai").strip().lower
 REQUIRED_BEARER = os.environ.get("STWL_REQUIRED_BEARER", "")
 FACTS_POLICY = os.environ.get("STWL_FACTS_POLICY", "facts-in-memory-behavior-in-weights")
 TIMEOUT_SECONDS = float(os.environ.get("STWL_UPSTREAM_TIMEOUT_SECONDS", "7.5"))
+HEALTH_PROBE_TIMEOUT_SECONDS = float(
+    os.environ.get("STWL_HEALTH_PROBE_TIMEOUT_SECONDS", str(min(3.0, TIMEOUT_SECONDS)))
+)
 OLLAMA_KEEP_ALIVE = os.environ.get("STWL_OLLAMA_KEEP_ALIVE", "10m")
 RUNTIME_MODE = os.environ.get("STWL_ADAPTER_RUNTIME_MODE") or ("upstream-llm" if UPSTREAM_URL else "behavior-adapter")
 STRICT_UPSTREAM_WARNINGS = os.environ.get("STWL_STRICT_UPSTREAM_WARNINGS", "true").lower() not in {
@@ -147,7 +151,7 @@ def _fallback_commentary(request):
     return f"{name} finished on {score} points with DB evidence in view; the base model stayed cautious."
 
 
-def _call_upstream(request):
+def _call_upstream(request, timeout_seconds=TIMEOUT_SECONDS):
     if not UPSTREAM_URL:
         return None
     payload = _upstream_payload(request)
@@ -160,25 +164,74 @@ def _call_upstream(request):
     if auth:
         headers["Authorization"] = f"Bearer {auth}"
     req = urllib.request.Request(UPSTREAM_URL, data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as response:
+    with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def _health_payload():
+    return {
+        "ok": True,
+        "provider": PROVIDER,
+        "model_id": MODEL_ID,
+        "upstream_configured": bool(UPSTREAM_URL),
+        "upstream_format": UPSTREAM_FORMAT,
+        "facts_policy": FACTS_POLICY,
+        "runtime_mode": "upstream-llm" if UPSTREAM_URL else RUNTIME_MODE,
+        "strict_upstream_warnings": STRICT_UPSTREAM_WARNINGS,
+    }
+
+
+def _deep_health_payload():
+    payload = _health_payload()
+    started = time.time()
+    if not UPSTREAM_URL:
+        payload.update({
+            "generation_ready": False,
+            "probe_latency_ms": 0,
+            "probe_error": "upstream_not_configured",
+        })
+        return payload
+    try:
+        upstream = _call_upstream({
+            "trace_id": "health-probe",
+            "system": "Reply with the word ready.",
+            "prompt": "Return only: ready",
+            "evidence": {
+                "summary": {
+                    "player_name": "HealthProbe",
+                    "score": 1,
+                }
+            },
+            "max_tokens": 8,
+            "temperature": 0,
+            "route_context": {
+                "probe": "healthz_deep",
+            },
+        }, timeout_seconds=HEALTH_PROBE_TIMEOUT_SECONDS)
+        text = _extract_upstream_text(upstream or {})
+        payload.update({
+            "generation_ready": bool(str(text or "").strip()),
+            "probe_latency_ms": int((time.time() - started) * 1000),
+            "probe_error": None if str(text or "").strip() else "empty_generation",
+        })
+    except Exception as exc:
+        payload.update({
+            "generation_ready": False,
+            "probe_latency_ms": int((time.time() - started) * 1000),
+            "probe_error": f"{type(exc).__name__}:{exc}",
+        })
+    return payload
 
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "stwl-model-ai-adapter/1.0"
 
     def do_GET(self):
-        if self.path == "/healthz":
-            _json_response(self, 200, {
-                "ok": True,
-                "provider": PROVIDER,
-                "model_id": MODEL_ID,
-                "upstream_configured": bool(UPSTREAM_URL),
-                "upstream_format": UPSTREAM_FORMAT,
-                "facts_policy": FACTS_POLICY,
-                "runtime_mode": "upstream-llm" if UPSTREAM_URL else RUNTIME_MODE,
-                "strict_upstream_warnings": STRICT_UPSTREAM_WARNINGS,
-            })
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/healthz":
+            query = urllib.parse.parse_qs(parsed.query)
+            deep = str((query.get("deep") or [""])[0]).lower() in {"1", "true", "yes"}
+            _json_response(self, 200, _deep_health_payload() if deep else _health_payload())
             return
         _json_response(self, 404, {"ok": False, "error": "not_found"})
 

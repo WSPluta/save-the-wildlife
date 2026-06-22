@@ -82,6 +82,7 @@ describe("presenter-controlled lobby flow", () => {
     const webpackDev = readFileSync("bundler/webpack.dev.js", "utf8");
     expect(webpackCommon).toMatch(/publicPath:\s*['"]\/['"]/);
     expect(webpackDev).toMatch(/historyApiFallback:\s*true/);
+    expect(webpackDev).toMatch(/context:\s*\["\/metrics"\][\s\S]*target:\s*`http:\/\/localhost:\$\{WS_PORT\}`/);
     expect(dockerfile).toMatch(/COPY nginx\.conf \/etc\/nginx\/conf\.d\/default\.conf/);
     expect(nginx).toMatch(/try_files \$uri \$uri\/ \/index\.html;/);
     expect(nginx).toMatch(/Cache-Control "no-store, max-age=0" always/);

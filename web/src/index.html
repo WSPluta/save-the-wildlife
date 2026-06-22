@@ -422,7 +422,7 @@
               <div class="admin-section-eyebrow">Model AI</div>
               <h3>Learning Gate</h3>
             </div>
-            <div id="admin-ai-verdict" class="admin-evidence-verdict">Upstream LLM ready</div>
+            <div id="admin-ai-verdict" class="admin-evidence-verdict">Checking route</div>
           </div>
 
           <div class="admin-learning-frame">
@@ -445,15 +445,15 @@
             </div>
             <div class="admin-metric">
               <span>Runtime</span>
-              <strong id="admin-ai-runtime">upstream-llm</strong>
+              <strong id="admin-ai-runtime">checking</strong>
             </div>
             <div class="admin-metric">
               <span>Handoff</span>
-              <strong id="admin-ai-handoff">upstream formats ollama:2</strong>
+              <strong id="admin-ai-handoff">checking</strong>
             </div>
             <div class="admin-metric">
               <span>LLM proof gate</span>
-              <strong id="admin-ai-proof-gate">Ready</strong>
+              <strong id="admin-ai-proof-gate">Checking</strong>
             </div>
           </div>
 
@@ -475,19 +475,19 @@
             </div>
             <div>
               <span>Adapter handoff</span>
-              <strong>upstream formats ollama:2</strong>
-              <em>Both private routes report runtime_mode=upstream-llm through the adapter contract.</em>
+              <strong>health + generation probe</strong>
+              <em>Model routes must answer a bounded generation check before the presenter view calls them ready.</em>
             </div>
             <div>
               <span>Strict upstream gate</span>
-              <strong>runtime_mode=upstream-llm</strong>
-              <em>Base and fine-tuned routes are live, while changing facts stay in Oracle AI Database context.</em>
+              <strong>facts stay in database</strong>
+              <em>Changing facts stay in Oracle AI Database context; the model route only shapes grounded language.</em>
             </div>
           </div>
 
           <div class="admin-learning-note">
-            <strong id="admin-ai-note-title">Upstream LLM proof is live.</strong>
-            <span id="admin-ai-note-body">The router, traces, evals, and shadow metadata are stable through tier 1000. Both private routes report runtime_mode=upstream-llm; facts remain in Oracle AI Database memory, Select AI, and in-db agent context.</span>
+            <strong id="admin-ai-note-title">Checking generation proof.</strong>
+            <span id="admin-ai-note-body">The router, traces, evals, and shadow metadata are stable through tier 1000. Runtime facts remain in Oracle AI Database memory, Select AI, and in-db agent context.</span>
           </div>
         </div>
       </section>

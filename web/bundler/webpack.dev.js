@@ -32,6 +32,7 @@ module.exports = merge(commonConfiguration, {
     ],
     proxy: [
       { context: ["/socket.io"], target: `http://localhost:${WS_PORT}`, ws: true },
+      { context: ["/metrics"], target: `http://localhost:${WS_PORT}` },
       { context: ["/api"], target: `http://localhost:${SCORE_PORT}`, ws: true }
     ],
     open: true,

@@ -28,6 +28,7 @@ describe("observability metrics", () => {
   it("keeps Prometheus global while broadcasting room-scoped UI metrics", () => {
     expect(serverSource).toMatch(/globalMetrics\.scope = "global"/);
     expect(serverSource).toMatch(/updateRuntimeMetrics\(globalMetrics, gameState\)/);
+    expect(serverSource).toMatch(/io\.volatile\.compress\(true\)\.emit\("server\.metrics", globalMetrics\)/);
     expect(serverSource).toMatch(/const rooms = Array\.from\(new Set\(\[DEFAULT_ROOM_ID, \.\.\.listActiveRooms\(\)\]\)\)/);
     expect(serverSource).toMatch(/const roomCounts = await countItemsForRoom\(room\)/);
     expect(serverSource).toMatch(/roomMetrics\.scope = "room"/);

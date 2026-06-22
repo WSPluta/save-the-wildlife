@@ -95,6 +95,43 @@ class UpstreamPayloadTests(unittest.TestCase):
         self.assertEqual(self.server._extract_upstream_text(payload), "Ada kept the line grounded.")
         self.assertEqual(self.server._usage_tokens(payload, "fallback"), 19)
 
+    def test_shallow_health_does_not_claim_generation_probe(self):
+        self.server.UPSTREAM_URL = ""
+        self.server.RUNTIME_MODE = "behavior-adapter"
+
+        payload = self.server._health_payload()
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["runtime_mode"], "behavior-adapter")
+        self.assertNotIn("generation_ready", payload)
+
+    def test_deep_health_requires_configured_upstream(self):
+        self.server.UPSTREAM_URL = ""
+
+        payload = self.server._deep_health_payload()
+
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["generation_ready"])
+        self.assertEqual(payload["probe_error"], "upstream_not_configured")
+
+    def test_deep_health_marks_generation_ready_only_after_text(self):
+        self.server.UPSTREAM_URL = "http://model.example.test/api/chat"
+        original_call = self.server._call_upstream
+        try:
+            self.server._call_upstream = lambda request, timeout_seconds=None: {
+                "message": {"content": "ready"},
+                "prompt_eval_count": 4,
+                "eval_count": 1,
+            }
+
+            payload = self.server._deep_health_payload()
+        finally:
+            self.server._call_upstream = original_call
+
+        self.assertTrue(payload["generation_ready"])
+        self.assertIsNone(payload["probe_error"])
+        self.assertGreaterEqual(payload["probe_latency_ms"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

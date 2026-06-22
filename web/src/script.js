@@ -777,6 +777,7 @@ function renderUI() {
   updateRoomHud();
   try { renderRoomsDirectory(); } catch (_) {}
   try { renderObservabilityRooms(); } catch (_) {}
+  try { refreshObservabilityMetrics(); } catch (_) {}
   try { refreshAiLearningHealth(); } catch (_) {}
   // Manage countdown lifecycle: let server drive the target; only clear when leaving STARTING
   if (currentPhase !== PHASES.STARTING) {
@@ -1189,6 +1190,8 @@ function formatCount(value) {
 }
 
 let aiLearningHealthPromise = null;
+let observabilityMetricsPromise = null;
+let lastObservabilityMetricsFetchAt = 0;
 
 function formatHealthCountMap(counts = {}) {
   const entries = Object.entries(counts || {});
@@ -1199,9 +1202,20 @@ function formatHealthCountMap(counts = {}) {
 function summarizeAiAdapterHealth(health = {}) {
   const adapters = Array.isArray(health.model_adapters) ? health.model_adapters : [];
   const summary = health.model_adapter_summary || {};
-  const ready = summary.upstream_llm_ready === true || (
+  const generationProbeKnown = adapters.some((adapter) => Object.prototype.hasOwnProperty.call(adapter || {}, "generation_ready"));
+  const generationReady = summary.generation_ready === true || (
+    generationProbeKnown &&
     adapters.length > 0 &&
-    adapters.every((adapter) => adapter && adapter.ok === true && adapter.runtime_mode === "upstream-llm")
+    adapters.every((adapter) => adapter && adapter.generation_ready === true)
+  );
+  const ready = (summary.upstream_llm_ready === true && (summary.generation_ready !== false)) || (
+    adapters.length > 0 &&
+    adapters.every((adapter) =>
+      adapter &&
+      adapter.ok === true &&
+      adapter.runtime_mode === "upstream-llm" &&
+      (!generationProbeKnown || adapter.generation_ready === true)
+    )
   );
   const runtimes = summary.runtime_counts || adapters.reduce((acc, adapter) => {
     const provider = adapter?.provider || "unknown";
@@ -1218,8 +1232,8 @@ function summarizeAiAdapterHealth(health = {}) {
     ready,
     runtimeText: ready ? "upstream-llm" : formatHealthCountMap(runtimes),
     handoffText: `upstream formats ${formatHealthCountMap(formats)}`,
-    gateText: ready ? "Ready" : "Check route",
-    verdictText: ready ? "Upstream LLM ready" : "Route configured",
+    gateText: ready ? "Ready" : (generationProbeKnown && !generationReady ? "Generation check failed" : "Check route"),
+    verdictText: ready ? "Generation ready" : (generationProbeKnown ? "Generation not proven" : "Route configured"),
   };
 }
 
@@ -1236,10 +1250,10 @@ async function updateAiLearningHealth() {
     setTextById("admin-ai-handoff", adapter.handoffText);
     setTextById("admin-ai-proof-gate", adapter.gateText);
     if (adapter.ready) {
-      setTextById("admin-ai-note-title", "Upstream LLM proof is live.");
+      setTextById("admin-ai-note-title", "Generation proof is live.");
       setTextById(
         "admin-ai-note-body",
-        "Both private routes report runtime_mode=upstream-llm. Oracle AI Database keeps changing facts, Select AI and in-db agents ground context, and the model route shapes safe language."
+        "Both private routes completed a bounded generation probe. Oracle AI Database keeps changing facts, Select AI and in-db agents ground context, and the model route shapes safe language."
       );
     }
   } catch (error) {
@@ -1259,10 +1273,11 @@ function refreshAiLearningHealth() {
 
 function updateObservabilityMetrics(m = {}) {
   if (!IS_OBSERVABILITY_VIEW) return;
-  const players = m.players || {};
-  const sockets = m.sockets || {};
-  const rooms = m.rooms || {};
-  const items = m.items || {};
+  const global = m.scope === "room" && m.global && typeof m.global === "object" ? m.global : m;
+  const players = global.players || m.players || {};
+  const sockets = global.sockets || m.sockets || {};
+  const rooms = global.rooms || m.rooms || {};
+  const items = global.items || m.items || {};
   const totalItems =
     (Number(items.trash) || 0) +
     (Number(items.marine) || 0) +
@@ -1282,6 +1297,57 @@ function updateObservabilityNetwork() {
   const traffic = `${Number(networkStats.upKbps || 0).toFixed(1)} up / ${Number(networkStats.downKbps || 0).toFixed(1)} down`;
   setTextById("obs-rtt", rtt);
   setTextById("obs-traffic", traffic);
+}
+
+function parsePrometheusMetrics(text = "") {
+  const values = {};
+  String(text || "").split(/\r?\n/).forEach((line) => {
+    if (!line || line.startsWith("#")) return;
+    const match = line.match(/^([a-zA-Z_:][\w:]*)(?:\{[^}]*\})?\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)$/);
+    if (!match) return;
+    values[match[1]] = Number(match[2]);
+  });
+  return values;
+}
+
+function prometheusMetricsToObservabilityPayload(values = {}) {
+  return {
+    scope: "prometheus",
+    players: {
+      total: values.stwl_players_total,
+      humans: values.stwl_players_humans,
+      bots: values.stwl_players_bots,
+    },
+    sockets: {
+      connections: values.stwl_socket_connections,
+    },
+    rooms: {
+      active: values.stwl_rooms_active,
+      running: values.stwl_rooms_running,
+    },
+    items: {
+      trash: values.stwl_items_trash,
+      marine: values.stwl_items_marine,
+      powerups: values.stwl_items_powerups,
+    },
+  };
+}
+
+async function refreshObservabilityMetrics() {
+  if (!IS_OBSERVABILITY_VIEW) return;
+  const now = Date.now();
+  if (observabilityMetricsPromise || now - lastObservabilityMetricsFetchAt < 5000) return;
+  lastObservabilityMetricsFetchAt = now;
+  observabilityMetricsPromise = (async () => {
+    const response = await fetch("/metrics", { cache: "no-store" });
+    if (!response.ok) throw new Error(`metrics_${response.status}`);
+    const text = await response.text();
+    updateObservabilityMetrics(prometheusMetricsToObservabilityPayload(parsePrometheusMetrics(text)));
+  })()
+    .catch(() => {})
+    .finally(() => {
+      observabilityMetricsPromise = null;
+    });
 }
 
 function renderObservabilityRooms() {

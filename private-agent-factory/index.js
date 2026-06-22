@@ -321,6 +321,7 @@ function summarizeAdapterHealth(adapters = []) {
   const providerCounts = {};
   const runtimeCounts = {};
   const upstreamFormatCounts = {};
+  const generationReadyCounts = { ready: 0, failed: 0, unknown: 0 };
   for (const adapter of adapters) {
     const provider = adapter.provider || "unknown";
     const runtime = adapter.runtime_mode || "missing";
@@ -328,13 +329,25 @@ function summarizeAdapterHealth(adapters = []) {
     providerCounts[provider] = (providerCounts[provider] || 0) + 1;
     runtimeCounts[`${provider}:${runtime}`] = (runtimeCounts[`${provider}:${runtime}`] || 0) + 1;
     upstreamFormatCounts[format] = (upstreamFormatCounts[format] || 0) + 1;
+    if (adapter.generation_ready === true) generationReadyCounts.ready++;
+    else if (adapter.generation_ready === false) generationReadyCounts.failed++;
+    else generationReadyCounts.unknown++;
   }
+  const generationProbeKnown = adapters.some((adapter) =>
+    Object.prototype.hasOwnProperty.call(adapter || {}, "generation_ready")
+  );
   return {
     provider_counts: providerCounts,
     runtime_counts: runtimeCounts,
     upstream_format_counts: upstreamFormatCounts,
+    generation_ready_counts: generationReadyCounts,
+    generation_ready: adapters.length > 0 && generationProbeKnown && adapters.every((adapter) =>
+      adapter.ok === true && adapter.generation_ready === true
+    ),
     upstream_llm_ready: adapters.length > 0 && adapters.every((adapter) =>
-      adapter.ok === true && adapter.runtime_mode === "upstream-llm"
+      adapter.ok === true &&
+      adapter.runtime_mode === "upstream-llm" &&
+      (!generationProbeKnown || adapter.generation_ready === true)
     ),
   };
 }
@@ -353,10 +366,10 @@ async function probeModelAdapterHealth(provider, endpoint, options = {}) {
     };
   }
   const timeoutMs = boundedMs(
-    process.env.PAF_ADAPTER_HEALTH_TIMEOUT_MS || options.healthTimeoutMs || 900,
-    900,
+    process.env.PAF_ADAPTER_HEALTH_TIMEOUT_MS || options.healthTimeoutMs || 3500,
+    3500,
     100,
-    5000
+    10_000
   );
   const headers = {
     Accept: "application/json",
@@ -365,7 +378,7 @@ async function probeModelAdapterHealth(provider, endpoint, options = {}) {
   const authSecret = textValue(options.authSecret || process.env.OCI_MODEL_ENDPOINT_AUTH_SECRET);
   if (authSecret) headers.Authorization = `Bearer ${authSecret}`;
   try {
-    const response = await requestJson(`${baseUrl}/healthz`, {
+    const response = await requestJson(`${baseUrl}/healthz?deep=1`, {
       method: "GET",
       timeoutMs,
       verifyTls: options.verifyTls,
@@ -380,6 +393,9 @@ async function probeModelAdapterHealth(provider, endpoint, options = {}) {
       upstream_format: payload.upstream_format || null,
       model_id: payload.model_id || null,
       facts_policy: payload.facts_policy || null,
+      generation_ready: payload.generation_ready ?? null,
+      probe_latency_ms: payload.probe_latency_ms ?? null,
+      probe_error: payload.probe_error || null,
       strict_upstream_warnings: payload.strict_upstream_warnings ?? null,
       status: response.status,
       elapsed_ms: response.elapsed_ms,

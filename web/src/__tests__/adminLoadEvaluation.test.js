@@ -56,20 +56,20 @@ describe("admin load evaluation view", () => {
     expect(html).toContain("Facts in memory, behavior in weights");
     expect(html).toContain("oci-base");
     expect(html).toContain("oci-fine-tuned");
-    expect(html).toContain("upstream-llm");
-    expect(html).toContain("upstream formats ollama:2");
-    expect(html).toContain("Both private routes report runtime_mode=upstream-llm");
+    expect(html).toContain("health + generation probe");
+    expect(html).toContain("bounded generation check");
     expect(html).toContain("LLM proof gate");
     expect(html).toContain("202606132052-fastpath-full");
     expect(html).toContain("25 live examples");
     expect(html).toContain("Redacted behavior-only JSONL");
     expect(html).toContain("Trainer dry-run");
     expect(html).toContain("Strict upstream gate");
-    expect(html).toContain("Upstream LLM proof is live");
-    expect(html).toContain("runtime_mode=upstream-llm");
+    expect(html).toContain("Checking generation proof");
+    expect(html).toContain("facts stay in database");
     expect(script).toMatch(/function isAiLearningAdminPath\(path\)/);
     expect(script).toMatch(/path === "\/admin\/ai-learning" \|\| path === "\/admin\/ai"/);
     expect(script).toMatch(/updateAiLearningHealth/);
+    expect(script).toMatch(/generation_ready/);
   });
 
   it("styles the compact AI learning receipt panels", () => {
@@ -88,6 +88,8 @@ describe("admin load evaluation view", () => {
     expect(html).toContain("stwl_socket_connections");
     expect(script).toMatch(/const IS_OBSERVABILITY_VIEW =/);
     expect(script).toMatch(/updateObservabilityMetrics/);
+    expect(script).toMatch(/parsePrometheusMetrics/);
+    expect(script).toMatch(/fetch\("\/metrics"/);
     expect(styles).toMatch(/body\.admin-view:not\(\.observability-view\) #admin-observability/);
     expect(styles).toMatch(/body\.observability-view \.admin-grid/);
     expect(styles).toMatch(/body\.observability-view \.admin-roster/);

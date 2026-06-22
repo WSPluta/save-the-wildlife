@@ -2377,11 +2377,11 @@ function scheduleRoomRefill(room, delayMs = 0) {
       );
       globalMetrics.scope = "global";
       try { updateRuntimeMetrics(globalMetrics, gameState); } catch (_) {}
+      io.volatile.compress(true).emit("server.metrics", globalMetrics);
 
       const rooms = Array.from(new Set([DEFAULT_ROOM_ID, ...listActiveRooms()]))
         .filter((room) => room && shouldSyncVisualItems(room));
       if (!rooms.length) {
-        io.volatile.compress(true).emit("server.metrics", globalMetrics);
         return;
       }
 
