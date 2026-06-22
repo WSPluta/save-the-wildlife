@@ -48,7 +48,8 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const BOT_NAME_TAG_SCALE = Object\.freeze\(\{ x: 0\.42, y: 0\.13, z: 1 \}\);/);
     expect(script).toMatch(/function configureNameTagForOwner\(sprite, object3d\)/);
     expect(script).toMatch(/sprite\.scale\.set\(scale\.x, scale\.y, scale\.z\);/);
-    expect(script).toMatch(/const botIds = Object\.keys\(otherPlayersInfo \|\| \{\}\)\.filter/);
+    expect(script).toMatch(/\.\.\.Object\.keys\(otherPlayersInfo \|\| \{\}\),/);
+    expect(script).toMatch(/\.\.\.botProfileEvidence\.keys\(\),/);
     expect(script).toMatch(/rosterFallback: true,/);
     expect(script).toMatch(/group\.scale\.setScalar\(BOT_VISUAL_SCALE\);/);
     expect(script).toMatch(/group\.frustumCulled = false;/);
@@ -66,7 +67,13 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/botsVisible: botSamples\.length,/);
     expect(script).toMatch(/botsKnown: Math\.max\(knownBotCount, botSamples\.length\),/);
     expect(script).toMatch(/botRenderMode: BOT_RENDER_MODE,/);
-    expect(script).toMatch(/botPolicy: otherPlayersInfo\?\.\[id\]\?\.botPolicy/);
+    expect(script).toMatch(/const botProfileEvidence = new Map\(\);/);
+    expect(script).toMatch(/function mergeBotProfileEvidence\(id, profile = \{\}\)/);
+    expect(script).toMatch(/function getBotPolicyForPlayer\(id\)/);
+    expect(script).toMatch(/rememberBotProfileEvidence\(key, \{/);
+    expect(script).toMatch(/botPolicy: traceData\.botPolicy,/);
+    expect(script).toMatch(/botProfileEvidence\.keys\(\)/);
+    expect(script).toMatch(/botPolicy: policy \? compactBotPolicyEvidence\(policy\) : null,/);
     expect(script).toMatch(/botSamples,/);
     expect(script).toMatch(/botRosterVisual: latestBotRosterVisualDebug,/);
   });

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   botPolicyForIndex,
   buildGameEvent,
+  buildTrace,
   computeInputToward,
   desiredBotCount,
   effectiveBotConfigForPolicy,
@@ -206,6 +207,25 @@ test("policy throttle changes effective deterministic movement config only", () 
   assert.equal(config.throttle, 0.9);
   assert.equal(policyConfig.throttle, 0.42);
   assert.equal(policyConfig.maxSpeed, config.maxSpeed);
+});
+
+test("builds visible movement traces with PAF policy evidence", () => {
+  const trace = buildTrace("bot-1", { x: 1, y: 0, z: -2 }, 0.75, {
+    isBot: true,
+    teacher: "paf",
+    botPolicy: {
+      id: "shield-hunter-v1",
+      name: "PAF Shield Hunter",
+      source: "paf",
+      version: "1.0.0",
+    },
+  });
+
+  assert.equal(trace.id, "bot-1");
+  assert.equal(trace.isBot, true);
+  assert.equal(trace.teacher, "paf");
+  assert.equal(trace.botPolicy.id, "shield-hunter-v1");
+  assert.equal(trace.botPolicy.source, "paf");
 });
 
 test("builds bot simulation events with training-safe metadata", () => {

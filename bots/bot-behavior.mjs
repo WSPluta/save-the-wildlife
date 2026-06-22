@@ -364,13 +364,21 @@ export function integrateBotMotion(bot, input, config = parseBotConfig({}), dtSe
   return bot;
 }
 
-export function buildTrace(botId, position, rotationY) {
-  return {
+export function buildTrace(botId, position, rotationY, metadata = {}) {
+  const trace = {
     id: botId,
     x: Number(position.x || 0).toFixed(5),
     z: Number(position.z || 0).toFixed(5),
     rotY: Number(rotationY || 0).toFixed(5),
   };
+  if (metadata && typeof metadata === "object") {
+    if (metadata.isBot != null) trace.isBot = !!metadata.isBot;
+    if (metadata.teacher) trace.teacher = String(metadata.teacher).slice(0, 32);
+    if (metadata.botPolicy && typeof metadata.botPolicy === "object") {
+      trace.botPolicy = metadata.botPolicy;
+    }
+  }
+  return trace;
 }
 
 export function buildGameEvent(type, bot, overrides = {}) {

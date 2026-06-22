@@ -118,6 +118,7 @@ let keyboard = {};
 let gameState = "WAITING";
 let startingIntervalId = null;
 let startingTargetTs = null;
+const botProfileEvidence = new Map();
 let startingRingTotalMs = null;
 let startingServerAtMs = null;
 const COUNTDOWN_HEIGHT_M = 1.2;
@@ -283,10 +284,74 @@ function isBotDisplayName(name) {
   return String(name || "").trim().toLowerCase().startsWith("bot ");
 }
 
+function compactBotPolicyEvidence(policy) {
+  if (!policy || typeof policy !== "object") return null;
+  return {
+    id: policy.id || null,
+    name: policy.name || null,
+    source: policy.source || null,
+    version: policy.version || null,
+    objective: policy.objective || policy.notes || null,
+  };
+}
+
+function rememberBotProfileEvidence(id, profile = {}) {
+  const playerId = String(id || profile.id || "");
+  if (!playerId) return null;
+  const existing = botProfileEvidence.get(playerId) || {};
+  const policy = compactBotPolicyEvidence(profile.botPolicy) || existing.botPolicy || null;
+  const next = {
+    name: profile.name || existing.name || playerId,
+    isBot: profile.isBot ?? existing.isBot ?? playerId.toLowerCase().startsWith("bot-"),
+    teacher: profile.teacher || existing.teacher || (policy ? policy.source : null),
+    botPolicy: policy,
+  };
+  if (next.isBot || next.botPolicy || playerId.toLowerCase().startsWith("bot-") || isBotDisplayName(next.name)) {
+    botProfileEvidence.set(playerId, next);
+    return next;
+  }
+  return null;
+}
+
+function mergeBotProfileEvidence(id, profile = {}) {
+  const playerId = String(id || profile?.id || "");
+  const evidence = rememberBotProfileEvidence(playerId, profile || {}) || botProfileEvidence.get(playerId);
+  if (!evidence) return profile || {};
+  return {
+    ...(profile || {}),
+    name: profile?.name || evidence.name,
+    isBot: profile?.isBot ?? evidence.isBot,
+    teacher: profile?.teacher || evidence.teacher || null,
+    botPolicy: profile?.botPolicy || evidence.botPolicy || null,
+  };
+}
+
+function mergeRosterProfileEvidence(roster = {}) {
+  if (!roster || typeof roster !== "object" || Array.isArray(roster)) return roster || {};
+  return Object.fromEntries(
+    Object.entries(roster).map(([id, profile]) => [id, mergeBotProfileEvidence(id, profile || {})])
+  );
+}
+
+function getBotPolicyForPlayer(id) {
+  const playerId = String(id || "");
+  return otherPlayersInfo?.[playerId]?.botPolicy || botProfileEvidence.get(playerId)?.botPolicy || null;
+}
+
+function getDisplayNameForPlayer(id) {
+  const playerId = String(id || "");
+  return otherPlayersInfo?.[playerId]?.name || botProfileEvidence.get(playerId)?.name || playerId;
+}
+
 function isBotPlayerId(id) {
   const playerId = String(id || "");
   const info = otherPlayersInfo && otherPlayersInfo[playerId];
-  return playerId.toLowerCase().startsWith("bot-") || !!(info && info.isBot) || isBotDisplayName(info && info.name);
+  const cached = botProfileEvidence.get(playerId);
+  return playerId.toLowerCase().startsWith("bot-") ||
+    !!(info && info.isBot) ||
+    !!(cached && cached.isBot) ||
+    isBotDisplayName(info && info.name) ||
+    isBotDisplayName(cached && cached.name);
 }
 
 function shouldRenderRemotePlayer(id) {
@@ -2852,6 +2917,15 @@ async function init() {
         break;
       case "player.trace.all":
         for (const [key, traceData] of Object.entries(body)) {
+          if (traceData && typeof traceData === "object") {
+            rememberBotProfileEvidence(key, {
+              id: key,
+              name: traceData.name,
+              isBot: traceData.isBot,
+              teacher: traceData.teacher,
+              botPolicy: traceData.botPolicy,
+            });
+          }
           if (key === yourId) {
             removeRemotePlayerVisual(key);
             delete otherPlayers[key];
@@ -2875,9 +2949,9 @@ async function init() {
           if (joinedId) {
             // Ensure name map is updated so subsequent mesh creation shows correct label
             if (body.profile && typeof body.profile === "object") {
-              otherPlayersInfo[joinedId] = body.profile;
+              otherPlayersInfo[joinedId] = mergeBotProfileEvidence(joinedId, body.profile);
             } else if (joinedName) {
-              otherPlayersInfo[joinedId] = { name: joinedName };
+              otherPlayersInfo[joinedId] = mergeBotProfileEvidence(joinedId, { id: joinedId, name: joinedName });
             }
             if (!shouldRenderRemotePlayer(joinedId)) {
               removeRemotePlayerVisual(joinedId);
@@ -2918,7 +2992,7 @@ async function init() {
         }
         break;
       case "player.info.all":
-        otherPlayersInfo = body || {};
+        otherPlayersInfo = mergeRosterProfileEvidence(body || {});
         try {
           Object.keys(otherPlayersInfo || {}).forEach((id) => {
             if (!shouldRenderRemotePlayer(id)) {
@@ -3106,12 +3180,15 @@ async function init() {
               teacher: value && value.teacher ? String(value.teacher) : "",
             }));
           } else if (body && typeof body === "object") {
-            arr = Object.entries(body).map(([id, value]) => ({
-              id: String(id),
-              name: value && value.name ? String(value.name) : String(id),
-              botPolicy: value && value.botPolicy ? value.botPolicy : null,
-              teacher: value && value.teacher ? String(value.teacher) : "",
-            }));
+            arr = Object.entries(body).map(([id, value]) => {
+              const profile = mergeBotProfileEvidence(id, value || {});
+              return {
+                id: String(id),
+                name: profile && profile.name ? String(profile.name) : String(id),
+                botPolicy: profile && profile.botPolicy ? profile.botPolicy : null,
+                teacher: profile && profile.teacher ? String(profile.teacher) : "",
+              };
+            });
           }
           for (const p of arr) {
             const li = document.createElement("li");
@@ -3393,8 +3470,8 @@ async function init() {
     const label =
       isBotPlayerId(id)
         ? botDemoLabel()
-        : (otherPlayersInfo[id] && otherPlayersInfo[id].name)
-        ? otherPlayersInfo[id].name
+        : getDisplayNameForPlayer(id)
+        ? getDisplayNameForPlayer(id)
         : (id ? id.substring(0, 4) : "Player");
     addNameTag(group, label);
     try { disableReflectionForObject(group); } catch (_) {}
@@ -3406,6 +3483,7 @@ async function init() {
       mode: BOT_RENDER_MODE,
       hasBoatModel: !!boatModel,
       infoCount: Object.keys(otherPlayersInfo || {}).length,
+      cachedBotIds: botProfileEvidence.size,
       botIds: 0,
       existing: 0,
       created: 0,
@@ -3415,7 +3493,10 @@ async function init() {
       latestBotRosterVisualDebug = debug;
       return;
     }
-    const botIds = Object.keys(otherPlayersInfo || {}).filter((id) => id !== yourId && isBotPlayerId(id));
+    const botIds = Array.from(new Set([
+      ...Object.keys(otherPlayersInfo || {}),
+      ...botProfileEvidence.keys(),
+    ])).filter((id) => id !== yourId && isBotPlayerId(id));
     debug.botIds = botIds.length;
     botIds.forEach((id, index) => {
       if (otherPlayersMeshes[id]) {
@@ -3742,8 +3823,8 @@ function refreshNameTagForPlayer(id) {
   const label =
     isBotPlayerId(id)
       ? botDemoLabel()
-      : (otherPlayersInfo[id] && otherPlayersInfo[id].name)
-      ? otherPlayersInfo[id].name
+      : getDisplayNameForPlayer(id)
+      ? getDisplayNameForPlayer(id)
       : (id ? id.substring(0, 4) : "Player");
   updateNameTag(group, label);
 }
@@ -5445,25 +5526,23 @@ function renderGameToText() {
   const botSamples = remotePlayerEntries
     .filter(([id]) => isBotPlayerId(id))
     .slice(0, 5)
-    .map(([id, mesh]) => ({
-      id,
-      name: otherPlayersInfo?.[id]?.name || id,
-      botPolicy: otherPlayersInfo?.[id]?.botPolicy
-        ? {
-            id: otherPlayersInfo[id].botPolicy.id || null,
-            name: otherPlayersInfo[id].botPolicy.name || null,
-            source: otherPlayersInfo[id].botPolicy.source || null,
-            version: otherPlayersInfo[id].botPolicy.version || null,
-            objective: otherPlayersInfo[id].botPolicy.objective || otherPlayersInfo[id].botPolicy.notes || null,
-          }
-        : null,
-      x: Number((mesh.position?.x || 0).toFixed(3)),
-      y: Number((mesh.position?.y || 0).toFixed(3)),
-      z: Number((mesh.position?.z || 0).toFixed(3)),
-      rotY: Number((mesh.rotation?.y || 0).toFixed(3)),
-      scale: Number((mesh.scale?.x || 1).toFixed(3)),
-    }));
-  const knownBotCount = Object.keys(otherPlayersInfo || {}).filter((id) => isBotPlayerId(id)).length;
+    .map(([id, mesh]) => {
+      const policy = getBotPolicyForPlayer(id);
+      return {
+        id,
+        name: getDisplayNameForPlayer(id) || id,
+        botPolicy: policy ? compactBotPolicyEvidence(policy) : null,
+        x: Number((mesh.position?.x || 0).toFixed(3)),
+        y: Number((mesh.position?.y || 0).toFixed(3)),
+        z: Number((mesh.position?.z || 0).toFixed(3)),
+        rotY: Number((mesh.rotation?.y || 0).toFixed(3)),
+        scale: Number((mesh.scale?.x || 1).toFixed(3)),
+      };
+    });
+  const knownBotCount = Array.from(new Set([
+    ...Object.keys(otherPlayersInfo || {}),
+    ...botProfileEvidence.keys(),
+  ])).filter((id) => isBotPlayerId(id)).length;
   const payload = {
     mode: gameState,
     coordinateSystem: "World origin is center; +x right, +z forward, +y up",

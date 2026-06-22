@@ -111,8 +111,9 @@ describe("admin load evaluation view", () => {
 
   it("shows PAF-trained bot persona metadata in the admin roster", () => {
     expect(script).toMatch(/botPolicy: value && value\.botPolicy/);
+    expect(script).toMatch(/function mergeBotProfileEvidence\(id, profile = \{\}\)/);
+    expect(script).toMatch(/otherPlayersInfo\[joinedId\] = mergeBotProfileEvidence\(joinedId, body\.profile\);/);
     expect(script).toMatch(/\$\{policy\.name \|\| policy\.id\} · \$\{policy\.source \|\| p\.teacher \|\| "paf"\}/);
-    expect(script).toMatch(/otherPlayersInfo\[joinedId\] = body\.profile;/);
     expect(readFileSync("../bots/index.js", "utf8")).toMatch(/botPolicy: profile\.botPolicy/);
   });
 });

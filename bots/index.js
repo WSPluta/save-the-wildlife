@@ -277,7 +277,11 @@ function createBotInstance(index) {
       steer: input.steer,
       brake: input.brake,
     });
-    socket.emit("player.trace.change", buildTrace(id, bot.position, bot.rotationY));
+    socket.emit("player.trace.change", buildTrace(id, bot.position, bot.rotationY, {
+      isBot: true,
+      teacher: bot.policy?.source || "paf",
+      botPolicy: publicBotPolicy(bot.policy),
+    }));
 
     await maybeCollide(target);
     await maybeEmitPositionSample(now);

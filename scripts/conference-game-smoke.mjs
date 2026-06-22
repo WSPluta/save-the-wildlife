@@ -152,6 +152,8 @@ function validateCommon(state, failures, options = {}) {
   if (options.requireBots) {
     if ((state.botsVisible || 0) < 1) failures.push(`expected at least 1 visible bot, got ${state.botsVisible || 0}`);
     if (state.botRenderMode !== "demo-visible") failures.push(`expected botRenderMode=demo-visible, got ${state.botRenderMode || "missing"}`);
+    const policyCount = botPolicyEvidenceCount(state);
+    if (policyCount < 1) failures.push("expected at least 1 visible bot with PAF policy evidence");
   }
   const visiblePowerups = Number(state.powerupInstances || 0);
   const activePowerups = activePowerupEffectCount(state);
@@ -177,6 +179,13 @@ function validateCommon(state, failures, options = {}) {
     if (clearance < 0.035) failures.push(`boat waterline contact clearance too shallow: ${clearance}`);
     if (clearance > 0.115) failures.push(`boat waterline contact clearance too high: ${clearance}`);
   }
+}
+
+function botPolicyEvidenceCount(state) {
+  return (state?.botSamples || []).filter((sample) => {
+    const policy = sample?.botPolicy || {};
+    return Boolean(policy.id && policy.name && policy.source);
+  }).length;
 }
 
 function activePowerupEffectCount(state) {
@@ -349,7 +358,7 @@ function renderCheckDetails(check) {
     const activePowerups = activePowerupEffectCount(check.state);
     const activeSuffix = activePowerups ? `, active effects ${activePowerups}` : "";
     lines.push(`- Items: ${check.state.itemsVisible || 0}, trash ${check.state.trashInstances || 0}, powerups ${check.state.powerupInstances || 0}${activeSuffix}`);
-    lines.push(`- Bots: visible ${check.state.botsVisible || 0}, known ${check.state.botsKnown || 0}, mode ${check.state.botRenderMode || "unknown"}`);
+    lines.push(`- Bots: visible ${check.state.botsVisible || 0}, known ${check.state.botsKnown || 0}, policies ${botPolicyEvidenceCount(check.state)}, mode ${check.state.botRenderMode || "unknown"}`);
     const nearestTrash = nearestTrashDistance(check.state);
     if (nearestTrash !== null) lines.push(`- Nearest trash distance: ${nearestTrash}`);
     lines.push(`- Boat feel: ${JSON.stringify(check.state.boatFeel || {})}`);
