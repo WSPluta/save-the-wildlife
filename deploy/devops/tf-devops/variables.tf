@@ -100,7 +100,7 @@ variable "paf_canvas_timeout_ms" {
 
 variable "paf_commentary_deadline_ms" {
   type        = string
-  default     = "9000"
+  default     = "14000"
   description = "End-to-end commentary budget in milliseconds before optional PAF polish is skipped."
 }
 
@@ -197,7 +197,7 @@ variable "oci_model_endpoint_auth_secret_id" {
 
 variable "oci_model_endpoint_timeout_ms" {
   type        = string
-  default     = "6000"
+  default     = "12000"
   description = "Timeout in milliseconds for private model endpoint calls."
 }
 

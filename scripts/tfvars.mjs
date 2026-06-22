@@ -295,7 +295,7 @@ async function devopsTFvars() {
   const pafCanvasRunEndpointUrl = process.env.PAF_CANVAS_RUN_ENDPOINT_URL || "";
   const pafCanvasRoomId = process.env.PAF_CANVAS_ROOM_ID || "";
   const pafCanvasTimeoutMs = process.env.PAF_CANVAS_TIMEOUT_MS || "1000";
-  const pafCommentaryDeadlineMs = process.env.PAF_COMMENTARY_DEADLINE_MS || "9000";
+  const pafCommentaryDeadlineMs = process.env.PAF_COMMENTARY_DEADLINE_MS || "14000";
   const pafCanvasReturnReserveMs = process.env.PAF_CANVAS_RETURN_RESERVE_MS || "750";
   const pafCanvasMinTimeoutMs = process.env.PAF_CANVAS_MIN_TIMEOUT_MS || "100";
   const pafCanvasVerifyTls = process.env.PAF_CANVAS_VERIFY_TLS || "false";
@@ -327,7 +327,7 @@ async function devopsTFvars() {
     DEFAULT_MODEL_AI_FT_MODEL_ID
   );
   const ociModelEndpointAuthSecretId = process.env.OCI_MODEL_ENDPOINT_AUTH_SECRET_ID || modelEndpointAuthSecretId || "";
-  const ociModelEndpointTimeoutMs = process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "6000";
+  const ociModelEndpointTimeoutMs = process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "12000";
   const ociModelEndpointVerifyTls = process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true";
   const pafTracePersist = process.env.PAF_TRACE_PERSIST || "true";
   const pafEvalEnabled = process.env.PAF_EVAL_ENABLED || "true";

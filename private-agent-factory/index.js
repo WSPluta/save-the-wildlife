@@ -1197,6 +1197,8 @@ function skippedModelRoute(summary, context = {}, legacy = {}, outputFormatValue
 
 async function runModelRouteWithinBudget(args, options = {}, timeoutMs = 0, reason = "model_route_budget_exhausted") {
   const budgetMs = Math.floor(Number(timeoutMs) || 0);
+  const traceId = textValue(options.traceId || options.trace_id || options.traceID) || newTraceId(args.summary);
+  const routeOptions = { ...options, traceId };
   if (budgetMs < 250) {
     return {
       route: skippedModelRoute(
@@ -1206,14 +1208,14 @@ async function runModelRouteWithinBudget(args, options = {}, timeoutMs = 0, reas
         args.outputFormatValue,
         args.maxChars,
         reason,
-        options
+        routeOptions
       ),
       warning: `model_route:${reason}`,
     };
   }
   try {
     return {
-      route: await withTimeout(runModelRoute(args, options), budgetMs, "model_route"),
+      route: await withTimeout(runModelRoute(args, routeOptions), budgetMs, "model_route"),
       warning: null,
     };
   } catch (error) {
@@ -1226,7 +1228,7 @@ async function runModelRouteWithinBudget(args, options = {}, timeoutMs = 0, reas
         args.outputFormatValue,
         args.maxChars,
         message,
-        options
+        routeOptions
       ),
       warning: `model_route:${message}`,
     };
@@ -3077,6 +3079,37 @@ async function buildCommentary(body = {}, options = {}) {
     }
   }
 
+  let deferredModelOutcomePromise = null;
+  if (
+    ["live_line", "post_match_recap"].includes(requestedOutput)
+    && !modelFastPathReady()
+    && !skipRoomLiveLineModelRoute()
+  ) {
+    const routeConfig = modelRouterConfig();
+    const primaryEndpoint = providerEndpoint(routeConfig.primaryProvider, routeConfig);
+    if (routeConfig.routeMode !== "off" && primaryEndpoint) {
+      const earlyEnvelope = buildLegacyEnvelope(summary, matchContext || {}, {
+        source,
+        maxChars,
+      });
+      const modelBudgetMs = Math.min(
+        routeConfig.timeoutMs,
+        Math.max(0, remainingBudgetMs() - DEFAULT_MODEL_ROUTE_RETURN_RESERVE_MS)
+      );
+      deferredModelOutcomePromise = runModelRouteWithinBudget(
+        {
+          summary,
+          context: matchContext || {},
+          legacy: earlyEnvelope.legacy,
+          outputFormatValue: requestedOutput,
+          maxChars,
+        },
+        options,
+        modelBudgetMs
+      );
+    }
+  }
+
   let inDbAgent = null;
   if (summary.session_id && summary.player_id) {
     try {
@@ -3148,6 +3181,10 @@ async function buildCommentary(body = {}, options = {}) {
       "room_live_line_uses_sql_context",
       options
     );
+  } else if (deferredModelOutcomePromise) {
+    const modelOutcome = await deferredModelOutcomePromise;
+    modelRoute = modelOutcome.route;
+    finalModelWarning = modelOutcome.warning;
   } else {
     const modelBudgetMs = Math.min(
       modelRouterConfig().timeoutMs,

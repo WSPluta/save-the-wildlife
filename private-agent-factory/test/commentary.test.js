@@ -793,6 +793,85 @@ test("does not let slow model diagnostics block grounded in-db commentary", asyn
   assert.equal(modelCalls, 0);
 });
 
+test("starts deferred model route before slow in-db fallback completes", async () => {
+  let inDbFinished = false;
+  const modelCalls = [];
+  const oracleConnection = {
+    async execute() {
+      await sleep(80);
+      inDbFinished = true;
+      return {
+        outBinds: {
+          result: JSON.stringify({
+            ok: true,
+            source: "select-ai",
+            commentary: "Select AI keeps Ada grounded on 42 after one freeze.",
+          }),
+        },
+      };
+    },
+  };
+  const modelRequestJson = async (url) => {
+    modelCalls.push({ url, inDbFinishedAtCall: inDbFinished });
+    const isFineTuned = url.includes("fine-tuned");
+    return {
+      status: 200,
+      headers: {},
+      elapsed_ms: 12,
+      payload: {
+        ok: true,
+        provider: isFineTuned ? "oci-fine-tuned" : "oci-base",
+        model_id: isFineTuned ? "stwl-ft-deferred" : "stwl-base-deferred",
+        text: "Ada scored 42 with one freeze from recorded SQL evidence.",
+        runtime_mode: "upstream-llm",
+        upstream_configured: true,
+        facts_policy: "facts-in-memory-behavior-in-weights",
+      },
+    };
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_FAST_PATH_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "shadow",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
+    PAF_TRACE_PERSIST: "false",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-DEFERRED-MODEL",
+          player_id: "P-DEFERRED-MODEL",
+          player_name: "Ada",
+          score: 42,
+          freezes: 1,
+        },
+      },
+      {
+        skipOracleSummary: true,
+        oracleConnection,
+        oracledb: { BIND_OUT: 3003, STRING: 2001 },
+        traceId: "TRACE-DEFERRED-MODEL",
+        modelRequestJson,
+      }
+    );
+
+    assert.equal(response.source, "select-ai");
+    assert.equal(response.commentary, "Select AI keeps Ada grounded on 42 after one freeze.");
+    assert.equal(response.model_route.primary.runtime_mode, "upstream-llm");
+    assert.equal(response.model_route.primary.ok, true);
+    assert.equal(modelCalls.length, 2);
+    assert.equal(modelCalls[0].inDbFinishedAtCall, false);
+  });
+});
+
 test("uses model fast path before slow Canvas enrichment when endpoints are configured", async () => {
   const modelCalls = [];
   let canvasCalls = 0;
