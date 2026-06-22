@@ -3,6 +3,7 @@ import { getVersionGradle } from "./lib/gradle.mjs";
 import { getNpmVersion } from "./lib/npm.mjs";
 import { getNamespace } from "./lib/oci.mjs";
 import { exitWithError } from "./lib/utils.mjs";
+import { readFile } from "node:fs/promises";
 
 $.verbose = false;
 
@@ -36,9 +37,14 @@ async function createKustomizationYaml(regionKey, namespace) {
   const replayVersion = await getVersionGradle();
   await cd(`${pwdOutput}/bots`);
   const botsVersion = await getNpmVersion();
+  await cd(`${pwdOutput}/private-agent-factory`);
+  const privateAgentFactoryVersion = await getNpmVersion();
   await cd(pwdOutput);
-  const pafVersion = process.env.PAF_VERSION || "latest";
-  const modelAiInferenceVersion = process.env.MODEL_AI_INFERENCE_VERSION || "latest";
+  const pafVersion = process.env.PAF_VERSION || privateAgentFactoryVersion;
+  const modelAiInferenceVersion = process.env.MODEL_AI_INFERENCE_VERSION || await readVersionFile(
+    `${pwdOutput}/model-ai/inference/VERSION`,
+    "latest"
+  );
   const pafImageRepository = process.env.PAF_IMAGE_REPOSITORY && process.env.PAF_IMAGE_REPOSITORY !== "AUTO"
     ? process.env.PAF_IMAGE_REPOSITORY
     : `${regionKey}.ocir.io/${namespace}/save-the-wildlife/private-agent-factory`;
@@ -76,6 +82,15 @@ async function createKustomizationYaml(regionKey, namespace) {
     exitWithError(error.stderr);
   } finally {
     await cd(pwdOutput);
+  }
+}
+
+async function readVersionFile(filePath, fallback) {
+  try {
+    const value = (await readFile(filePath, "utf8")).trim();
+    return value || fallback;
+  } catch {
+    return fallback;
   }
 }
 
