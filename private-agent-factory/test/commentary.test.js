@@ -673,6 +673,84 @@ test("keeps primary model timeout as diagnostics when in-db agent returns commen
   });
 });
 
+test("does not let slow model diagnostics block grounded in-db commentary", async () => {
+  const oracleConnection = {
+    async execute() {
+      return {
+        outBinds: {
+          result: JSON.stringify({
+            ok: true,
+            source: "select-ai",
+            commentary: "Select AI kept the live line grounded in collected trash.",
+          }),
+        },
+      };
+    },
+  };
+  let modelCalls = 0;
+  const modelRequestJson = async () => {
+    modelCalls += 1;
+    await sleep(1000);
+    return {
+      status: 200,
+      headers: {},
+      elapsed_ms: 1000,
+      payload: {
+        ok: true,
+        provider: "oci-base",
+        model_id: "slow-model",
+        text: "This should not block the live click.",
+      },
+    };
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_FAST_PATH_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "shadow",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
+    PAF_COMMENTARY_DEADLINE_MS: "300",
+    PAF_TRACE_PERSIST: "false",
+  }, async () => {
+    const started = Date.now();
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-BUDGETED-MODEL",
+          player_id: "P-BUDGETED-MODEL",
+          player_name: "Ada",
+          score: 3,
+          trash_collected: 3,
+        },
+      },
+      {
+        skipOracleSummary: true,
+        oracleConnection,
+        oracledb: { BIND_OUT: 3003, STRING: 2001 },
+        traceId: "TRACE-BUDGETED-MODEL",
+        modelRequestJson,
+      }
+    );
+
+    assert.ok(Date.now() - started < 700);
+    assert.equal(response.source, "select-ai");
+    assert.equal(response.commentary, "Select AI kept the live line grounded in collected trash.");
+    assert.equal(response.trace_id, "TRACE-BUDGETED-MODEL");
+    assert.equal(response.model_route.primary.skipped, true);
+    assert.equal(response.model_route.primary.error, "model_route_budget_exhausted");
+    assert.match(response.diagnostics.warnings.join("; "), /model_route:model_route_budget_exhausted/);
+  });
+
+  assert.equal(modelCalls, 0);
+});
+
 test("uses model fast path before slow Canvas enrichment when endpoints are configured", async () => {
   const modelCalls = [];
   let canvasCalls = 0;

@@ -294,10 +294,10 @@ async function devopsTFvars() {
   const genaiModelId = process.env.OCI_GENAI_MODEL_ID || "cohere.command-r-08-2024";
   const pafCanvasRunEndpointUrl = process.env.PAF_CANVAS_RUN_ENDPOINT_URL || "";
   const pafCanvasRoomId = process.env.PAF_CANVAS_ROOM_ID || "";
-  const pafCanvasTimeoutMs = process.env.PAF_CANVAS_TIMEOUT_MS || "3000";
-  const pafCommentaryDeadlineMs = process.env.PAF_COMMENTARY_DEADLINE_MS || "30000";
-  const pafCanvasReturnReserveMs = process.env.PAF_CANVAS_RETURN_RESERVE_MS || "1000";
-  const pafCanvasMinTimeoutMs = process.env.PAF_CANVAS_MIN_TIMEOUT_MS || "250";
+  const pafCanvasTimeoutMs = process.env.PAF_CANVAS_TIMEOUT_MS || "1000";
+  const pafCommentaryDeadlineMs = process.env.PAF_COMMENTARY_DEADLINE_MS || "9000";
+  const pafCanvasReturnReserveMs = process.env.PAF_CANVAS_RETURN_RESERVE_MS || "750";
+  const pafCanvasMinTimeoutMs = process.env.PAF_CANVAS_MIN_TIMEOUT_MS || "100";
   const pafCanvasVerifyTls = process.env.PAF_CANVAS_VERIFY_TLS || "false";
   const pafModelRouteMode = process.env.PAF_MODEL_ROUTE_MODE || "shadow";
   const pafPrimaryModelProvider = process.env.PAF_PRIMARY_MODEL_PROVIDER || "oci-base";
@@ -327,7 +327,7 @@ async function devopsTFvars() {
     DEFAULT_MODEL_AI_FT_MODEL_ID
   );
   const ociModelEndpointAuthSecretId = process.env.OCI_MODEL_ENDPOINT_AUTH_SECRET_ID || modelEndpointAuthSecretId || "";
-  const ociModelEndpointTimeoutMs = process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "12000";
+  const ociModelEndpointTimeoutMs = process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "6000";
   const ociModelEndpointVerifyTls = process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true";
   const pafTracePersist = process.env.PAF_TRACE_PERSIST || "true";
   const pafEvalEnabled = process.env.PAF_EVAL_ENABLED || "true";

@@ -82,6 +82,7 @@ const DEFAULT_CANVAS_TIMEOUT_MS = 8000;
 const DEFAULT_COMMENTARY_DEADLINE_MS = 9000;
 const DEFAULT_CANVAS_RETURN_RESERVE_MS = 1000;
 const DEFAULT_CANVAS_MIN_TIMEOUT_MS = 250;
+const DEFAULT_MODEL_ROUTE_RETURN_RESERVE_MS = 350;
 let inDbPackageInitAttempted = false;
 let selectAiInitAttempted = false;
 let matchIntelligenceInitAttempted = false;
@@ -1048,9 +1049,9 @@ async function runModelRoute({ summary, context, legacy, outputFormatValue, maxC
   return route;
 }
 
-function skippedModelRoute(summary, context = {}, legacy = {}, outputFormatValue = "live_line", maxChars = COMMENTARY_MAX_CHARS, reason = "model_route_skipped") {
+function skippedModelRoute(summary, context = {}, legacy = {}, outputFormatValue = "live_line", maxChars = COMMENTARY_MAX_CHARS, reason = "model_route_skipped", options = {}) {
   const config = modelRouterConfig();
-  const traceId = newTraceId(summary);
+  const traceId = textValue(options.traceId || options.trace_id || options.traceID) || newTraceId(summary);
   const evidence = buildModelEvidence(summary, context || {}, legacy || {});
   const prompt = buildModelPrompt(summary, context || {}, legacy || {}, outputFormatValue, maxChars);
   const evalScores = evaluateModelOutputs(null, null, summary, config, maxChars);
@@ -1083,6 +1084,44 @@ function skippedModelRoute(summary, context = {}, legacy = {}, outputFormatValue
     },
     trace_persisted: false,
   };
+}
+
+async function runModelRouteWithinBudget(args, options = {}, timeoutMs = 0, reason = "model_route_budget_exhausted") {
+  const budgetMs = Math.floor(Number(timeoutMs) || 0);
+  if (budgetMs < 250) {
+    return {
+      route: skippedModelRoute(
+        args.summary,
+        args.context || {},
+        args.legacy || {},
+        args.outputFormatValue,
+        args.maxChars,
+        reason,
+        options
+      ),
+      warning: `model_route:${reason}`,
+    };
+  }
+  try {
+    return {
+      route: await withTimeout(runModelRoute(args, options), budgetMs, "model_route"),
+      warning: null,
+    };
+  } catch (error) {
+    const message = error?.message || reason;
+    return {
+      route: skippedModelRoute(
+        args.summary,
+        args.context || {},
+        args.legacy || {},
+        args.outputFormatValue,
+        args.maxChars,
+        message,
+        options
+      ),
+      warning: `model_route:${message}`,
+    };
+  }
 }
 
 function requestJson(url, { method = "GET", headers = {}, body = null, timeoutMs = DEFAULT_CANVAS_TIMEOUT_MS, verifyTls = false } = {}) {
@@ -2793,7 +2832,11 @@ async function buildCommentary(body = {}, options = {}) {
       source,
       maxChars,
     });
-    const modelRoute = await runModelRoute(
+    const modelBudgetMs = Math.min(
+      modelRouterConfig().timeoutMs,
+      Math.max(0, remainingBudgetMs() - DEFAULT_MODEL_ROUTE_RETURN_RESERVE_MS)
+    );
+    const modelOutcome = await runModelRouteWithinBudget(
       {
         summary,
         context: matchContext || {},
@@ -2801,8 +2844,14 @@ async function buildCommentary(body = {}, options = {}) {
         outputFormatValue: requestedOutput,
         maxChars,
       },
-      options
+      options,
+      modelBudgetMs,
+      "model_fast_path_budget_exhausted"
     );
+    const modelRoute = modelOutcome.route;
+    if (modelOutcome.warning) {
+      diagnosticWarnings = combineWarnings(diagnosticWarnings, modelOutcome.warning);
+    }
     const modelWarnings = modelRouteWarnings(modelRoute, { includeCandidate: false });
     const shadowWarnings = candidateModelRouteWarnings(modelRoute);
     const primaryGate = modelOutputGate(modelRoute.primary, summary, maxChars);
@@ -2931,25 +2980,37 @@ async function buildCommentary(body = {}, options = {}) {
     canvas,
     maxChars,
   });
-  const modelRoute = skipRoomLiveLineModelRoute()
-    ? skippedModelRoute(
+  let modelRoute;
+  let finalModelWarning = null;
+  if (skipRoomLiveLineModelRoute()) {
+    modelRoute = skippedModelRoute(
+      summary,
+      matchContext || {},
+      legacy,
+      requestedOutput,
+      maxChars,
+      "room_live_line_uses_sql_context",
+      options
+    );
+  } else {
+    const modelBudgetMs = Math.min(
+      modelRouterConfig().timeoutMs,
+      Math.max(0, remainingBudgetMs() - DEFAULT_MODEL_ROUTE_RETURN_RESERVE_MS)
+    );
+    const modelOutcome = await runModelRouteWithinBudget(
+      {
         summary,
-        matchContext || {},
+        context: matchContext || {},
         legacy,
-        requestedOutput,
+        outputFormatValue: requestedOutput,
         maxChars,
-        "room_live_line_uses_sql_context"
-      )
-    : await runModelRoute(
-        {
-          summary,
-          context: matchContext || {},
-          legacy,
-          outputFormatValue: requestedOutput,
-          maxChars,
-        },
-        options
-      );
+      },
+      options,
+      modelBudgetMs
+    );
+    modelRoute = modelOutcome.route;
+    finalModelWarning = modelOutcome.warning;
+  }
   const primaryGate = modelOutputGate(modelRoute.primary, summary, maxChars);
   const primaryDiagnostics = modelRoute.primary?.ok && !primaryGate.ok
     ? [`${modelRoute.primary.provider}:model_output_rejected_${primaryGate.reason}`]
@@ -2975,6 +3036,7 @@ async function buildCommentary(body = {}, options = {}) {
   }
   diagnosticWarnings = combineWarnings(
     diagnosticWarnings,
+    finalModelWarning,
     primaryDiagnostics,
     primaryModelWarnings,
     shadowModelWarnings,
