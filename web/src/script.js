@@ -18,7 +18,6 @@ import {
   resetBoatFeel,
   updateBoatFeel,
 } from "./boatFeel";
-import { createWakeRippleEffect } from "./wakeRipples";
 import "./style.css";
 import * as lobby from "./lobby";
 import { normalizeRoomId } from "./util";
@@ -150,10 +149,7 @@ let environmentPropGroup = null;
 let environmentPropStats = { total: 0, buoys: 0, rocks: 0, markers: 0 };
 let localBoatFeelState = null;
 let latestBoatFeelDebug = { y: 0, surfaceY: 0, waterlineClearance: 0, pitch: 0, roll: 0, wake: 0 };
-let wakeRippleEffect = null;
-let latestWakeRippleDebug = { visible: 0, capacity: 0 };
-let localWaterlineContact = null;
-let latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0, seatDepth: 0, waterlineClearance: 0 };
+let latestPickupDebug = { pending: 0, lastResult: null };
 const waterReflectionSuppressedObjects = new Set();
 let latestCameraCompositionDebug = { mobile: false, distanceToPlayer: 0, relativeY: 0, lookHeight: 0 };
 let shouldSnapFollowCamera = true;
@@ -175,16 +171,16 @@ let triggerReplayMomentCallback = () => {};
 const pendingItemCollisions = new Map();
 const scoredItemCollisions = new Set();
 const COLLISION_PENDING_TIMEOUT_MS = 1500;
-const TRASH_VISUAL_SCALE_MIN = 0.5;
-const TRASH_VISUAL_SCALE_MAX = 0.95;
+const TRASH_VISUAL_SCALE_MIN = 0.72;
+const TRASH_VISUAL_SCALE_MAX = 1.16;
 const TRASH_FLOAT_Y = 0.052;
 const TRASH_GEOMETRY_WIDTH = 0.42;
 const TRASH_GEOMETRY_HEIGHT = 0.085;
 const TRASH_GEOMETRY_DEPTH = 0.28;
-const POWERUP_VISUAL_SCALE_MIN = 0.38;
-const POWERUP_VISUAL_SCALE_MAX = 0.82;
-const TRASH_ARCADE_PICKUP_RADIUS = 3.4;
-const POWERUP_ARCADE_PICKUP_RADIUS = 3.4;
+const POWERUP_VISUAL_SCALE_MIN = 0.52;
+const POWERUP_VISUAL_SCALE_MAX = 1.02;
+const TRASH_ARCADE_PICKUP_RADIUS = 3.6;
+const POWERUP_ARCADE_PICKUP_RADIUS = 3.6;
 const BOT_RENDER_MODE = "demo-visible";
 const BOT_VISUAL_SCALE = 0.28;
 const BOT_VISUAL_COLOR = 0x15c7b8;
@@ -453,81 +449,6 @@ function disableGameplayInteraction(object3d) {
     child.userData.environmentProp = true;
     child.userData.noCollision = true;
   });
-}
-
-function createBoatWaterlineContact() {
-  const geometry = new THREE.RingGeometry(0.39, 0.53, 48, 1);
-  geometry.rotateX(-Math.PI / 2);
-  const material = new THREE.MeshBasicMaterial({
-    color: 0xdafcff,
-    transparent: true,
-    opacity: 0.14,
-    depthWrite: false,
-    depthTest: true,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = "localBoatWaterlineContact";
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 24;
-  mesh.userData.noCollision = true;
-  mesh.userData.visualOnly = true;
-  mesh.scale.set(0.38, 1, 1.02);
-  mesh.position.y = BOAT_FEEL_DEFAULTS.waterSurfaceY + BOAT_FEEL_DEFAULTS.surfaceRippleY;
-
-  const shadowGeometry = new THREE.CircleGeometry(0.38, 44);
-  shadowGeometry.rotateX(-Math.PI / 2);
-  const shadowMaterial = new THREE.MeshBasicMaterial({
-    color: 0x084f7a,
-    transparent: true,
-    opacity: 0.095,
-    depthWrite: false,
-    depthTest: true,
-    side: THREE.DoubleSide,
-    polygonOffset: true,
-    polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1,
-  });
-  const shadow = new THREE.Mesh(shadowGeometry, shadowMaterial);
-  shadow.name = "localBoatWaterlineContactShadow";
-  shadow.position.y = -0.001;
-  shadow.renderOrder = 23;
-  shadow.frustumCulled = false;
-  shadow.userData.noCollision = true;
-  shadow.userData.visualOnly = true;
-  mesh.add(shadow);
-  mesh.userData.contactShadow = shadow;
-  return mesh;
-}
-
-function updateBoatWaterlineContact(root, speed, wake, maxSpeed = 3, visualY = 0, surfaceY = 0) {
-  if (!localWaterlineContact || !root) return;
-  const speedRatio = Math.max(0, Math.min(1, Math.abs(Number(speed) || 0) / Math.max(1, Number(maxSpeed) || 3)));
-  const wakeStrength = Math.max(0, Math.min(1, Number(wake) || 0));
-  const waterY = Number.isFinite(Number(surfaceY)) ? Number(surfaceY) : BOAT_FEEL_DEFAULTS.waterSurfaceY;
-  const contactY = waterY + BOAT_FEEL_DEFAULTS.surfaceRippleY;
-  localWaterlineContact.visible = gameState === "RUNNING" || gameState === "STARTING";
-  localWaterlineContact.position.y = contactY;
-  localWaterlineContact.material.opacity = 0.14 + wakeStrength * 0.06 + speedRatio * 0.025;
-  localWaterlineContact.scale.set(0.38 + wakeStrength * 0.04, 1, 1.04 + speedRatio * 0.075);
-  const shadow = localWaterlineContact.userData && localWaterlineContact.userData.contactShadow;
-  if (shadow && shadow.material) {
-    shadow.material.opacity = 0.095 + wakeStrength * 0.04 + speedRatio * 0.018;
-  }
-  const seatDepth = contactY - (Number.isFinite(Number(visualY)) ? Number(visualY) : 0);
-  const waterlineClearance = (Number.isFinite(Number(visualY)) ? Number(visualY) : 0) - contactY;
-  latestWaterlineContactDebug = {
-    visible: !!localWaterlineContact.visible,
-    y: Number(localWaterlineContact.position.y.toFixed(3)),
-    surfaceY: Number(waterY.toFixed(3)),
-    opacity: Number(localWaterlineContact.material.opacity.toFixed(3)),
-    seatDepth: Number(seatDepth.toFixed(3)),
-    waterlineClearance: Number(waterlineClearance.toFixed(3)),
-  };
 }
 
 function createBuoyProp({ x, z, scale = 1, accent = 0xff5d4d }) {
@@ -1192,6 +1113,8 @@ function formatCount(value) {
 let aiLearningHealthPromise = null;
 let observabilityMetricsPromise = null;
 let lastObservabilityMetricsFetchAt = 0;
+let latestGlobalObservabilityMetrics = null;
+let latestRoomObservabilityMetrics = null;
 
 function formatHealthCountMap(counts = {}) {
   const entries = Object.entries(counts || {});
@@ -1273,22 +1196,98 @@ function refreshAiLearningHealth() {
 
 function updateObservabilityMetrics(m = {}) {
   if (!IS_OBSERVABILITY_VIEW) return;
-  const global = m.scope === "room" && m.global && typeof m.global === "object" ? m.global : m;
-  const players = global.players || m.players || {};
-  const sockets = global.sockets || m.sockets || {};
-  const rooms = global.rooms || m.rooms || {};
-  const items = global.items || m.items || {};
-  const totalItems =
-    (Number(items.trash) || 0) +
-    (Number(items.marine) || 0) +
-    (Number(items.powerups) || 0);
+  const configuredRoom = normalizeRoomId(getConfiguredAdminRoom()) || DEFAULT_ADMIN_ROOM_ID;
+  if (
+    latestRoomObservabilityMetrics &&
+    normalizeRoomId(latestRoomObservabilityMetrics.room) !== configuredRoom
+  ) {
+    latestRoomObservabilityMetrics = null;
+  }
+  const selectedRoom = selectedObservabilityRoom(configuredRoom);
+  const isRoomMetrics = m.scope === "room";
+  if (isRoomMetrics) {
+    const metricRoom = normalizeRoomId(m.room);
+    if (!metricRoom || metricRoom !== configuredRoom) return;
+    latestRoomObservabilityMetrics = m;
+    if (m.global && typeof m.global === "object") {
+      latestGlobalObservabilityMetrics = m.global;
+    }
+  } else if (m.scope === "global" || m.scope === "prometheus") {
+    latestGlobalObservabilityMetrics = m;
+  }
+  const roomPayload = latestRoomObservabilityMetrics || {};
+  const globalPayload = latestGlobalObservabilityMetrics || {};
+  const players = selectedRoom?.players || (
+    hasObservabilityPlayerValues(roomPayload.players)
+      ? roomPayload.players
+      : {}
+  );
+  const sockets = globalPayload.sockets || roomPayload.sockets || {};
+  const rooms = deriveStableObservabilityRooms(globalPayload.rooms || {});
+  const items = roomPayload.items || null;
+  const totalItems = items
+    ? (Number(items.trash) || 0) +
+      (Number(items.marine) || 0) +
+      (Number(items.powerups) || 0)
+    : null;
   setTextById("obs-connections", formatCount(sockets.connections ?? players.total));
   setTextById("obs-humans", formatCount(players.humans));
   setTextById("obs-bots", formatCount(players.bots));
   setTextById("obs-rooms", formatCount(rooms.active));
   setTextById("obs-running", formatCount(rooms.running));
-  setTextById("obs-items", formatCount(totalItems));
+  if (totalItems != null) {
+    setTextById("obs-items", formatCount(totalItems));
+  }
   updateObservabilityNetwork();
+}
+
+function hasObservabilityPlayerValues(players = {}) {
+  return Number.isFinite(Number(players.humans)) ||
+    Number.isFinite(Number(players.bots)) ||
+    Number.isFinite(Number(players.total));
+}
+
+function selectedObservabilityRoom(configuredRoom = "") {
+  const normalized = normalizeRoomId(configuredRoom) || DEFAULT_ADMIN_ROOM_ID;
+  const rooms = Array.isArray(roomsDirectory?.rooms) ? roomsDirectory.rooms : [];
+  const room = rooms.find((entry) => normalizeRoomId(entry?.id) === normalized);
+  if (!room) return null;
+  return {
+    id: normalized,
+    state: String(room.state || "WAITING").toUpperCase(),
+    players: {
+      humans: Number(room.humans || 0),
+      bots: Number(room.bots || 0),
+      total: Number(room.humans || 0) + Number(room.bots || 0),
+    },
+  };
+}
+
+function stableObservabilityRooms() {
+  const configuredRoom = normalizeRoomId(getConfiguredAdminRoom()) || DEFAULT_ADMIN_ROOM_ID;
+  const rooms = Array.isArray(roomsDirectory?.rooms) ? roomsDirectory.rooms.slice() : [];
+  return rooms.filter((room) => {
+    const id = normalizeRoomId(room?.id);
+    if (!id) return false;
+    if (id === configuredRoom) return true;
+    if (room.default === true) return true;
+    if (Number(room.humans || 0) > 0) return true;
+    return ["RUNNING", "STARTING"].includes(String(room.state || "").toUpperCase());
+  });
+}
+
+function deriveStableObservabilityRooms(globalRooms = {}) {
+  const stableRooms = stableObservabilityRooms();
+  if (stableRooms.length) {
+    return {
+      active: stableRooms.length,
+      running: stableRooms.filter((room) => String(room.state || "").toUpperCase() === "RUNNING").length,
+    };
+  }
+  return {
+    active: Number.isFinite(globalRooms.active) ? globalRooms.active : 1,
+    running: Number.isFinite(globalRooms.running) ? globalRooms.running : 0,
+  };
 }
 
 function updateObservabilityNetwork() {
@@ -1354,7 +1353,8 @@ function renderObservabilityRooms() {
   const body = document.getElementById("admin-observability-rooms");
   if (!body) return;
   body.innerHTML = "";
-  const rooms = Array.isArray(roomsDirectory?.rooms) ? roomsDirectory.rooms.slice() : [];
+  const rooms = stableObservabilityRooms();
+  updateObservabilityRoomCardsFromDirectory(rooms);
   if (!rooms.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
@@ -1377,6 +1377,21 @@ function renderObservabilityRooms() {
       });
       body.appendChild(row);
     });
+}
+
+function updateObservabilityRoomCardsFromDirectory(rooms = stableObservabilityRooms()) {
+  if (!IS_OBSERVABILITY_VIEW) return;
+  const configuredRoom = normalizeRoomId(getConfiguredAdminRoom()) || DEFAULT_ADMIN_ROOM_ID;
+  const selected = rooms.find((room) => normalizeRoomId(room?.id) === configuredRoom);
+  if (selected) {
+    setTextById("obs-humans", formatCount(selected.humans));
+    setTextById("obs-bots", formatCount(selected.bots));
+  }
+  setTextById("obs-rooms", formatCount(rooms.length || 1));
+  setTextById(
+    "obs-running",
+    formatCount(rooms.filter((room) => String(room.state || "").toUpperCase() === "RUNNING").length)
+  );
 }
 
 async function copyAdminPlayerLink() {
@@ -1826,17 +1841,8 @@ function prepareExistingSceneForMatch(nextStartPosition = null) {
     renderTimeValue(remainingTime);
   }
   latestBoatFeelDebug = { y: 0, surfaceY: 0, waterlineClearance: 0, pitch: 0, roll: 0, wake: 0 };
-  latestWakeRippleDebug = wakeRippleEffect && typeof wakeRippleEffect.stats === "function"
-    ? wakeRippleEffect.stats()
-    : { visible: 0, capacity: 0 };
-  latestWaterlineContactDebug = { visible: false, y: 0, opacity: 0, seatDepth: 0, waterlineClearance: 0 };
+  latestPickupDebug = { pending: 0, lastResult: null };
   try { if (localBoatFeelState) resetBoatFeel(localBoatFeelState); } catch (_) {}
-  if (localWaterlineContact) {
-    localWaterlineContact.visible = false;
-    localWaterlineContact.material.opacity = 0.11;
-    const shadow = localWaterlineContact.userData && localWaterlineContact.userData.contactShadow;
-    if (shadow && shadow.material) shadow.material.opacity = 0.075;
-  }
   if (player) {
     const p = nextStartPosition || startPosition || { x: 0, y: 0, z: 0 };
     player.position.set(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
@@ -2973,12 +2979,27 @@ async function init() {
       case "items.collision.result":
         {
           const payload = normalizeItemDestroyPayload(body);
+          latestPickupDebug = {
+            pending: pendingItemCollisions.size,
+            lastResult: body && typeof body === "object"
+              ? {
+                  ok: body.ok === true,
+                  itemId: body.itemId || body.id || null,
+                  itemType: body.itemType || body.powerupType || payload.itemType || null,
+                  error: body.error || null,
+                  distance: Number.isFinite(Number(body.distance)) ? Number(body.distance) : null,
+                  allowedRadius: Number.isFinite(Number(body.allowedRadius)) ? Number(body.allowedRadius) : null,
+                  scoreDelta: Number.isFinite(Number(body.scoreDelta)) ? Number(body.scoreDelta) : null,
+                }
+              : null,
+          };
           if (payload.ok) {
             applyConfirmedCollisionOutcome(payload);
             removeItemFromScene(payload.itemId || payload.id);
           } else if (payload.itemId || payload.id) {
             pendingItemCollisions.delete(payload.itemId || payload.id);
           }
+          latestPickupDebug.pending = pendingItemCollisions.size;
         }
         break;
       case "player.trace.all":
@@ -3276,9 +3297,6 @@ async function init() {
         const adminCount = renderRoster(document.getElementById("admin-player-list"));
         const countEl = document.getElementById("admin-player-count");
         if (countEl) countEl.textContent = String(Number.isFinite(adminCount) ? adminCount : lobbyCount);
-        if (IS_OBSERVABILITY_VIEW && !Number.isFinite(adminCount)) {
-          setTextById("obs-humans", formatCount(lobbyCount));
-        }
         break;
       }
       case "startingGame": {
@@ -4315,8 +4333,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   installBoatFeelPivot(player, [boat]);
   // Keep the close-follow camera from reading the water reflection as a submerged duplicate hull.
   try { disableReflectionForObject(boat); } catch (_) {}
-  localWaterlineContact = createBoatWaterlineContact();
-  player.add(localWaterlineContact);
   if (startPosition && typeof startPosition.x === "number" && typeof startPosition.z === "number") {
     player.position.set(startPosition.x, (startPosition.y || 0), startPosition.z);
   }
@@ -4494,12 +4510,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   environmentPropGroup = envProps.group;
   environmentPropStats = envProps.stats;
   scene.add(environmentPropGroup);
-  if (wakeRippleEffect && typeof wakeRippleEffect.dispose === "function") {
-    wakeRippleEffect.dispose();
-  }
-  wakeRippleEffect = createWakeRippleEffect(scene, { mobile: window.innerWidth < 800 });
-  latestWakeRippleDebug = wakeRippleEffect.stats();
-
   let lastTrace = null;
   sendYourPosition = throttle(traceRateInMillis, () => {
     if (gameOverFlag) return;
@@ -5251,16 +5261,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       steer,
       throttle,
       isMobile: window.innerWidth < 800,
-      wakeRipples: wakeRippleEffect,
     }) || getBoatFeelDebug(localBoatFeelState);
-    updateBoatWaterlineContact(
-      player,
-      effectiveSignedSpeed,
-      latestBoatFeelDebug.wake,
-      MAX_SPEED,
-      latestBoatFeelDebug.y,
-      latestBoatFeelDebug.surfaceY
-    );
     // Leave a trail point for the local player
     addTrailPoint(yourId, player.position);
     // Emit engine particles based on speed
@@ -5353,10 +5354,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     }
     if (emitters) emitters.update(dt);
     updatePlayerPosition();
-    if (wakeRippleEffect) {
-      wakeRippleEffect.update(dt);
-      latestWakeRippleDebug = wakeRippleEffect.stats();
-    }
     if (gameState === "RUNNING" && player && now - lastPositionEventAt > 2000) {
       lastPositionEventAt = now;
       emitGameplayEvent("position_sample", {
@@ -5640,8 +5637,8 @@ function renderGameToText() {
     turtleSamples,
     camera: latestCameraCompositionDebug,
     boatFeel: getBoatFeelDebug(localBoatFeelState) || latestBoatFeelDebug,
-    wakeRipples: latestWakeRippleDebug,
-    waterlineContact: latestWaterlineContactDebug,
+    waterEffects: { wakeRipples: false, contactRing: false },
+    pickups: latestPickupDebug,
     powerUps: {
       speed: Number(powerUpState.speedMultiplier || 1),
       shield: !!powerUpState.shield,

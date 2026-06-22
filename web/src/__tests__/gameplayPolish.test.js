@@ -78,17 +78,17 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/botRosterVisual: latestBotRosterVisualDebug,/);
   });
 
-  it("clamps trash and power-up visual scale so bad telemetry cannot become walls", () => {
-    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 0\.5;/);
-    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 0\.95;/);
+  it("keeps trash and power-ups readable without turning pickups into wall geometry", () => {
+    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 0\.72;/);
+    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 1\.16;/);
     expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.052;/);
     expect(script).toMatch(/const TRASH_GEOMETRY_WIDTH = 0\.42;/);
     expect(script).toMatch(/const TRASH_GEOMETRY_HEIGHT = 0\.085;/);
     expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.28;/);
-    expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.38;/);
-    expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 0\.82;/);
-    expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 3\.4;/);
-    expect(script).toMatch(/const POWERUP_ARCADE_PICKUP_RADIUS = 3\.4;/);
+    expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.52;/);
+    expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 1\.02;/);
+    expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 3\.6;/);
+    expect(script).toMatch(/const POWERUP_ARCADE_PICKUP_RADIUS = 3\.6;/);
     expect(script).toMatch(/function clampVisualScale\(size, min, max\)/);
     expect(script).toMatch(/function isWithinArcadePickupRadius\(position, radius\)/);
     expect(script).toMatch(/new THREE\.BoxGeometry\(TRASH_GEOMETRY_WIDTH, TRASH_GEOMETRY_HEIGHT, TRASH_GEOMETRY_DEPTH\)/);
@@ -104,6 +104,8 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const pendingItemCollisions = new Map\(\);/);
     expect(script).toMatch(/function markItemCollisionPending\(itemId, itemType\)/);
     expect(script).toMatch(/case "items\.collision\.result":/);
+    expect(script).toMatch(/latestPickupDebug = \{/);
+    expect(script).toMatch(/allowedRadius: Number\.isFinite\(Number\(body\.allowedRadius\)\)/);
     expect(script).toMatch(/applyConfirmedCollisionOutcome\(payload\);/);
     expect(script).toMatch(/removeItemFromScene\(payload\.itemId \|\| payload\.id\);/);
     expect(worker).toMatch(/socket\.timeout\(1200\)\.emit\("items\.collision"/);
@@ -166,27 +168,19 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/function suppressObjectsDuringWaterReflection\(waterMesh\)/);
     expect(script).toMatch(/suppressObjectsDuringWaterReflection\(water\);/);
     expect(script).toMatch(/target\.userData\.noWaterReflectionApplied = true;/);
-    expect(script).toMatch(/localWaterlineContact = createBoatWaterlineContact\(\);/);
-    expect(script).toMatch(/new THREE\.RingGeometry\(0\.39, 0\.53, 48, 1\);/);
-    expect(script).toMatch(/opacity: 0\.14,/);
-    expect(script).toMatch(/opacity: 0\.095,/);
-    expect(script).toMatch(/depthTest: true,/);
-    expect(script).toMatch(/localWaterlineContact\.material\.opacity = 0\.14 \+ wakeStrength \* 0\.06 \+ speedRatio \* 0\.025;/);
-    expect(script).toMatch(/shadow\.material\.opacity = 0\.095 \+ wakeStrength \* 0\.04 \+ speedRatio \* 0\.018;/);
-    expect(script).toMatch(/localWaterlineContact\.scale\.set\(0\.38 \+ wakeStrength \* 0\.04, 1, 1\.04 \+ speedRatio \* 0\.075\);/);
-    expect(script).toMatch(/player\.add\(localWaterlineContact\);/);
+    expect(script).not.toMatch(/createBoatWaterlineContact/);
+    expect(script).not.toMatch(/localWaterlineContact/);
+    expect(script).not.toMatch(/new THREE\.RingGeometry\(0\.39, 0\.53, 48, 1\);/);
     expect(script).toMatch(/const playerBox = getPlayerCollisionBox\(\);/);
     expect(script).toMatch(/isWithinArcadePickupRadius\(item\.position, TRASH_ARCADE_PICKUP_RADIUS\)/);
     expect(script).toMatch(/isWithinArcadePickupRadius\(item\.position, POWERUP_ARCADE_PICKUP_RADIUS\)/);
     expect(script).toMatch(/latestBoatFeelDebug = updateBoatFeel\(player, localBoatFeelState,/);
-    expect(script).toMatch(/wakeRipples: wakeRippleEffect,/);
-    expect(script).toMatch(/updateBoatWaterlineContact\(\s*player,\s*effectiveSignedSpeed,\s*latestBoatFeelDebug\.wake,\s*MAX_SPEED,\s*latestBoatFeelDebug\.y,\s*latestBoatFeelDebug\.surfaceY\s*\);/);
     expect(script).toMatch(/updateBoatFeel\(m, m\.userData && m\.userData\.boatFeel,/);
     expect(script).toMatch(/boatFeel: getBoatFeelDebug\(localBoatFeelState\) \|\| latestBoatFeelDebug,/);
-    expect(script).toMatch(/import \{ createWakeRippleEffect \} from "\.\/wakeRipples";/);
-    expect(script).toMatch(/wakeRippleEffect = createWakeRippleEffect\(scene, \{ mobile: window\.innerWidth < 800 \}\);/);
-    expect(script).toMatch(/wakeRipples: latestWakeRippleDebug,/);
-    expect(script).toMatch(/waterlineContact: latestWaterlineContactDebug,/);
+    expect(script).not.toMatch(/createWakeRippleEffect/);
+    expect(script).not.toMatch(/wakeRippleEffect/);
+    expect(script).toMatch(/waterEffects: \{ wakeRipples: false, contactRing: false \},/);
+    expect(script).toMatch(/pickups: latestPickupDebug,/);
     expect(script).toMatch(/if \(key === yourId\) \{/);
     expect(script).toMatch(/try \{ disableReflectionForSprite\(sprite\); \} catch \(_\) \{\}/);
   });

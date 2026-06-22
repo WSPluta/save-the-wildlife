@@ -171,13 +171,13 @@ function validateCommon(state, failures, options = {}) {
       if (clearance > 0.115) failures.push(`boat waterline clearance too high: ${clearance}`);
     }
   }
-  if (state.waterlineContact && state.waterlineContact.visible !== true) {
-    failures.push("expected visible waterline contact");
-  }
-  if (state.waterlineContact && Number.isFinite(Number(state.waterlineContact.waterlineClearance))) {
-    const clearance = Number(state.waterlineContact.waterlineClearance);
-    if (clearance < 0.035) failures.push(`boat waterline contact clearance too shallow: ${clearance}`);
-    if (clearance > 0.115) failures.push(`boat waterline contact clearance too high: ${clearance}`);
+  if (state.waterEffects) {
+    if (state.waterEffects.contactRing !== false) {
+      failures.push("expected fake boat contact ring to be disabled");
+    }
+    if (state.waterEffects.wakeRipples !== false) {
+      failures.push("expected fake wake ripple overlay to be disabled");
+    }
   }
 }
 
@@ -291,8 +291,8 @@ async function runDesktop({ chromium, baseUrl, outputDir, timeoutMs, roomOverrid
     if ((result.state.environmentPropsVisible || 0) < 10) {
       failures.push(`expected desktop environment props, got ${result.state.environmentPropsVisible || 0}`);
     }
-    if (!result.state.wakeRipples || (result.state.wakeRipples.visible || 0) < 2) {
-      failures.push(`expected visible wake ripples, got ${JSON.stringify(result.state.wakeRipples || {})}`);
+    if (result.state.waterEffects && result.state.waterEffects.wakeRipples !== false) {
+      failures.push(`expected no fake wake ripple overlay, got ${JSON.stringify(result.state.waterEffects || {})}`);
     }
     if (result.state.boatFeel) {
       if (Math.abs(result.state.boatFeel.pitch || 0) > 0.09) failures.push(`pitch clamp exceeded: ${result.state.boatFeel.pitch}`);
@@ -362,8 +362,8 @@ function renderCheckDetails(check) {
     const nearestTrash = nearestTrashDistance(check.state);
     if (nearestTrash !== null) lines.push(`- Nearest trash distance: ${nearestTrash}`);
     lines.push(`- Boat feel: ${JSON.stringify(check.state.boatFeel || {})}`);
-    lines.push(`- Waterline contact: ${JSON.stringify(check.state.waterlineContact || {})}`);
-    lines.push(`- Wake ripples: ${JSON.stringify(check.state.wakeRipples || {})}`);
+    lines.push(`- Water effects: ${JSON.stringify(check.state.waterEffects || {})}`);
+    lines.push(`- Pickups: ${JSON.stringify(check.state.pickups || {})}`);
     lines.push(`- Turtles visible: ${check.state.turtlesVisible || 0}`);
   }
   if (check.joystick) lines.push(`- Joystick: ${Math.round(check.joystick.width)}x${Math.round(check.joystick.height)} at ${Math.round(check.joystick.left)},${Math.round(check.joystick.top)}`);
