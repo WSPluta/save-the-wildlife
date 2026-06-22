@@ -79,16 +79,17 @@ describe("gameplay polish regressions", () => {
   });
 
   it("keeps trash and power-ups readable without turning pickups into wall geometry", () => {
-    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 0\.72;/);
-    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 1\.16;/);
-    expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.052;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_WIDTH = 0\.42;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_HEIGHT = 0\.085;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.28;/);
-    expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.52;/);
-    expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 1\.02;/);
-    expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 3\.6;/);
-    expect(script).toMatch(/const POWERUP_ARCADE_PICKUP_RADIUS = 3\.6;/);
+    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 0\.96;/);
+    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 1\.48;/);
+    expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.065;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_WIDTH = 0\.95;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_HEIGHT = 0\.13;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.62;/);
+    expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.68;/);
+    expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 1\.22;/);
+    expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 5\.2;/);
+    expect(script).toMatch(/const POWERUP_ARCADE_PICKUP_RADIUS = 5\.2;/);
+    expect(script).toMatch(/const ENGINE_WAKE_PARTICLES_ENABLED = false;/);
     expect(script).toMatch(/function clampVisualScale\(size, min, max\)/);
     expect(script).toMatch(/function isWithinArcadePickupRadius\(position, radius\)/);
     expect(script).toMatch(/new THREE\.BoxGeometry\(TRASH_GEOMETRY_WIDTH, TRASH_GEOMETRY_HEIGHT, TRASH_GEOMETRY_DEPTH\)/);
@@ -98,6 +99,9 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/clampVisualScale\(size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX\)/);
     expect(script).toMatch(/clampVisualScale\(item\.size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX\)/);
     expect(script).toMatch(/clampVisualScale\(item\.size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX\)/);
+    expect(script).toMatch(/visualScale: Number\(clampVisualScale\(item\.size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX\)/);
+    expect(script).toMatch(/pickupRadii: \{/);
+    expect(script).toMatch(/engineParticles: ENGINE_WAKE_PARTICLES_ENABLED/);
   });
 
   it("keeps item collisions pending until the server accepts or destroys the item", () => {
@@ -179,7 +183,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/boatFeel: getBoatFeelDebug\(localBoatFeelState\) \|\| latestBoatFeelDebug,/);
     expect(script).not.toMatch(/createWakeRippleEffect/);
     expect(script).not.toMatch(/wakeRippleEffect/);
-    expect(script).toMatch(/waterEffects: \{ wakeRipples: false, contactRing: false \},/);
+    expect(script).toMatch(/waterEffects: \{ wakeRipples: false, contactRing: false, engineParticles: ENGINE_WAKE_PARTICLES_ENABLED \},/);
     expect(script).toMatch(/pickups: latestPickupDebug,/);
     expect(script).toMatch(/if \(key === yourId\) \{/);
     expect(script).toMatch(/try \{ disableReflectionForSprite\(sprite\); \} catch \(_\) \{\}/);

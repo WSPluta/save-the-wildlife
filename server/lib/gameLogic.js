@@ -111,7 +111,7 @@ export function recomputeWorldSize(humans, worldScaleCfg) {
   return { x, z };
 }
 
-export const DEFAULT_COLLISION_VALIDATE_RADIUS = 3.6;
+export const DEFAULT_COLLISION_VALIDATE_RADIUS = 5.2;
 
 export function resolveCollisionValidateRadius(value) {
   if (value === undefined || value === null || value === "") {

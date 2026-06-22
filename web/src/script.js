@@ -171,16 +171,17 @@ let triggerReplayMomentCallback = () => {};
 const pendingItemCollisions = new Map();
 const scoredItemCollisions = new Set();
 const COLLISION_PENDING_TIMEOUT_MS = 1500;
-const TRASH_VISUAL_SCALE_MIN = 0.72;
-const TRASH_VISUAL_SCALE_MAX = 1.16;
-const TRASH_FLOAT_Y = 0.052;
-const TRASH_GEOMETRY_WIDTH = 0.42;
-const TRASH_GEOMETRY_HEIGHT = 0.085;
-const TRASH_GEOMETRY_DEPTH = 0.28;
-const POWERUP_VISUAL_SCALE_MIN = 0.52;
-const POWERUP_VISUAL_SCALE_MAX = 1.02;
-const TRASH_ARCADE_PICKUP_RADIUS = 3.6;
-const POWERUP_ARCADE_PICKUP_RADIUS = 3.6;
+const TRASH_VISUAL_SCALE_MIN = 0.96;
+const TRASH_VISUAL_SCALE_MAX = 1.48;
+const TRASH_FLOAT_Y = 0.065;
+const TRASH_GEOMETRY_WIDTH = 0.95;
+const TRASH_GEOMETRY_HEIGHT = 0.13;
+const TRASH_GEOMETRY_DEPTH = 0.62;
+const POWERUP_VISUAL_SCALE_MIN = 0.68;
+const POWERUP_VISUAL_SCALE_MAX = 1.22;
+const TRASH_ARCADE_PICKUP_RADIUS = 5.2;
+const POWERUP_ARCADE_PICKUP_RADIUS = 5.2;
+const ENGINE_WAKE_PARTICLES_ENABLED = false;
 const BOT_RENDER_MODE = "demo-visible";
 const BOT_VISUAL_SCALE = 0.28;
 const BOT_VISUAL_COLOR = 0x15c7b8;
@@ -195,6 +196,9 @@ const playerCollisionBox = new THREE.Box3();
 const playerCollisionWorldBox = new THREE.Box3();
 const playerCollisionMatrix = new THREE.Matrix4();
 const playerCollisionPadding = new THREE.Vector3(0.35, 0.25, 0.35);
+const itemCollisionBox = new THREE.Box3();
+const itemCollisionCenter = new THREE.Vector3();
+const itemCollisionSize = new THREE.Vector3();
 const turtleTmpVec3 = new THREE.Vector3();
 const turtleTmpVec2 = new THREE.Vector2();
 const TURTLE_WATERLINE_OFFSET = -0.045;
@@ -511,20 +515,20 @@ function createArcadeEnvironmentProps(isMobileViewport) {
   group.renderOrder = 1;
   const stats = { total: 0, buoys: 0, rocks: 0, markers: 0 };
   const layout = [
-    ["buoys", { x: -24, z: 23, scale: 0.9, accent: 0xff5d4d, mobile: true }],
-    ["buoys", { x: 28, z: 28, scale: 0.85, accent: 0xffd047, mobile: true }],
-    ["rocks", { x: -42, z: 34, scale: 1.1, color: 0x3f686d, mobile: true }],
-    ["rocks", { x: 45, z: 42, scale: 0.95, color: 0x4c7478, mobile: true }],
-    ["markers", { x: -15, z: 48, scale: 0.9, color: 0xffc857, mobile: true }],
-    ["buoys", { x: 14, z: 58, scale: 0.72, accent: 0x53d2dc, mobile: true }],
-    ["markers", { x: 38, z: 78, scale: 0.8, color: 0xff7f50, mobile: true }],
-    ["rocks", { x: -30, z: 80, scale: 0.82, color: 0x355d64, mobile: true }],
-    ["buoys", { x: -38, z: 66, scale: 0.78, accent: 0xff5d4d }],
-    ["markers", { x: 58, z: 110, scale: 0.72, color: 0x8ee3f5 }],
-    ["markers", { x: -58, z: 118, scale: 0.72, color: 0xffc857 }],
-    ["rocks", { x: 28, z: 104, scale: 0.74, color: 0x2f535b }],
-    ["buoys", { x: 0, z: 92, scale: 0.62, accent: 0xffd047 }],
-    ["markers", { x: 0, z: 138, scale: 0.68, color: 0xff7f50 }],
+    ["buoys", { x: -58, z: 46, scale: 0.62, accent: 0xff5d4d, mobile: true }],
+    ["buoys", { x: 58, z: 50, scale: 0.6, accent: 0xffd047, mobile: true }],
+    ["rocks", { x: -62, z: 74, scale: 0.82, color: 0x3f686d, mobile: true }],
+    ["rocks", { x: 64, z: 82, scale: 0.78, color: 0x4c7478, mobile: true }],
+    ["markers", { x: -42, z: 96, scale: 0.64, color: 0xffc857, mobile: true }],
+    ["buoys", { x: 42, z: 104, scale: 0.56, accent: 0x53d2dc, mobile: true }],
+    ["markers", { x: 66, z: 128, scale: 0.58, color: 0xff7f50, mobile: true }],
+    ["rocks", { x: -54, z: 126, scale: 0.62, color: 0x355d64, mobile: true }],
+    ["buoys", { x: -70, z: 112, scale: 0.54, accent: 0xff5d4d }],
+    ["markers", { x: 76, z: 150, scale: 0.52, color: 0x8ee3f5 }],
+    ["markers", { x: -76, z: 156, scale: 0.52, color: 0xffc857 }],
+    ["rocks", { x: 50, z: 144, scale: 0.56, color: 0x2f535b }],
+    ["buoys", { x: 0, z: 142, scale: 0.48, accent: 0xffd047 }],
+    ["markers", { x: 0, z: 176, scale: 0.5, color: 0xff7f50 }],
   ];
   const limit = isMobileViewport ? ENVIRONMENT_PROP_LIMITS.mobile : ENVIRONMENT_PROP_LIMITS.desktop;
   for (const [kind, cfg] of layout) {
@@ -2612,9 +2616,9 @@ async function init() {
   const materials = [
     new THREE.MeshPhongMaterial({ color: 0x90ee90 }), // wildlife (green)
     new THREE.MeshLambertMaterial({
-      color: 0xbb8e51,
-      emissive: 0x2a2418,
-      emissiveIntensity: 0.35,
+      color: 0xf0a23a,
+      emissive: 0x3a2108,
+      emissiveIntensity: 0.45,
       flatShading: true,
       map: makeAtlasMap("trash"),
     }), // trash (cheaper shader)
@@ -5099,9 +5103,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   function checkCollisions() {
     clearStalePendingItemCollisions();
     const playerBox = getPlayerCollisionBox();
-    const trashBox = new THREE.Box3();
-    const trashCenter = new THREE.Vector3();
-    const trashSize = new THREE.Vector3();
     const magnetActive = Date.now() < (powerUpState.magnetUntil || 0);
     const magnetRadius = magnetActive ? POWERUP_MAGNET_RADIUS : 0;
 
@@ -5115,10 +5116,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       const px = Number(item.position && item.position.x) || 0;
       const pz = Number(item.position && item.position.z) || 0;
       const py = (typeof item.position?.y === "number" ? item.position.y : 0) + 0.08;
-      trashCenter.set(px, py, pz);
-      trashSize.set(s, s, s);
-      trashBox.setFromCenterAndSize(trashCenter, trashSize);
-      if (!playerBox.intersectsBox(trashBox) && !isWithinArcadePickupRadius(item.position, TRASH_ARCADE_PICKUP_RADIUS)) {
+      itemCollisionCenter.set(px, py, pz);
+      itemCollisionSize.set(TRASH_GEOMETRY_WIDTH * s, Math.max(TRASH_GEOMETRY_HEIGHT * s, 0.45), TRASH_GEOMETRY_DEPTH * s);
+      itemCollisionBox.setFromCenterAndSize(itemCollisionCenter, itemCollisionSize);
+      if (!playerBox.intersectsBox(itemCollisionBox) && !isWithinArcadePickupRadius(item.position, TRASH_ARCADE_PICKUP_RADIUS)) {
         if (!magnetActive) continue;
         const dx = (player.position?.x || 0) - px;
         const dz = (player.position?.z || 0) - pz;
@@ -5152,10 +5153,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       const px = Number(item.position && item.position.x) || 0;
       const pz = Number(item.position && item.position.z) || 0;
       const py = (typeof item.position?.y === "number" ? item.position.y : 0) + 0.08;
-      trashCenter.set(px, py, pz);
-      trashSize.set(s, s, s);
-      trashBox.setFromCenterAndSize(trashCenter, trashSize);
-      if (!playerBox.intersectsBox(trashBox) && !isWithinArcadePickupRadius(item.position, POWERUP_ARCADE_PICKUP_RADIUS)) {
+      itemCollisionCenter.set(px, py, pz);
+      itemCollisionSize.set(s, Math.max(s, 0.75), s);
+      itemCollisionBox.setFromCenterAndSize(itemCollisionCenter, itemCollisionSize);
+      if (!playerBox.intersectsBox(itemCollisionBox) && !isWithinArcadePickupRadius(item.position, POWERUP_ARCADE_PICKUP_RADIUS)) {
         if (!magnetActive) continue;
         const dx = (player.position?.x || 0) - px;
         const dz = (player.position?.z || 0) - pz;
@@ -5390,7 +5391,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     // Leave a trail point for the local player
     addTrailPoint(yourId, player.position);
     // Emit engine particles based on speed
-    if (emitters && Math.abs(playerSpeed) > 0.0001) {
+    if (ENGINE_WAKE_PARTICLES_ENABLED && emitters && Math.abs(playerSpeed) > 0.0001) {
       const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(player.quaternion);
       // Emit engine particles from 1m beneath the boat center (at/near root)
       const exhaustLocal = new THREE.Vector3(0, -1.0, 0);
@@ -5704,6 +5705,7 @@ function renderGameToText() {
         x: Number(x.toFixed(3)),
         y: Number(y.toFixed(3)),
         z: Number(z.toFixed(3)),
+        visualScale: Number(clampVisualScale(item.size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX).toFixed(3)),
         distance: Number(Math.hypot(px - x, pz - z).toFixed(3)),
       };
     })
@@ -5755,6 +5757,10 @@ function renderGameToText() {
     botRosterVisual: latestBotRosterVisualDebug,
     itemsVisible: Object.keys(items || {}).length,
     trashInstances: trashInstances && trashInstances.map ? trashInstances.map.size : 0,
+    pickupRadii: {
+      trash: TRASH_ARCADE_PICKUP_RADIUS,
+      powerup: POWERUP_ARCADE_PICKUP_RADIUS,
+    },
     trashSamples,
     powerupInstances: powerupInstances && powerupInstances.map ? powerupInstances.map.size : 0,
     environmentPropsVisible: environmentPropStats.total || 0,
@@ -5762,7 +5768,7 @@ function renderGameToText() {
     turtleSamples,
     camera: latestCameraCompositionDebug,
     boatFeel: getBoatFeelDebug(localBoatFeelState) || latestBoatFeelDebug,
-    waterEffects: { wakeRipples: false, contactRing: false },
+    waterEffects: { wakeRipples: false, contactRing: false, engineParticles: ENGINE_WAKE_PARTICLES_ENABLED },
     pickups: latestPickupDebug,
     powerUps: {
       speed: Number(powerUpState.speedMultiplier || 1),
