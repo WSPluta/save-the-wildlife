@@ -865,6 +865,91 @@ test("does not let slow model diagnostics block grounded in-db commentary", asyn
   assert.equal(modelCalls, 0);
 });
 
+test("persists skipped model route traces when live model diagnostics time out", async () => {
+  const executed = [];
+  const oracleConnection = {
+    async execute(sql, binds = {}) {
+      executed.push({ sql: String(sql), binds });
+      if (String(sql).includes("build_script_json")) {
+        return {
+          outBinds: {
+            result: JSON.stringify({
+              ok: true,
+              source: "select-ai",
+              commentary: "Select AI kept Ada grounded on 42 after one freeze.",
+            }),
+          },
+        };
+      }
+      return {};
+    },
+  };
+  const modelRequestJson = async () => {
+    await sleep(1000);
+    return {
+      status: 200,
+      headers: {},
+      elapsed_ms: 1000,
+      payload: {
+        ok: true,
+        provider: "oci-base",
+        model_id: "too-slow-model",
+        text: "Ada finished with 42 points after one freeze.",
+        runtime_mode: "upstream-llm",
+      },
+    };
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_FAST_PATH_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "shadow",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
+    OCI_MODEL_ENDPOINT_TIMEOUT_MS: "500",
+    PAF_COMMENTARY_DEADLINE_MS: "700",
+    PAF_TRACE_PERSIST: "true",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-SKIPPED-PERSIST",
+          player_id: "P-SKIPPED-PERSIST",
+          player_name: "Ada",
+          score: 42,
+          freezes: 1,
+        },
+      },
+      {
+        skipOracleSummary: true,
+        oracleConnection,
+        oracledb: { BIND_OUT: 3003, STRING: 2001 },
+        traceId: "TRACE-SKIPPED-PERSIST",
+        modelRequestJson,
+      }
+    );
+
+    assert.equal(response.source, "select-ai");
+    assert.equal(response.model_route.trace_persisted, true);
+    assert.equal(response.model_route.primary.skipped, true);
+    assert.match(response.model_route.primary.error, /model_route_timeout|model_route_budget/);
+    assert.ok(
+      executed.some((entry) => entry.sql.includes("MERGE INTO STWL_MODEL_TRACES")),
+      "expected skipped route to persist trace metadata"
+    );
+    assert.ok(
+      executed.some((entry) => entry.sql.includes("MERGE INTO STWL_MODEL_OUTPUTS")),
+      "expected skipped route to persist timeout output rows"
+    );
+  });
+});
+
 test("starts deferred model route before slow in-db fallback completes", async () => {
   let inDbFinished = false;
   const modelCalls = [];

@@ -1206,16 +1206,18 @@ async function runModelRouteWithinBudget(args, options = {}, timeoutMs = 0, reas
   const traceId = textValue(options.traceId || options.trace_id || options.traceID) || newTraceId(args.summary);
   const routeOptions = { ...options, traceId };
   if (budgetMs < 250) {
+    const route = skippedModelRoute(
+      args.summary,
+      args.context || {},
+      args.legacy || {},
+      args.outputFormatValue,
+      args.maxChars,
+      reason,
+      routeOptions
+    );
+    await persistSkippedModelRoute(route, args.summary, routeOptions);
     return {
-      route: skippedModelRoute(
-        args.summary,
-        args.context || {},
-        args.legacy || {},
-        args.outputFormatValue,
-        args.maxChars,
-        reason,
-        routeOptions
-      ),
+      route,
       warning: `model_route:${reason}`,
     };
   }
@@ -1226,19 +1228,32 @@ async function runModelRouteWithinBudget(args, options = {}, timeoutMs = 0, reas
     };
   } catch (error) {
     const message = error?.message || reason;
+    const route = skippedModelRoute(
+      args.summary,
+      args.context || {},
+      args.legacy || {},
+      args.outputFormatValue,
+      args.maxChars,
+      message,
+      routeOptions
+    );
+    await persistSkippedModelRoute(route, args.summary, routeOptions);
     return {
-      route: skippedModelRoute(
-        args.summary,
-        args.context || {},
-        args.legacy || {},
-        args.outputFormatValue,
-        args.maxChars,
-        message,
-        routeOptions
-      ),
+      route,
       warning: `model_route:${message}`,
     };
   }
+}
+
+async function persistSkippedModelRoute(route, summary, options = {}) {
+  const config = modelRouterConfig();
+  if (!config.tracePersist) return route;
+  try {
+    route.trace_persisted = await persistModelLearningTrace(route, summary, config, options);
+  } catch (_) {
+    route.trace_persisted = false;
+  }
+  return route;
 }
 
 function requestJson(url, { method = "GET", headers = {}, body = null, timeoutMs = DEFAULT_CANVAS_TIMEOUT_MS, verifyTls = false } = {}) {
