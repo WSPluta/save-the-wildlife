@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { summarizeAiAdapterHealth } from "../adminAiHealth.js";
 
 const html = readFileSync("src/index.html", "utf8");
 const styles = readFileSync("src/style.css", "utf8");
 const script = readFileSync("src/script.js", "utf8");
+const adminAiHealth = readFileSync("src/adminAiHealth.js", "utf8");
 const worker = readFileSync("src/commsWorker.js", "utf8");
 
 function textContent(fragment) {
@@ -74,10 +76,56 @@ describe("admin load evaluation view", () => {
     expect(script).toMatch(/rememberAdminCommentary/);
     expect(script).toMatch(/renderAdminCommentaryFeed/);
     expect(worker).toMatch(/commentary\.history/);
-    expect(script).toMatch(/generation_ready/);
-    expect(script).toMatch(/generationDegraded/);
-    expect(script).toContain("Base ready; candidate degraded");
+    expect(adminAiHealth).toMatch(/generation_ready/);
+    expect(adminAiHealth).toMatch(/generationDegraded/);
+    expect(adminAiHealth).toContain("Base ready; candidate degraded");
     expect(script).toContain("Base route is live; candidate needs attention.");
+  });
+
+  it("treats a proven base route plus timed-out candidate as degraded", () => {
+    const summary = summarizeAiAdapterHealth({
+      model_adapter_summary: {
+        runtime_counts: {
+          "oci-base:upstream-llm": 1,
+          "oci-fine-tuned:missing": 1,
+        },
+        upstream_format_counts: {
+          ollama: 1,
+          missing: 1,
+        },
+        generation_ready_counts: {
+          ready: 1,
+          failed: 0,
+          unknown: 1,
+        },
+        generation_ready: false,
+        upstream_llm_ready: false,
+      },
+      model_adapters: [
+        {
+          ok: true,
+          provider: "oci-base",
+          configured: true,
+          runtime_mode: "upstream-llm",
+          upstream_format: "ollama",
+          generation_ready: true,
+        },
+        {
+          ok: false,
+          provider: "oci-fine-tuned",
+          configured: true,
+          runtime_mode: null,
+          upstream_format: null,
+          error: "canvas_timeout_10000ms",
+        },
+      ],
+    });
+
+    expect(summary.ready).toBe(false);
+    expect(summary.degraded).toBe(true);
+    expect(summary.verdictText).toBe("Base ready");
+    expect(summary.gateText).toBe("Base ready; candidate degraded");
+    expect(summary.runtimeText).toBe("oci-base ready; oci-fine-tuned degraded");
   });
 
   it("styles the compact AI learning receipt panels", () => {
