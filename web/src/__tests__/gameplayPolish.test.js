@@ -79,12 +79,12 @@ describe("gameplay polish regressions", () => {
   });
 
   it("keeps trash and power-ups readable without turning pickups into wall geometry", () => {
-    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 0\.96;/);
-    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 1\.48;/);
-    expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.065;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_WIDTH = 0\.95;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_HEIGHT = 0\.13;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.62;/);
+    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 1\.22;/);
+    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 1\.78;/);
+    expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.09;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_WIDTH = 1\.18;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_HEIGHT = 0\.16;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.78;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.68;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 1\.22;/);
     expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 5\.2;/);
@@ -136,6 +136,9 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const TURTLE_WATERLINE_OFFSET = -0\.045;/);
     expect(script).toMatch(/const TURTLE_TURN_RESPONSE = 2\.8;/);
     expect(script).toMatch(/const TURTLE_VERTICAL_LERP = 0\.065;/);
+    expect(script).toMatch(/const TURTLE_VISUAL_SCALE = 0\.58;/);
+    expect(script).toMatch(/turtle\.scale\.setScalar\(TURTLE_VISUAL_SCALE\);/);
+    expect(script).toMatch(/userData\.turtle\.scale\.setScalar\(TURTLE_VISUAL_SCALE\);/);
     expect(script).toMatch(/const yawDelta = \(\(yaw - mesh\.rotation\.y \+ Math\.PI\) % \(Math\.PI \* 2\)\) - Math\.PI;/);
     expect(script).toMatch(/mesh\.rotation\.y \+= yawDelta \* Math\.min\(1, dt \* TURTLE_TURN_RESPONSE\);/);
     expect(script).toMatch(/const wave = getHeightAndNormal\(mesh\.position\.x, mesh\.position\.z, tSec\);/);

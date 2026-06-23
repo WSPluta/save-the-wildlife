@@ -171,12 +171,12 @@ let triggerReplayMomentCallback = () => {};
 const pendingItemCollisions = new Map();
 const scoredItemCollisions = new Set();
 const COLLISION_PENDING_TIMEOUT_MS = 1500;
-const TRASH_VISUAL_SCALE_MIN = 0.96;
-const TRASH_VISUAL_SCALE_MAX = 1.48;
-const TRASH_FLOAT_Y = 0.065;
-const TRASH_GEOMETRY_WIDTH = 0.95;
-const TRASH_GEOMETRY_HEIGHT = 0.13;
-const TRASH_GEOMETRY_DEPTH = 0.62;
+const TRASH_VISUAL_SCALE_MIN = 1.22;
+const TRASH_VISUAL_SCALE_MAX = 1.78;
+const TRASH_FLOAT_Y = 0.09;
+const TRASH_GEOMETRY_WIDTH = 1.18;
+const TRASH_GEOMETRY_HEIGHT = 0.16;
+const TRASH_GEOMETRY_DEPTH = 0.78;
 const POWERUP_VISUAL_SCALE_MIN = 0.68;
 const POWERUP_VISUAL_SCALE_MAX = 1.22;
 const TRASH_ARCADE_PICKUP_RADIUS = 5.2;
@@ -208,6 +208,7 @@ const TURTLE_BOB_SPEED_MIN = 0.45;
 const TURTLE_BOB_SPEED_MAX = 0.85;
 const TURTLE_TURN_RESPONSE = 2.8;
 const TURTLE_VERTICAL_LERP = 0.065;
+const TURTLE_VISUAL_SCALE = 0.58;
 const ARCADE_ENVIRONMENT = Object.freeze({
   toneMappingExposure: 0.6,
   fogColor: 0x7fd4ef,
@@ -2771,6 +2772,7 @@ async function init() {
     // Group wrapper so we can keep the turtle child pitched flat (-90deg X)
     const group = new THREE.Group();
     const turtle = turtleModel.clone(true);
+    turtle.scale.setScalar(TURTLE_VISUAL_SCALE);
     turtle.traverse((o) => {
       if (o.isMesh) {
         o.castShadow = true;
@@ -2815,6 +2817,7 @@ async function init() {
       group.userData.ai = null;
       resetTurtleFloatState(group);
       if (group.userData && group.userData.turtle) {
+        group.userData.turtle.scale.setScalar(TURTLE_VISUAL_SCALE);
         group.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
       }
     },
@@ -2825,6 +2828,7 @@ async function init() {
     if (!group) return createWildlifeMesh();
     // Ensure correct orientation every time it's reused
     if (group.userData && group.userData.turtle) {
+      group.userData.turtle.scale.setScalar(TURTLE_VISUAL_SCALE);
       group.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
     }
     group.userData.ai = null;
@@ -2846,6 +2850,7 @@ async function init() {
     mesh.userData.ai = null;
     resetTurtleFloatState(mesh);
     if (mesh.userData && mesh.userData.turtle) {
+      mesh.userData.turtle.scale.setScalar(TURTLE_VISUAL_SCALE);
       mesh.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
     }
   }
@@ -4392,6 +4397,7 @@ function returnToPool(mesh) {
   }
   // Ensure turtle child stays flat for reuse
   if (mesh.itemType === "turtle" && mesh.userData && mesh.userData.turtle) {
+    mesh.userData.turtle.scale.setScalar(TURTLE_VISUAL_SCALE);
     mesh.userData.turtle.rotation.set(-Math.PI / 2, 0, 0);
   }
   if (mesh.scale) mesh.scale.set(1, 1, 1);
