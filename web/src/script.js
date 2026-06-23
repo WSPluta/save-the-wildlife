@@ -192,6 +192,9 @@ const BOT_NAME_TAG_POSITION_Y = 0.82;
 const trashTmpMatrix = new THREE.Matrix4();
 const trashTmpPos = new THREE.Vector3();
 const trashTmpScale = new THREE.Vector3();
+const trashDetailTmpScale = new THREE.Vector3();
+const trashDetailTmpQuat = new THREE.Quaternion();
+const trashDetailTmpEuler = new THREE.Euler(0, Math.PI / 2, 0);
 const playerCollisionBox = new THREE.Box3();
 const playerCollisionWorldBox = new THREE.Box3();
 const playerCollisionMatrix = new THREE.Matrix4();
@@ -669,6 +672,7 @@ function setPhase(phase) {
     document.body.classList.toggle("observability-view", IS_OBSERVABILITY_VIEW);
   } catch (_) {}
   renderUI();
+  try { if (typeof applyHudMode === "function") applyHudMode(); } catch (_) {}
   try { if (typeof updateControls === "function") updateControls(); } catch (_) {}
 }
 
@@ -705,6 +709,7 @@ function renderUI() {
   try { renderObservabilityRooms(); } catch (_) {}
   try { refreshObservabilityMetrics(); } catch (_) {}
   try { refreshAiLearningHealth(); } catch (_) {}
+  try { if (typeof applyHudMode === "function") applyHudMode(); } catch (_) {}
   // Manage countdown lifecycle: let server drive the target; only clear when leaving STARTING
   if (currentPhase !== PHASES.STARTING) {
     clearCountdown();
@@ -2512,14 +2517,26 @@ try {
 
 /* Debug HUD toggle support (F2), button, and ?debug=1 */
 function applyHudMode() {
-  const stored = localStorage.getItem("debugHUD");
-  if (stored === null) localStorage.setItem("debugHUD", "0");
-  const debugOn = (stored === null) ? false : stored === "1";
+  let urlDebug = false;
+  try {
+    const url = new URL(window.location.href);
+    urlDebug = url.searchParams.get("debug") === "1";
+  } catch (_) {}
+  let stored = localStorage.getItem("debugHUD");
+  if (!IS_ADMIN_VIEW && !urlDebug) {
+    stored = "0";
+    try { localStorage.setItem("debugHUD", "0"); } catch (_) {}
+  } else if (stored === null) {
+    stored = "0";
+    try { localStorage.setItem("debugHUD", "0"); } catch (_) {}
+  }
+  const debugOn = urlDebug || stored === "1";
   const full = document.getElementById("hud");
   const compact = document.getElementById("hud-compact");
   const monitor = document.getElementById("monitor-panel");
-  if (full) full.style.display = debugOn ? "flex" : "none";
-  if (compact) compact.style.display = debugOn ? "none" : "flex";
+  if (document.body && document.body.classList) document.body.classList.toggle("debug-view", debugOn);
+  if (full) full.style.display = (IS_ADMIN_VIEW || debugOn) ? "flex" : "none";
+  if (compact) compact.style.display = (!IS_ADMIN_VIEW && !debugOn) ? "flex" : "none";
   if (monitor) monitor.style.display = debugOn ? "block" : "none";
 }
 function toggleHudDebug() {
@@ -2636,26 +2653,44 @@ async function init() {
   const TRASH_INSTANCE_MAX = 500;
   const trashGeometry = geometries[1];
   const trashMaterial = materials[1];
+  const trashDetailGeometry = new THREE.BoxGeometry(
+    TRASH_GEOMETRY_DEPTH * 0.72,
+    TRASH_GEOMETRY_HEIGHT * 1.08,
+    TRASH_GEOMETRY_WIDTH * 0.24
+  );
+  const trashDetailMaterial = trashMaterial.clone();
+  trashDetailMaterial.color = new THREE.Color(0xb8662c);
+  trashDetailMaterial.emissive = new THREE.Color(0x241207);
+  trashDetailTmpQuat.setFromEuler(trashDetailTmpEuler);
   const powerupGeometry = new THREE.ConeGeometry(0.6, 1.6, 12);
   const powerupMaterial = materials[2];
 
   function initTrashInstancing() {
     const mesh = new THREE.InstancedMesh(trashGeometry, trashMaterial, TRASH_INSTANCE_MAX);
+    const detailMesh = new THREE.InstancedMesh(trashDetailGeometry, trashDetailMaterial, TRASH_INSTANCE_MAX);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    detailMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     mesh.frustumCulled = false;
     mesh.renderOrder = 2;
+    detailMesh.castShadow = false;
+    detailMesh.receiveShadow = false;
+    detailMesh.frustumCulled = false;
+    detailMesh.renderOrder = 3;
     scene.add(mesh);
+    scene.add(detailMesh);
     const free = [];
     for (let i = 0; i < TRASH_INSTANCE_MAX; i++) {
       free.push(i);
       trashTmpMatrix.identity();
       trashTmpMatrix.setPosition(1e6, 1e6, 1e6);
       mesh.setMatrixAt(i, trashTmpMatrix);
+      detailMesh.setMatrixAt(i, trashTmpMatrix);
     }
     mesh.instanceMatrix.needsUpdate = true;
-    return { mesh, free, map: new Map(), max: TRASH_INSTANCE_MAX };
+    detailMesh.instanceMatrix.needsUpdate = true;
+    return { mesh, detailMesh, free, map: new Map(), max: TRASH_INSTANCE_MAX };
   }
 
   trashInstances = initTrashInstancing();
@@ -2673,7 +2708,11 @@ async function init() {
     trashTmpMatrix.identity();
     trashTmpMatrix.compose(trashTmpPos, new THREE.Quaternion(), trashTmpScale);
     trashInstances.mesh.setMatrixAt(idx, trashTmpMatrix);
+    trashDetailTmpScale.set(s, s, s);
+    trashTmpMatrix.compose(trashTmpPos, trashDetailTmpQuat, trashDetailTmpScale);
+    trashInstances.detailMesh.setMatrixAt(idx, trashTmpMatrix);
     trashInstances.mesh.instanceMatrix.needsUpdate = true;
+    trashInstances.detailMesh.instanceMatrix.needsUpdate = true;
     return true;
   }
 
@@ -2683,10 +2722,12 @@ async function init() {
       trashTmpMatrix.identity();
       trashTmpMatrix.setPosition(1e6, 1e6, 1e6);
       trashInstances.mesh.setMatrixAt(idx, trashTmpMatrix);
+      if (trashInstances.detailMesh) trashInstances.detailMesh.setMatrixAt(idx, trashTmpMatrix);
       trashInstances.free.push(idx);
     }
     trashInstances.map.clear();
     trashInstances.mesh.instanceMatrix.needsUpdate = true;
+    if (trashInstances.detailMesh) trashInstances.detailMesh.instanceMatrix.needsUpdate = true;
   };
 
   function initPowerupInstancing() {
@@ -2760,7 +2801,9 @@ async function init() {
     trashTmpMatrix.identity();
     trashTmpMatrix.setPosition(1e6, 1e6, 1e6);
     trashInstances.mesh.setMatrixAt(idx, trashTmpMatrix);
+    if (trashInstances.detailMesh) trashInstances.detailMesh.setMatrixAt(idx, trashTmpMatrix);
     trashInstances.mesh.instanceMatrix.needsUpdate = true;
+    if (trashInstances.detailMesh) trashInstances.detailMesh.instanceMatrix.needsUpdate = true;
     trashInstances.free.push(idx);
   };
 
@@ -4834,8 +4877,14 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         trashTmpMatrix.identity();
         trashTmpMatrix.compose(trashTmpPos, new THREE.Quaternion(), trashTmpScale);
         trashInstances.mesh.setMatrixAt(idx, trashTmpMatrix);
+        if (trashInstances.detailMesh) {
+          trashDetailTmpScale.set(s, s, s);
+          trashTmpMatrix.compose(trashTmpPos, trashDetailTmpQuat, trashDetailTmpScale);
+          trashInstances.detailMesh.setMatrixAt(idx, trashTmpMatrix);
+        }
       }
       trashInstances.mesh.instanceMatrix.needsUpdate = true;
+      if (trashInstances.detailMesh) trashInstances.detailMesh.instanceMatrix.needsUpdate = true;
     }
 
     for (const [, mesh] of Object.entries(itemMeshes)) {

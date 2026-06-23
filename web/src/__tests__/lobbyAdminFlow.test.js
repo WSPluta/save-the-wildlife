@@ -31,6 +31,17 @@ describe("presenter-controlled lobby flow", () => {
     expect(styles).toMatch(/body\.phase-admin #hud/);
   });
 
+  it("keeps player HUD clean and clears stale debug mode outside explicit debug URLs", () => {
+    expect(styles).toMatch(/body:not\(\.admin-view\) \.lifecycle-admin-control/);
+    expect(styles).toMatch(/body:not\(\.admin-view\) #btn-toggle-debug/);
+    expect(styles).toMatch(/body:not\(\.admin-view\):not\(\.debug-view\) #hud/);
+    expect(styles).toMatch(/body\.admin-view #hud-compact/);
+    expect(script).toMatch(/if \(!IS_ADMIN_VIEW && !urlDebug\) \{/);
+    expect(script).toMatch(/localStorage\.setItem\("debugHUD", "0"\)/);
+    expect(script).toMatch(/document\.body\.classList\.toggle\("debug-view", debugOn\)/);
+    expect(script).toMatch(/full\.style\.display = \(IS_ADMIN_VIEW \|\| debugOn\) \? "flex" : "none"/);
+  });
+
   it("routes players from name entry directly into the waiting lobby", () => {
     expect(script).toMatch(/accessContinueBtn\.addEventListener\("click", async \(\) =>/);
     expect(script).toMatch(/await enterWaitingLobby\(\)/);

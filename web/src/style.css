@@ -656,6 +656,23 @@ body {
 }
 .hud-debug { color: var(--muted); }
 
+body:not(.admin-view) .lifecycle-admin-control,
+body:not(.admin-view) #btn-create-room,
+body:not(.admin-view) #btn-join-room,
+body:not(.admin-view) #btn-toggle-debug,
+body:not(.admin-view) #btn-grant-admin {
+  display: none !important;
+}
+
+body:not(.admin-view):not(.debug-view) #hud {
+  display: none !important;
+}
+
+body.admin-view #hud-compact,
+body.debug-view #hud-compact {
+  display: none !important;
+}
+
 /* Monitor panel theme */
 .monitor-panel {
   background: linear-gradient(180deg, rgba(0,25,40,0.86), rgba(0,25,40,0.72));

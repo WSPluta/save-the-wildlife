@@ -93,6 +93,10 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/function clampVisualScale\(size, min, max\)/);
     expect(script).toMatch(/function isWithinArcadePickupRadius\(position, radius\)/);
     expect(script).toMatch(/new THREE\.BoxGeometry\(TRASH_GEOMETRY_WIDTH, TRASH_GEOMETRY_HEIGHT, TRASH_GEOMETRY_DEPTH\)/);
+    expect(script).toMatch(/const trashDetailGeometry = new THREE\.BoxGeometry/);
+    expect(script).toMatch(/const detailMesh = new THREE\.InstancedMesh\(trashDetailGeometry, trashDetailMaterial, TRASH_INSTANCE_MAX\);/);
+    expect(script).toMatch(/return \{ mesh, detailMesh, free, map: new Map\(\), max: TRASH_INSTANCE_MAX \};/);
+    expect(script).toMatch(/trashInstances\.detailMesh\.setMatrixAt\(idx, trashTmpMatrix\);/);
     expect(script).toMatch(/trashTmpPos\.set\(position\.x, waterY \+ TRASH_FLOAT_Y, position\.z\);/);
     expect(script).toMatch(/trashTmpPos\.set\(ix, waterY \+ TRASH_FLOAT_Y, iz\);/);
     expect(script).toMatch(/clampVisualScale\(size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX\)/);
