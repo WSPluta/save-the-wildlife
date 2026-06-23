@@ -189,6 +189,20 @@ const NAME_TAG_SCALE = Object.freeze({ x: 1.22, y: 0.3, z: 1 });
 const NAME_TAG_POSITION_Y = 1.16;
 const BOT_NAME_TAG_SCALE = Object.freeze({ x: 0.42, y: 0.13, z: 1 });
 const BOT_NAME_TAG_POSITION_Y = 0.82;
+const BOAT_BADGE_LAYOUT = Object.freeze({
+  desktop: {
+    powerupScale: 0.46,
+    powerupY: 0.82,
+    statusScale: 0.5,
+    statusY: 1.04,
+  },
+  mobile: {
+    powerupScale: 0.38,
+    powerupY: 0.74,
+    statusScale: 0.42,
+    statusY: 0.94,
+  },
+});
 const trashTmpMatrix = new THREE.Matrix4();
 const trashTmpPos = new THREE.Vector3();
 const trashTmpScale = new THREE.Vector3();
@@ -4100,16 +4114,37 @@ function createEmojiSprite(text) {
   texture.minFilter = THREE.LinearFilter;
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(0.6, 0.6, 1);
+  sprite.scale.set(BOAT_BADGE_LAYOUT.desktop.powerupScale, BOAT_BADGE_LAYOUT.desktop.powerupScale, 1);
   sprite.userData.canvas = canvas;
   sprite.userData.ctx = ctx;
   setSpriteText(sprite, text || "");
   return sprite;
 }
+
+function getBoatBadgeLayout() {
+  return isMobileGameViewport() ? BOAT_BADGE_LAYOUT.mobile : BOAT_BADGE_LAYOUT.desktop;
+}
+
+function applyBoatBadgeLayout() {
+  const layout = getBoatBadgeLayout();
+  const layoutName = isMobileGameViewport() ? "mobile" : "desktop";
+  if (powerupBadge) {
+    powerupBadge.position.set(0, layout.powerupY, 0);
+    powerupBadge.scale.set(layout.powerupScale, layout.powerupScale, 1);
+    powerupBadge.userData.layout = layoutName;
+  }
+  if (statusBadge) {
+    statusBadge.position.set(0, layout.statusY, 0);
+    statusBadge.scale.set(layout.statusScale, layout.statusScale, 1);
+    statusBadge.userData.layout = layoutName;
+  }
+}
+
 function setSpriteText(sprite, text) {
   const canvas = sprite.userData.canvas;
   const ctx = sprite.userData.ctx;
   const size = canvas.width;
+  sprite.userData.text = text || "";
   ctx.clearRect(0, 0, size, size);
   if (text && text.length) {
     ctx.font = "bold 80px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif";
@@ -4121,6 +4156,18 @@ function setSpriteText(sprite, text) {
   }
   sprite.material.map.needsUpdate = true;
 }
+
+function getBadgeDebug(sprite) {
+  if (!sprite) return null;
+  return {
+    visible: !!sprite.visible,
+    text: String(sprite.userData?.text || ""),
+    layout: String(sprite.userData?.layout || (isMobileGameViewport() ? "mobile" : "desktop")),
+    y: Number((sprite.position?.y || 0).toFixed(3)),
+    scale: Number((sprite.scale?.x || 0).toFixed(3)),
+  };
+}
+
 function disableReflectionForSprite(sprite) {
   if (!sprite) return;
   const prev = { visible: true };
@@ -4177,6 +4224,7 @@ function suppressObjectsDuringWaterReflection(waterMesh) {
 }
 function updatePowerUpBadge() {
   if (!powerupBadge) return;
+  applyBoatBadgeLayout();
   const icons = [];
   // Effects
   if (powerUpState.speedMultiplier > 1) icons.push("⚡");
@@ -4193,6 +4241,7 @@ function updatePowerUpBadge() {
 // Above-boat frozen/countdown indicator (emoji+text)
 function updateFrozenIndicators() {
   if (!statusBadge) return;
+  applyBoatBadgeLayout();
   const now = Date.now();
   // During synchronized countdown, hide status badge to avoid clutter with 3D countdown
   if (currentPhase === "STARTING") {
@@ -4516,19 +4565,18 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   }
   // Power-up emoji badge above boat
   powerupBadge = createEmojiSprite("");
-  powerupBadge.position.set(0, 0.9, 0);
   powerupBadge.visible = false;
   player.add(powerupBadge);
   // Do not render power-up badge in water reflection pass
   try { disableReflectionForSprite(powerupBadge); } catch (_) {}
   // Status badge (freeze/countdown) above boat
   statusBadge = createEmojiSprite("");
-  statusBadge.position.set(0, 1.15, 0);
   statusBadge.visible = false;
   player.add(statusBadge);
   // Do not render status badge in water reflection pass
   try { disableReflectionForSprite(statusBadge); } catch (_) {}
   // No local name tag (only show names above other boats)
+  applyBoatBadgeLayout();
 
   // lights
   const ambientLight = new THREE.AmbientLight(ARCADE_ENVIRONMENT.ambientColor, ARCADE_ENVIRONMENT.ambientIntensity);
@@ -4590,6 +4638,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     renderer.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    applyBoatBadgeLayout();
     // Update environment once on resize instead of every frame
     skyNeedsEnvironmentRefresh = true;
     try { updateSun(); } catch (_) {}
@@ -5825,6 +5874,10 @@ function renderGameToText() {
     boatFeel: getBoatFeelDebug(localBoatFeelState) || latestBoatFeelDebug,
     waterEffects: { wakeRipples: false, contactRing: false, engineParticles: ENGINE_WAKE_PARTICLES_ENABLED },
     pickups: latestPickupDebug,
+    badges: {
+      powerup: getBadgeDebug(powerupBadge),
+      status: getBadgeDebug(statusBadge),
+    },
     powerUps: {
       speed: Number(powerUpState.speedMultiplier || 1),
       shield: !!powerUpState.shield,
