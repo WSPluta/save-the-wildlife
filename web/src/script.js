@@ -677,6 +677,14 @@ const IS_OBSERVABILITY_VIEW = (() => {
     return false;
   }
 })();
+const VISUAL_QA_ENABLED = (() => {
+  try {
+    const url = new URL(window.location.href);
+    return url.searchParams.get("visualQa") === "1";
+  } catch (_) {
+    return false;
+  }
+})();
 
 function setPhase(phase) {
   currentPhase = phase;
@@ -1143,6 +1151,7 @@ let latestRoomObservabilityMetrics = null;
 const adminCommentaryEntries = [];
 const adminCommentaryKeys = new Set();
 const ADMIN_COMMENTARY_LIMIT = 80;
+let visualQaBadgeOverride = null;
 
 async function updateAiLearningHealth() {
   if (!IS_AI_LEARNING_VIEW) return;
@@ -4131,6 +4140,14 @@ function getBadgeDebug(sprite) {
   };
 }
 
+function setVisualQaBadge(sprite, text) {
+  if (!sprite) return null;
+  applyBoatBadgeLayout();
+  setSpriteText(sprite, text || "");
+  sprite.visible = Boolean(text);
+  return getBadgeDebug(sprite);
+}
+
 function disableReflectionForSprite(sprite) {
   if (!sprite) return;
   const prev = { visible: true };
@@ -4187,6 +4204,10 @@ function suppressObjectsDuringWaterReflection(waterMesh) {
 }
 function updatePowerUpBadge() {
   if (!powerupBadge) return;
+  if (VISUAL_QA_ENABLED && visualQaBadgeOverride && visualQaBadgeOverride.powerupText != null) {
+    setVisualQaBadge(powerupBadge, visualQaBadgeOverride.powerupText);
+    return;
+  }
   applyBoatBadgeLayout();
   const icons = [];
   // Effects
@@ -4204,6 +4225,10 @@ function updatePowerUpBadge() {
 // Above-boat frozen/countdown indicator (emoji+text)
 function updateFrozenIndicators() {
   if (!statusBadge) return;
+  if (VISUAL_QA_ENABLED && visualQaBadgeOverride && visualQaBadgeOverride.statusText != null) {
+    setVisualQaBadge(statusBadge, visualQaBadgeOverride.statusText);
+    return;
+  }
   applyBoatBadgeLayout();
   const now = Date.now();
   // During synchronized countdown, hide status badge to avoid clutter with 3D countdown
@@ -5778,6 +5803,27 @@ function renderGameToText() {
     })
     .sort((a, b) => a.distance - b.distance)
     .slice(0, 5);
+  const powerupSamples = Object.entries(items || {})
+    .filter(([itemId, item]) => {
+      if (!item || !isPowerUp(item.type)) return false;
+      return powerupInstances && powerupInstances.map && powerupInstances.map.has(itemId);
+    })
+    .map(([itemId, item]) => {
+      const x = Number(item.position?.x || 0);
+      const y = Number(item.position?.y || 0);
+      const z = Number(item.position?.z || 0);
+      return {
+        id: itemId,
+        type: String(item.type || "powerup"),
+        x: Number(x.toFixed(3)),
+        y: Number(y.toFixed(3)),
+        z: Number(z.toFixed(3)),
+        visualScale: Number(clampVisualScale(item.size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX).toFixed(3)),
+        distance: Number(Math.hypot(px - x, pz - z).toFixed(3)),
+      };
+    })
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 5);
   const remotePlayerEntries = Object.entries(otherPlayersMeshes || {})
     .filter(([, mesh]) => mesh && mesh.visible !== false);
   const botSamples = remotePlayerEntries
@@ -5830,6 +5876,7 @@ function renderGameToText() {
     },
     trashSamples,
     powerupInstances: powerupInstances && powerupInstances.map ? powerupInstances.map.size : 0,
+    powerupSamples,
     environmentPropsVisible: environmentPropStats.total || 0,
     turtlesVisible: turtleSamples.length,
     turtleSamples,
@@ -5852,6 +5899,27 @@ function renderGameToText() {
 }
 
 window.render_game_to_text = renderGameToText;
+if (VISUAL_QA_ENABLED) {
+  window.__stwlVisualQa = {
+    showBadges({ powerupText = "⚡🛡️", statusText = "❄️ 3s" } = {}) {
+      visualQaBadgeOverride = { powerupText, statusText };
+      return {
+        powerup: setVisualQaBadge(powerupBadge, powerupText),
+        status: setVisualQaBadge(statusBadge, statusText),
+      };
+    },
+    hideBadges() {
+      visualQaBadgeOverride = null;
+      return {
+        powerup: setVisualQaBadge(powerupBadge, ""),
+        status: setVisualQaBadge(statusBadge, ""),
+      };
+    },
+    state() {
+      return JSON.parse(renderGameToText());
+    },
+  };
+}
 window.advanceTime = async (ms) => {
   const delay = Number.isFinite(ms) ? Math.max(0, ms) : 0;
   await new Promise((resolve) => setTimeout(resolve, delay));

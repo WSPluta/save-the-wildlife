@@ -214,6 +214,8 @@ describe("gameplay polish regressions", () => {
 
   it("keeps above-boat powerup and status badges responsive and inspectable", () => {
     expect(script).toMatch(/const BOAT_BADGE_LAYOUT = Object\.freeze\(\{/);
+    expect(script).toMatch(/const VISUAL_QA_ENABLED =/);
+    expect(script).toMatch(/let visualQaBadgeOverride = null;/);
     expect(script).toMatch(/desktop: \{[\s\S]{0,120}powerupScale: 0\.46,[\s\S]{0,120}statusY: 1\.04,/);
     expect(script).toMatch(/mobile: \{[\s\S]{0,120}powerupScale: 0\.38,[\s\S]{0,120}statusY: 0\.94,/);
     expect(script).toMatch(/function applyBoatBadgeLayout\(\)/);
@@ -221,7 +223,13 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/statusBadge\.scale\.set\(layout\.statusScale, layout\.statusScale, 1\);/);
     expect(script).toMatch(/sprite\.userData\.text = text \|\| "";/);
     expect(script).toMatch(/function getBadgeDebug\(sprite\)/);
+    expect(script).toMatch(/function setVisualQaBadge\(sprite, text\)/);
     expect(script).toMatch(/badges: \{\s*powerup: getBadgeDebug\(powerupBadge\),\s*status: getBadgeDebug\(statusBadge\),\s*\},/);
+    expect(script).toMatch(/powerupSamples,/);
+    expect(script).toMatch(/window\.__stwlVisualQa = \{/);
+    expect(script).toMatch(/visualQaBadgeOverride = \{ powerupText, statusText \};/);
+    expect(script).toMatch(/visualQaBadgeOverride = null;/);
+    expect(script).toMatch(/showBadges\(\{ powerupText = "⚡🛡️", statusText = "❄️ 3s" \} = \{\}\)/);
     expect(script).toMatch(/applyBoatBadgeLayout\(\);\s*\/\/ lights/);
     expect(script).toMatch(/camera\.updateProjectionMatrix\(\);\s*applyBoatBadgeLayout\(\);/);
   });
