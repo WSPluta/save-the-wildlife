@@ -1153,11 +1153,18 @@ function summarizeAiAdapterHealth(health = {}) {
   const adapters = Array.isArray(health.model_adapters) ? health.model_adapters : [];
   const summary = health.model_adapter_summary || {};
   const generationProbeKnown = adapters.some((adapter) => Object.prototype.hasOwnProperty.call(adapter || {}, "generation_ready"));
+  const readyProviders = adapters
+    .filter((adapter) => adapter && adapter.generation_ready === true)
+    .map((adapter) => adapter.provider || "unknown");
+  const degradedProviders = adapters
+    .filter((adapter) => adapter && adapter.generation_ready === false)
+    .map((adapter) => adapter.provider || "unknown");
   const generationReady = summary.generation_ready === true || (
     generationProbeKnown &&
     adapters.length > 0 &&
     adapters.every((adapter) => adapter && adapter.generation_ready === true)
   );
+  const generationDegraded = generationProbeKnown && readyProviders.length > 0 && degradedProviders.length > 0;
   const ready = (summary.upstream_llm_ready === true && (summary.generation_ready !== false)) || (
     adapters.length > 0 &&
     adapters.every((adapter) =>
@@ -1178,12 +1185,16 @@ function summarizeAiAdapterHealth(health = {}) {
     acc[format] = (acc[format] || 0) + 1;
     return acc;
   }, {});
+  const degradedRuntimeText = generationDegraded
+    ? `${readyProviders.join(", ")} ready; ${degradedProviders.join(", ")} degraded`
+    : formatHealthCountMap(runtimes);
   return {
     ready,
-    runtimeText: ready ? "upstream-llm" : formatHealthCountMap(runtimes),
+    degraded: generationDegraded,
+    runtimeText: ready ? "upstream-llm" : degradedRuntimeText,
     handoffText: `upstream formats ${formatHealthCountMap(formats)}`,
-    gateText: ready ? "Ready" : (generationProbeKnown && !generationReady ? "Generation check failed" : "Check route"),
-    verdictText: ready ? "Generation ready" : (generationProbeKnown ? "Generation not proven" : "Route configured"),
+    gateText: ready ? "Ready" : (generationDegraded ? "Base ready; candidate degraded" : (generationProbeKnown && !generationReady ? "Generation check failed" : "Check route")),
+    verdictText: ready ? "Generation ready" : (generationDegraded ? "Base ready" : (generationProbeKnown ? "Generation not proven" : "Route configured")),
   };
 }
 
@@ -1204,6 +1215,12 @@ async function updateAiLearningHealth() {
       setTextById(
         "admin-ai-note-body",
         "Both private routes completed a bounded generation probe. Oracle AI Database keeps changing facts, Select AI and in-db agents ground context, and the model route shapes safe language."
+      );
+    } else if (adapter.degraded) {
+      setTextById("admin-ai-note-title", "Base route is live; candidate needs attention.");
+      setTextById(
+        "admin-ai-note-body",
+        "The presenter can use the base route now. The fine-tuned shadow route is configured but did not complete its bounded generation probe, so keep the claim framed as candidate-degraded until that model is repaired."
       );
     }
   } catch (error) {

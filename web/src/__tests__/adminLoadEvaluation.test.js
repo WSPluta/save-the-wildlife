@@ -75,6 +75,9 @@ describe("admin load evaluation view", () => {
     expect(script).toMatch(/renderAdminCommentaryFeed/);
     expect(worker).toMatch(/commentary\.history/);
     expect(script).toMatch(/generation_ready/);
+    expect(script).toMatch(/generationDegraded/);
+    expect(script).toContain("Base ready; candidate degraded");
+    expect(script).toContain("Base route is live; candidate needs attention.");
   });
 
   it("styles the compact AI learning receipt panels", () => {
