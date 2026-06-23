@@ -223,6 +223,8 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/statusBadge\.scale\.set\(layout\.statusScale, layout\.statusScale, 1\);/);
     expect(script).toMatch(/sprite\.userData\.text = text \|\| "";/);
     expect(script).toMatch(/const maxWidth = size \* 0\.84;/);
+    expect(script).toMatch(/while \(fontSize >= 24\)/);
+    expect(script).toMatch(/measuredWidth = ctx\.measureText\(text\)\.width;\s*sprite\.userData\.fontSize = fontSize;/);
     expect(script).toMatch(/sprite\.userData\.fontSize = fontSize;/);
     expect(script).toMatch(/sprite\.userData\.textWidthRatio = measuredWidth > 0 \? measuredWidth \/ size : 0;/);
     expect(script).toMatch(/function getBadgeDebug\(sprite\)/);

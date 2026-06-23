@@ -4122,12 +4122,14 @@ function setSpriteText(sprite, text) {
     const maxWidth = size * 0.84;
     let fontSize = 80;
     let measuredWidth = 0;
-    while (fontSize >= 36) {
+    while (fontSize >= 24) {
       ctx.font = `bold ${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`;
       measuredWidth = ctx.measureText(text).width;
       if (measuredWidth <= maxWidth) break;
       fontSize -= 4;
     }
+    ctx.font = `bold ${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`;
+    measuredWidth = ctx.measureText(text).width;
     sprite.userData.fontSize = fontSize;
     sprite.userData.textWidthRatio = measuredWidth > 0 ? measuredWidth / size : 0;
     ctx.textAlign = "center";
