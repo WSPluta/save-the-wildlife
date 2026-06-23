@@ -79,12 +79,12 @@ describe("gameplay polish regressions", () => {
   });
 
   it("keeps trash and power-ups readable without turning pickups into wall geometry", () => {
-    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 1\.22;/);
-    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 1\.78;/);
-    expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.09;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_WIDTH = 1\.18;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_HEIGHT = 0\.16;/);
-    expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.78;/);
+    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 1\.08;/);
+    expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 1\.42;/);
+    expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.075;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_WIDTH = 1\.0;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_HEIGHT = 0\.13;/);
+    expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.66;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.68;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 1\.22;/);
     expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 5\.2;/);
