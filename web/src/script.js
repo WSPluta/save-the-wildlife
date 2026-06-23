@@ -4119,12 +4119,25 @@ function setSpriteText(sprite, text) {
   sprite.userData.text = text || "";
   ctx.clearRect(0, 0, size, size);
   if (text && text.length) {
-    ctx.font = "bold 80px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif";
+    const maxWidth = size * 0.84;
+    let fontSize = 80;
+    let measuredWidth = 0;
+    while (fontSize >= 36) {
+      ctx.font = `bold ${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`;
+      measuredWidth = ctx.measureText(text).width;
+      if (measuredWidth <= maxWidth) break;
+      fontSize -= 4;
+    }
+    sprite.userData.fontSize = fontSize;
+    sprite.userData.textWidthRatio = measuredWidth > 0 ? measuredWidth / size : 0;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.shadowColor = "black";
-    ctx.shadowBlur = 8;
-    ctx.fillText(text, size / 2, size / 2 + 6);
+    ctx.shadowBlur = Math.max(4, Math.round(fontSize * 0.1));
+    ctx.fillText(text, size / 2, size / 2 + Math.max(3, Math.round(fontSize * 0.075)));
+  } else {
+    sprite.userData.fontSize = 0;
+    sprite.userData.textWidthRatio = 0;
   }
   sprite.material.map.needsUpdate = true;
 }
@@ -4137,6 +4150,8 @@ function getBadgeDebug(sprite) {
     layout: String(sprite.userData?.layout || (isMobileGameViewport() ? "mobile" : "desktop")),
     y: Number((sprite.position?.y || 0).toFixed(3)),
     scale: Number((sprite.scale?.x || 0).toFixed(3)),
+    fontSize: Number(sprite.userData?.fontSize || 0),
+    textWidthRatio: Number((sprite.userData?.textWidthRatio || 0).toFixed(3)),
   };
 }
 

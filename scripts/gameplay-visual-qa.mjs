@@ -182,6 +182,12 @@ function validateCommon(state, failures, expectedBadgeLayout) {
   if (!approxEqual(statusBadge.y, expectedBadgeLayout.statusY)) {
     failures.push(`status badge y mismatch: ${statusBadge.y}`);
   }
+  if (Number(powerupBadge.textWidthRatio || 0) > 0.88) {
+    failures.push(`powerup badge text is close to clipping: ${powerupBadge.textWidthRatio}`);
+  }
+  if (Number(statusBadge.textWidthRatio || 0) > 0.88) {
+    failures.push(`status badge text is close to clipping: ${statusBadge.textWidthRatio}`);
+  }
 }
 
 async function runVisualScenario({ chromium, baseUrl, outputDir, kind, timeoutMs }) {
