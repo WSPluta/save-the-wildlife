@@ -230,6 +230,10 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/function getBadgeDebug\(sprite\)/);
     expect(script).toMatch(/textWidthRatio: Number\(\(sprite\.userData\?\.textWidthRatio \|\| 0\)\.toFixed\(3\)\),/);
     expect(script).toMatch(/function setVisualQaBadge\(sprite, text\)/);
+    expect(script).toMatch(/function refreshVisualQaBadges\(\)/);
+    expect(script).toMatch(/if \(!VISUAL_QA_ENABLED \|\| !visualQaBadgeOverride\) return;/);
+    expect(script).toMatch(/water\.material\.uniforms\["time"\]\.value \+= ARCADE_ENVIRONMENT\.waterTimeStep;\s*refreshVisualQaBadges\(\);/);
+    expect(script).toMatch(/function renderGameToText\(\) \{\s*try \{ ensureBotRosterVisualsForScene\(\); \} catch \(_\) \{\}\s*refreshVisualQaBadges\(\);/);
     expect(script).toMatch(/badges: \{\s*powerup: getBadgeDebug\(powerupBadge\),\s*status: getBadgeDebug\(statusBadge\),\s*\},/);
     expect(script).toMatch(/powerupSamples,/);
     expect(script).toMatch(/window\.__stwlVisualQa = \{/);

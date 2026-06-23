@@ -4165,6 +4165,16 @@ function setVisualQaBadge(sprite, text) {
   return getBadgeDebug(sprite);
 }
 
+function refreshVisualQaBadges() {
+  if (!VISUAL_QA_ENABLED || !visualQaBadgeOverride) return;
+  if (visualQaBadgeOverride.powerupText != null) {
+    setVisualQaBadge(powerupBadge, visualQaBadgeOverride.powerupText);
+  }
+  if (visualQaBadgeOverride.statusText != null) {
+    setVisualQaBadge(statusBadge, visualQaBadgeOverride.statusText);
+  }
+}
+
 function disableReflectionForSprite(sprite) {
   if (!sprite) return;
   const prev = { visible: true };
@@ -5635,6 +5645,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   function render() {
     // Update water time uniform (Three.js Water shader)
     water.material.uniforms["time"].value += ARCADE_ENVIRONMENT.waterTimeStep;
+    refreshVisualQaBadges();
 
     // Frustum culling
     camera.updateMatrixWorld();
@@ -5789,6 +5800,7 @@ function hideMessages() {
 
 function renderGameToText() {
   try { ensureBotRosterVisualsForScene(); } catch (_) {}
+  refreshVisualQaBadges();
   const turtleSamples = Object.values(itemMeshes || {})
     .filter((mesh) => mesh && String(mesh.itemType || "") === "turtle" && mesh.visible !== false)
     .slice(0, 3)
