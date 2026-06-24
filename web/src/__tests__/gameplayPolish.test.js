@@ -89,6 +89,8 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.68;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 1\.22;/);
     expect(script).toMatch(/const BOAT_FOOTPRINT_RADIUS = 1\.25;/);
+    expect(script).toMatch(/const TRASH_FOOTPRINT_HALF_WIDTH = 0\.5;/);
+    expect(script).toMatch(/const TRASH_FOOTPRINT_HALF_DEPTH = 0\.33;/);
     expect(script).toMatch(/const TRASH_FOOTPRINT_RADIUS = 0\.95;/);
     expect(script).toMatch(/const POWERUP_FOOTPRINT_RADIUS = 1\.05;/);
     expect(script).toMatch(/const TURTLE_FOOTPRINT_RADIUS = 1\.35;/);
@@ -97,8 +99,10 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const ENGINE_WAKE_PARTICLES_ENABLED = false;/);
     expect(script).toMatch(/function clampVisualScale\(size, min, max\)/);
     expect(script).toMatch(/function isWithinFootprintOverlap\(position, itemRadius, boatRadius = BOAT_FOOTPRINT_RADIUS\)/);
+    expect(script).toMatch(/function isWithinTrashBoxFootprint\(position, scale = 1, boatRadius = BOAT_FOOTPRINT_RADIUS\)/);
     expect(script).toMatch(/function itemFootprintRadius\(itemType, scale = 1\)/);
     expect(script).toMatch(/function isGameplayPrimitiveOverlap\(position, itemType, scale = 1\)/);
+    expect(script).toMatch(/return isWithinTrashBoxFootprint\(position, scale\);/);
     expect(script).toMatch(/new THREE\.BoxGeometry\(TRASH_GEOMETRY_WIDTH, TRASH_GEOMETRY_HEIGHT, TRASH_GEOMETRY_DEPTH\)/);
     expect(script).toMatch(/const trashDetailGeometry = new THREE\.BoxGeometry/);
     expect(script).toMatch(/const detailMesh = new THREE\.InstancedMesh\(trashDetailGeometry, trashDetailMaterial, TRASH_INSTANCE_MAX\);/);
@@ -112,6 +116,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/clampVisualScale\(item\.size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX\)/);
     expect(script).toMatch(/visualScale: Number\(clampVisualScale\(item\.size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX\)/);
     expect(script).toMatch(/pickupFootprints: \{/);
+    expect(script).toMatch(/trashShape: "box",/);
     expect(script).toMatch(/trashFloatY: TRASH_FLOAT_Y,/);
     expect(script).toMatch(/powerupFloatY: POWERUP_FLOAT_Y,/);
     expect(script).toMatch(/engineParticles: ENGINE_WAKE_PARTICLES_ENABLED/);
@@ -246,11 +251,10 @@ describe("gameplay polish regressions", () => {
     expect(script).not.toMatch(/createBoatWaterlineContact/);
     expect(script).not.toMatch(/localWaterlineContact/);
     expect(script).not.toMatch(/new THREE\.RingGeometry\(0\.39, 0\.53, 48, 1\);/);
-    expect(script).toMatch(/const playerBox = getPlayerCollisionBox\(\);/);
     expect(script).toMatch(/isGameplayPrimitiveOverlap\(item\.position, item\.type \|\| "trash", s\)/);
     expect(script).toMatch(/isGameplayPrimitiveOverlap\(item\.position, item\.type, s\)/);
     expect(script).toMatch(/let collision = isGameplayPrimitiveOverlap\(mesh\.position, mesh\.itemType\);/);
-    expect(script).toMatch(/if \(!collision\) collision = playerBox\.intersectsBox\(itemCollisionBox\);/);
+    expect(script).not.toMatch(/playerBox\.intersectsBox\(itemCollisionBox\)/);
     expect(script).toMatch(/clientPosition: \{\s*x: Number\(\(player\.position\?\.x \|\| 0\)\.toFixed\(3\)\),\s*z: Number\(\(player\.position\?\.z \|\| 0\)\.toFixed\(3\)\),\s*rotY: Number\(\(player\.rotation\?\.y \|\| 0\)\.toFixed\(4\)\),\s*\},/);
     expect(script).toMatch(/clientItemPosition: \{\s*x: Number\(/);
     expect(script).toMatch(/latestBoatFeelDebug = updateBoatFeel\(player, localBoatFeelState,/);
