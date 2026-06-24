@@ -14,6 +14,7 @@ import {
   recomputeWorldSize,
   resolveAuthoritativeBoatTypes,
   resolveCollisionValidateRadius,
+  resolveItemCollisionRadius,
   resolveServerAuthSpeedLimit,
   countMirroredMapEntries,
   chooseSpawnPositionAwayFromPlayers,
@@ -158,15 +159,38 @@ describe("recomputeWorldSize", () => {
 });
 
 describe("resolveCollisionValidateRadius", () => {
-  it("defaults to an arcade pickup radius that matches the visible client hitbox", () => {
-    expect(DEFAULT_COLLISION_VALIDATE_RADIUS).toBe(6.5);
-    expect(resolveCollisionValidateRadius()).toBe(6.5);
+  it("defaults to the legacy sanity radius; scoring uses boat/item footprints", () => {
+    expect(DEFAULT_COLLISION_VALIDATE_RADIUS).toBe(3.6);
+    expect(resolveCollisionValidateRadius()).toBe(3.6);
   });
 
   it("accepts explicit positive overrides and ignores invalid values", () => {
     expect(resolveCollisionValidateRadius("2.25")).toBe(2.25);
-    expect(resolveCollisionValidateRadius("0")).toBe(6.5);
-    expect(resolveCollisionValidateRadius("bad")).toBe(6.5);
+    expect(resolveCollisionValidateRadius("0")).toBe(3.6);
+    expect(resolveCollisionValidateRadius("bad")).toBe(3.6);
+  });
+});
+
+describe("resolveItemCollisionRadius", () => {
+  it("keeps server pickup validation aligned to invisible gameplay primitives", () => {
+    expect(resolveItemCollisionRadius("trash")).toBe(0.95);
+    expect(resolveItemCollisionRadius("powerup")).toBe(1.05);
+    expect(resolveItemCollisionRadius("powerup_freeze")).toBe(1.05);
+    expect(resolveItemCollisionRadius("turtle")).toBe(1.35);
+  });
+
+  it("prefers the recorded item type when the cache namespace is generic", () => {
+    expect(resolveItemCollisionRadius("powerup", { type: "powerup_shield" })).toBe(1.05);
+    expect(resolveItemCollisionRadius("trash", { type: "turtle" })).toBe(1.35);
+  });
+});
+
+describe("resolveAuthoritativeBoatTypes collision footprints", () => {
+  it("defines boat-mode collision radii for server-side pickup validation", () => {
+    const types = resolveAuthoritativeBoatTypes();
+    expect(types.speed.collisionRadius).toBe(1.25);
+    expect(types.fishing.collisionRadius).toBe(1.45);
+    expect(types.rescue.collisionRadius).toBe(1.35);
   });
 });
 

@@ -183,8 +183,12 @@ const TRASH_GEOMETRY_DEPTH = 0.66;
 const POWERUP_FLOAT_Y = 0.34;
 const POWERUP_VISUAL_SCALE_MIN = 0.68;
 const POWERUP_VISUAL_SCALE_MAX = 1.22;
-const TRASH_ARCADE_PICKUP_RADIUS = 6.5;
-const POWERUP_ARCADE_PICKUP_RADIUS = 6.5;
+// Invisible gameplay primitives: keep collisions stable even when visuals move
+// from simple box/sphere meshes to instanced or animated 3D assets.
+const BOAT_FOOTPRINT_RADIUS = 1.25;
+const TRASH_FOOTPRINT_RADIUS = 0.95;
+const POWERUP_FOOTPRINT_RADIUS = 1.05;
+const TURTLE_FOOTPRINT_RADIUS = 1.35;
 const GAMEPLAY_PARTICLES_ENABLED = false;
 const ENGINE_WAKE_PARTICLES_ENABLED = false;
 const BOT_RENDER_MODE = "demo-visible";
@@ -209,7 +213,7 @@ const CANONICAL_BOAT_ACCELERATION = 6;
 const CANONICAL_BOAT_BRAKE = 1.8;
 const CANONICAL_BOAT_MAX_SPEED = 3;
 const CANONICAL_BOAT_FRICTION = 0.18;
-const CANONICAL_BOAT_TURN_SPEED = Math.PI / 30;
+const CANONICAL_BOAT_TURN_SPEED = 0.78;
 const BOAT_BADGE_LAYOUT = Object.freeze({
   desktop: {
     powerupScale: 0.46,
@@ -608,11 +612,21 @@ function getPlayerCollisionBox() {
   return playerCollisionBox.setFromObject(player).expandByVector(playerCollisionPadding);
 }
 
-function isWithinArcadePickupRadius(position, radius) {
+function isWithinFootprintOverlap(position, itemRadius, boatRadius = BOAT_FOOTPRINT_RADIUS) {
   if (!player || !position) return false;
   const dx = (player.position?.x || 0) - (Number(position.x) || 0);
   const dz = (player.position?.z || 0) - (Number(position.z) || 0);
-  return Math.hypot(dx, dz) <= radius;
+  return Math.hypot(dx, dz) <= Math.max(0, boatRadius + itemRadius);
+}
+
+function itemFootprintRadius(itemType, scale = 1) {
+  if (isMarineLife(itemType)) return TURTLE_FOOTPRINT_RADIUS;
+  if (isPowerUp(itemType)) return POWERUP_FOOTPRINT_RADIUS * Math.max(0.1, Number(scale) || 1);
+  return TRASH_FOOTPRINT_RADIUS * Math.max(0.1, Number(scale) || 1);
+}
+
+function isGameplayPrimitiveOverlap(position, itemType, scale = 1) {
+  return isWithinFootprintOverlap(position, itemFootprintRadius(itemType, scale));
 }
 const LOD_DISTANCES = {
   high: 50,
@@ -5299,7 +5313,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       itemCollisionCenter.set(px, py, pz);
       itemCollisionSize.set(TRASH_GEOMETRY_WIDTH * s, Math.max(TRASH_GEOMETRY_HEIGHT * s, 0.45), TRASH_GEOMETRY_DEPTH * s);
       itemCollisionBox.setFromCenterAndSize(itemCollisionCenter, itemCollisionSize);
-      if (!playerBox.intersectsBox(itemCollisionBox) && !isWithinArcadePickupRadius(item.position, TRASH_ARCADE_PICKUP_RADIUS)) {
+      const primitiveOverlap = isGameplayPrimitiveOverlap(item.position, item.type || "trash", s);
+      if (!primitiveOverlap && !playerBox.intersectsBox(itemCollisionBox)) {
         if (!magnetActive) continue;
         const dx = (player.position?.x || 0) - px;
         const dz = (player.position?.z || 0) - pz;
@@ -5317,6 +5332,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           x: Number((player.position?.x || 0).toFixed(3)),
           z: Number((player.position?.z || 0).toFixed(3)),
           rotY: Number((player.rotation?.y || 0).toFixed(4)),
+        },
+        clientItemPosition: {
+          x: Number(px.toFixed(3)),
+          z: Number(pz.toFixed(3)),
         },
       };
 
@@ -5341,7 +5360,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       itemCollisionCenter.set(px, py, pz);
       itemCollisionSize.set(s, Math.max(s, 0.75), s);
       itemCollisionBox.setFromCenterAndSize(itemCollisionCenter, itemCollisionSize);
-      if (!playerBox.intersectsBox(itemCollisionBox) && !isWithinArcadePickupRadius(item.position, POWERUP_ARCADE_PICKUP_RADIUS)) {
+      const primitiveOverlap = isGameplayPrimitiveOverlap(item.position, item.type, s);
+      if (!primitiveOverlap && !playerBox.intersectsBox(itemCollisionBox)) {
         if (!magnetActive) continue;
         const dx = (player.position?.x || 0) - px;
         const dz = (player.position?.z || 0) - pz;
@@ -5360,6 +5380,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           z: Number((player.position?.z || 0).toFixed(3)),
           rotY: Number((player.rotation?.y || 0).toFixed(4)),
         },
+        clientItemPosition: {
+          x: Number(px.toFixed(3)),
+          z: Number(pz.toFixed(3)),
+        },
       };
 
       postWorkerMessage({
@@ -5374,8 +5398,9 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       if (mesh.outOfBounds) continue;
       if (pendingItemCollisions.has(key)) continue;
 
-      const itemMeshBox = new THREE.Box3().setFromObject(mesh);
-      let collision = playerBox.intersectsBox(itemMeshBox);
+      itemCollisionBox.setFromObject(mesh);
+      let collision = isGameplayPrimitiveOverlap(mesh.position, mesh.itemType);
+      if (!collision) collision = playerBox.intersectsBox(itemCollisionBox);
       if (!collision && magnetActive && !isMarineLife(mesh.itemType)) {
         const dx = (player.position?.x || 0) - (mesh.position?.x || 0);
         const dz = (player.position?.z || 0) - (mesh.position?.z || 0);
@@ -5400,6 +5425,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           x: Number((player.position?.x || 0).toFixed(3)),
           z: Number((player.position?.z || 0).toFixed(3)),
           rotY: Number((player.rotation?.y || 0).toFixed(4)),
+        },
+        clientItemPosition: {
+          x: Number((mesh.position?.x || 0).toFixed(3)),
+          z: Number((mesh.position?.z || 0).toFixed(3)),
         },
       };
 
@@ -5986,9 +6015,11 @@ function renderGameToText() {
     botRosterVisual: latestBotRosterVisualDebug,
     itemsVisible: Object.keys(items || {}).length,
     trashInstances: trashInstances && trashInstances.map ? trashInstances.map.size : 0,
-    pickupRadii: {
-      trash: TRASH_ARCADE_PICKUP_RADIUS,
-      powerup: POWERUP_ARCADE_PICKUP_RADIUS,
+    pickupFootprints: {
+      boat: BOAT_FOOTPRINT_RADIUS,
+      trash: TRASH_FOOTPRINT_RADIUS,
+      powerup: POWERUP_FOOTPRINT_RADIUS,
+      turtle: TURTLE_FOOTPRINT_RADIUS,
       trashFloatY: TRASH_FLOAT_Y,
       powerupFloatY: POWERUP_FLOAT_Y,
     },

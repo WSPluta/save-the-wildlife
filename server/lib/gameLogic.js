@@ -111,7 +111,10 @@ export function recomputeWorldSize(humans, worldScaleCfg) {
   return { x, z };
 }
 
-export const DEFAULT_COLLISION_VALIDATE_RADIUS = 6.5;
+export const DEFAULT_COLLISION_VALIDATE_RADIUS = 3.6;
+export const DEFAULT_ITEM_COLLISION_RADIUS = 0.95;
+export const TURTLE_ITEM_COLLISION_RADIUS = 1.35;
+export const POWERUP_ITEM_COLLISION_RADIUS = 1.05;
 
 export function resolveCollisionValidateRadius(value) {
   if (value === undefined || value === null || value === "") {
@@ -121,6 +124,13 @@ export function resolveCollisionValidateRadius(value) {
   return Number.isFinite(parsed) && parsed > 0
     ? parsed
     : DEFAULT_COLLISION_VALIDATE_RADIUS;
+}
+
+export function resolveItemCollisionRadius(itemType, item = {}) {
+  const type = String(item?.type || itemType || "");
+  if (type === "turtle") return TURTLE_ITEM_COLLISION_RADIUS;
+  if (type.startsWith("powerup_") || itemType === "powerup") return POWERUP_ITEM_COLLISION_RADIUS;
+  return DEFAULT_ITEM_COLLISION_RADIUS;
 }
 
 function positiveNumber(value, fallback, max = Number.POSITIVE_INFINITY) {
@@ -146,6 +156,7 @@ export function resolveAuthoritativeBoatTypes(env = {}) {
       acceleration: 6,
       brake: 3,
       turnSpeed: 0.82,
+      collisionRadius: 1.25,
       driftFactor: 0.1,
     },
     fishing: {
@@ -158,6 +169,7 @@ export function resolveAuthoritativeBoatTypes(env = {}) {
       acceleration: 4.5,
       brake: 3.2,
       turnSpeed: 0.72,
+      collisionRadius: 1.45,
       driftFactor: 0.05,
     },
     rescue: {
@@ -170,6 +182,7 @@ export function resolveAuthoritativeBoatTypes(env = {}) {
       acceleration: 5.2,
       brake: 3.4,
       turnSpeed: 0.76,
+      collisionRadius: 1.35,
       driftFactor: 0.08,
     },
   };

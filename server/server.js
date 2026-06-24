@@ -24,6 +24,7 @@ import {
   buildOpeningCollectiblePositions,
   countMirroredMapEntries,
   resolveCollisionValidateRadius,
+  resolveItemCollisionRadius,
   resolveServerAuthSpeedLimit,
 } from "./lib/gameLogic.js";
 
@@ -257,6 +258,17 @@ function collisionClientPosition(value) {
   const halfZ = Math.max(16, Number(worldSizeZ || WORLD_SIZE_Z || 0) / 2 + COLLISION_VALIDATE_RADIUS * 2);
   if (Math.abs(x) > halfX || Math.abs(z) > halfZ) return null;
   return { x, z, source: "client" };
+}
+
+function collisionItemRadius(itemType, item = {}) {
+  return resolveItemCollisionRadius(itemType, item);
+}
+
+function collisionBoatRadius(playerId) {
+  const st = playersState.get(playerId);
+  const typeConfig = BOAT_TYPES[st?.boatType || "speed"] || BOAT_TYPES.speed || {};
+  const radius = Number(typeConfig.collisionRadius);
+  return Number.isFinite(radius) && radius > 0 ? radius : 1.25;
 }
 
 function buildMetricsObject(playersInfo, counts, targets, roomStats = {}, socketStats = {}) {
@@ -1514,7 +1526,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       }
     });
 
-    socket.on("items.collision", async ({ itemId, playerId, playerName, clientPosition } = {}, ack) => {
+    socket.on("items.collision", async ({ itemId, playerId, playerName, clientPosition, clientItemPosition } = {}, ack) => {
       const safeAck = (payload) => {
         try { if (typeof ack === "function") ack(payload); } catch (_) {}
       };
@@ -1591,11 +1603,12 @@ function scheduleRoomRefill(room, delayMs = 0) {
             safeAck({ ok: false, error: "missing_player_position", itemId });
             return;
           }
-          const ipos = item.position || { x: 0, z: 0 };
+          const ipos = collisionClientPosition(clientItemPosition) || item.position || { x: 0, z: 0 };
           const dx = (validationPosition.x || 0) - ipos.x;
           const dz = (validationPosition.z || 0) - ipos.z;
           const dist = Math.hypot(dx, dz);
-          let allowedRadius = COLLISION_VALIDATE_RADIUS;
+          const footprintRadius = collisionBoatRadius(playerId) + collisionItemRadius(itemType, item);
+          let allowedRadius = footprintRadius;
           const st = playersState.get(playerId);
           if (st?.effects && st.effects.magnetUntil && Date.now() < st.effects.magnetUntil) {
             allowedRadius = Math.max(allowedRadius, POWERUP_MAGNET_RADIUS);
