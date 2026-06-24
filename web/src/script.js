@@ -405,26 +405,6 @@ function removeRemotePlayerVisual(id) {
   }
 }
 
-function ensureRemotePlayerVisual(id, state) {
-  if (!id || id === yourId || !shouldRenderRemotePlayer(id)) {
-    if (id && id !== yourId) removeRemotePlayerVisual(id);
-    return null;
-  }
-  if (!otherPlayersMeshes[id]) {
-    otherPlayersMeshes[id] = makePlayerMesh(boatModel, id);
-    if (state && Number.isFinite(Number(state.x)) && Number.isFinite(Number(state.z))) {
-      otherPlayersMeshes[id].position.x = Number(state.x);
-      otherPlayersMeshes[id].position.z = Number(state.z);
-      if (Number.isFinite(Number(state.rotY))) {
-        otherPlayersMeshes[id].rotation.y = Number(state.rotY);
-      }
-    }
-    refreshNameTagForPlayer(id);
-    updatePlayersHud();
-  }
-  return otherPlayersMeshes[id] || null;
-}
-
 function applyFollowCamera(root, yaw) {
   if (!camera || !root) return;
   const composition = getFollowCameraComposition();
@@ -3755,6 +3735,27 @@ async function init() {
     addNameTag(group, label);
     try { disableReflectionForObject(group); } catch (_) {}
     return group;
+  }
+
+  function ensureRemotePlayerVisual(id, state) {
+    if (!id || id === yourId || !shouldRenderRemotePlayer(id)) {
+      if (id && id !== yourId) removeRemotePlayerVisual(id);
+      return null;
+    }
+    if (!boatModel) return null;
+    if (!otherPlayersMeshes[id]) {
+      otherPlayersMeshes[id] = makePlayerMesh(boatModel, id);
+      if (state && Number.isFinite(Number(state.x)) && Number.isFinite(Number(state.z))) {
+        otherPlayersMeshes[id].position.x = Number(state.x);
+        otherPlayersMeshes[id].position.z = Number(state.z);
+        if (Number.isFinite(Number(state.rotY))) {
+          otherPlayersMeshes[id].rotation.y = Number(state.rotY);
+        }
+      }
+      refreshNameTagForPlayer(id);
+      updatePlayersHud();
+    }
+    return otherPlayersMeshes[id] || null;
   }
 
   function ensureBotRosterVisuals() {
