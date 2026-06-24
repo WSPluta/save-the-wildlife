@@ -167,6 +167,7 @@ let releasePowerupInstance = () => {};
 let createItemMeshForScene = () => null;
 let releaseRemoteBoatVisual = () => {};
 let ensureBotRosterVisualsForScene = () => {};
+let ensureRemotePlayerVisualForScene = () => null;
 let scoreElementRef = null;
 let applyPowerUpEffect = () => {};
 let triggerReplayMomentCallback = () => {};
@@ -3760,6 +3761,7 @@ async function init() {
     }
     return otherPlayersMeshes[id] || null;
   }
+  ensureRemotePlayerVisualForScene = ensureRemotePlayerVisual;
 
   function ensureBotRosterVisuals() {
     const debug = {
@@ -5573,7 +5575,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           removeRemotePlayerVisual(id);
           return;
         }
-        ensureRemotePlayerVisual(id, state);
+        ensureRemotePlayerVisualForScene(id, state);
       });
       Object.keys(playerMeshes).forEach((id) => {
         if (id === yourId) return;

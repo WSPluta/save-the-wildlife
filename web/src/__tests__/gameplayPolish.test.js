@@ -121,8 +121,10 @@ describe("gameplay polish regressions", () => {
 
   it("creates remote boats from authoritative player state snapshots", () => {
     expect(script).toMatch(/function ensureRemotePlayerVisual\(id, state\)/);
+    expect(script).toMatch(/let ensureRemotePlayerVisualForScene = \(\) => null;/);
+    expect(script).toMatch(/ensureRemotePlayerVisualForScene = ensureRemotePlayerVisual;/);
     expect(script).toMatch(/Object\.entries\(authStates\)\.forEach\(\(\[id, state\]\) =>/);
-    expect(script).toMatch(/ensureRemotePlayerVisual\(id, state\);/);
+    expect(script).toMatch(/ensureRemotePlayerVisualForScene\(id, state\);/);
     expect(script).toMatch(/let authStateSeenAt = \{\};/);
     expect(script).toMatch(/authStates\[id\] = state;/);
     expect(script).toMatch(/authStateSeenAt\[id\] = receivedAt;/);
