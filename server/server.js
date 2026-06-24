@@ -222,6 +222,43 @@ function recomputeWorldSize(humans) {
 
 let nextItemsSpawnAt = Date.now();
 
+function tracePositionForPlayer(playerId, now = Date.now()) {
+  const trace = ENABLE_COHERENCE_BACKEND
+    ? localPlayerTraces[playerId]
+    : mapPlayersTraces[playerId];
+  if (!trace) return null;
+  const updatedMs = trace.updated ? new Date(trace.updated).getTime() : 0;
+  if (Number.isFinite(updatedMs) && updatedMs > 0 && now - updatedMs > Math.max(2500, BROADCAST_REFRESH_UPDATE * 6)) {
+    return null;
+  }
+  const x = Number(trace.x);
+  const z = Number(trace.z);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  return { x, z, source: "trace" };
+}
+
+function collisionValidationPosition(playerId) {
+  const fromTrace = tracePositionForPlayer(playerId);
+  if (fromTrace) return fromTrace;
+  if (SERVER_AUTH_ENABLED) {
+    const st = playersState.get(playerId);
+    if (!st) return null;
+    return { x: Number(st.x || 0), z: Number(st.z || 0), source: "auth" };
+  }
+  return null;
+}
+
+function collisionClientPosition(value) {
+  if (!value || typeof value !== "object") return null;
+  const x = Number(value.x);
+  const z = Number(value.z);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  const halfX = Math.max(16, Number(worldSizeX || WORLD_SIZE_X || 0) / 2 + COLLISION_VALIDATE_RADIUS * 2);
+  const halfZ = Math.max(16, Number(worldSizeZ || WORLD_SIZE_Z || 0) / 2 + COLLISION_VALIDATE_RADIUS * 2);
+  if (Math.abs(x) > halfX || Math.abs(z) > halfZ) return null;
+  return { x, z, source: "client" };
+}
+
 function buildMetricsObject(playersInfo, counts, targets, roomStats = {}, socketStats = {}) {
   const ids = Object.keys(playersInfo || {});
   const total = ids.length;
@@ -1477,7 +1514,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       }
     });
 
-    socket.on("items.collision", async ({ itemId, playerId, playerName } = {}, ack) => {
+    socket.on("items.collision", async ({ itemId, playerId, playerName, clientPosition } = {}, ack) => {
       const safeAck = (payload) => {
         try { if (typeof ack === "function") ack(payload); } catch (_) {}
       };
@@ -1545,19 +1582,22 @@ function scheduleRoomRefill(room, delayMs = 0) {
         }
         const itemSnapshot = snapshotItemForEvent(item);
 
-        // If server-authoritative, validate proximity using authoritative state
-        if (SERVER_AUTH_ENABLED) {
-          const st = playersState.get(playerId);
-          if (!st) {
-            safeAck({ ok: false, error: "missing_player_state", itemId });
+        // Validate proximity against the same position stream the browser renders.
+        // In production the old server-authoritative state can lag the restored
+        // client-owned boat controls, so prefer fresh player traces for pickups.
+        {
+          const validationPosition = collisionClientPosition(clientPosition) || collisionValidationPosition(playerId);
+          if (!validationPosition) {
+            safeAck({ ok: false, error: "missing_player_position", itemId });
             return;
           }
           const ipos = item.position || { x: 0, z: 0 };
-          const dx = (st.x || 0) - ipos.x;
-          const dz = (st.z || 0) - ipos.z;
+          const dx = (validationPosition.x || 0) - ipos.x;
+          const dz = (validationPosition.z || 0) - ipos.z;
           const dist = Math.hypot(dx, dz);
           let allowedRadius = COLLISION_VALIDATE_RADIUS;
-          if (st.effects && st.effects.magnetUntil && Date.now() < st.effects.magnetUntil) {
+          const st = playersState.get(playerId);
+          if (st?.effects && st.effects.magnetUntil && Date.now() < st.effects.magnetUntil) {
             allowedRadius = Math.max(allowedRadius, POWERUP_MAGNET_RADIUS);
           }
           if (dist > allowedRadius) {
@@ -1568,6 +1608,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
               itemId,
               distance: Number(dist.toFixed(3)),
               allowedRadius,
+              positionSource: validationPosition.source,
             });
             return;
           }

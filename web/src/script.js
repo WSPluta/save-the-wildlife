@@ -183,8 +183,9 @@ const TRASH_GEOMETRY_DEPTH = 0.66;
 const POWERUP_FLOAT_Y = 0.34;
 const POWERUP_VISUAL_SCALE_MIN = 0.68;
 const POWERUP_VISUAL_SCALE_MAX = 1.22;
-const TRASH_ARCADE_PICKUP_RADIUS = 3.6;
-const POWERUP_ARCADE_PICKUP_RADIUS = 3.6;
+const TRASH_ARCADE_PICKUP_RADIUS = 6.5;
+const POWERUP_ARCADE_PICKUP_RADIUS = 6.5;
+const GAMEPLAY_PARTICLES_ENABLED = false;
 const ENGINE_WAKE_PARTICLES_ENABLED = false;
 const BOT_RENDER_MODE = "demo-visible";
 const BOT_VISUAL_SCALE = 0.18;
@@ -4850,9 +4851,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   navmeshGeometry.rotateX(Math.PI / 2);
   scene.add(navmesh);
 
-  // Particles (engine trail and collision feedback)
-  const scale = window.innerWidth < 800 ? 0.6 : 1.0;
-  emitters = createEmitters(scene, scale);
+  // Keep the demo visual clean: no engine, splash, collision, or square point particles.
+  emitters = GAMEPLAY_PARTICLES_ENABLED
+    ? createEmitters(scene, window.innerWidth < 800 ? 0.6 : 1.0)
+    : null;
 
   // Timer UI: update both if present; default sink keeps one for legacy
   remainingTime = gameDuration;
@@ -5311,6 +5313,11 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         localScore,
         playerId: yourId,
         playerName: playerName,
+        clientPosition: {
+          x: Number((player.position?.x || 0).toFixed(3)),
+          z: Number((player.position?.z || 0).toFixed(3)),
+          rotY: Number((player.rotation?.y || 0).toFixed(4)),
+        },
       };
 
       postWorkerMessage({
@@ -5348,6 +5355,11 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         localScore,
         playerId: yourId,
         playerName: playerName,
+        clientPosition: {
+          x: Number((player.position?.x || 0).toFixed(3)),
+          z: Number((player.position?.z || 0).toFixed(3)),
+          rotY: Number((player.rotation?.y || 0).toFixed(4)),
+        },
       };
 
       postWorkerMessage({
@@ -5384,6 +5396,11 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         localScore,
         playerId: yourId,
         playerName: playerName,
+        clientPosition: {
+          x: Number((player.position?.x || 0).toFixed(3)),
+          z: Number((player.position?.z || 0).toFixed(3)),
+          rotY: Number((player.rotation?.y || 0).toFixed(4)),
+        },
       };
 
       if (String(mesh.itemType || "").startsWith("powerup_")) {

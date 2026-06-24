@@ -88,8 +88,9 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.66;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.68;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 1\.22;/);
-    expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 3\.6;/);
-    expect(script).toMatch(/const POWERUP_ARCADE_PICKUP_RADIUS = 3\.6;/);
+    expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 6\.5;/);
+    expect(script).toMatch(/const POWERUP_ARCADE_PICKUP_RADIUS = 6\.5;/);
+    expect(script).toMatch(/const GAMEPLAY_PARTICLES_ENABLED = false;/);
     expect(script).toMatch(/const ENGINE_WAKE_PARTICLES_ENABLED = false;/);
     expect(script).toMatch(/function clampVisualScale\(size, min, max\)/);
     expect(script).toMatch(/function isWithinArcadePickupRadius\(position, radius\)/);
@@ -243,12 +244,14 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const playerBox = getPlayerCollisionBox\(\);/);
     expect(script).toMatch(/isWithinArcadePickupRadius\(item\.position, TRASH_ARCADE_PICKUP_RADIUS\)/);
     expect(script).toMatch(/isWithinArcadePickupRadius\(item\.position, POWERUP_ARCADE_PICKUP_RADIUS\)/);
+    expect(script).toMatch(/clientPosition: \{\s*x: Number\(\(player\.position\?\.x \|\| 0\)\.toFixed\(3\)\),\s*z: Number\(\(player\.position\?\.z \|\| 0\)\.toFixed\(3\)\),\s*rotY: Number\(\(player\.rotation\?\.y \|\| 0\)\.toFixed\(4\)\),\s*\},/);
     expect(script).toMatch(/latestBoatFeelDebug = updateBoatFeel\(player, localBoatFeelState,/);
     expect(script).toMatch(/updateBoatFeel\(m, m\.userData && m\.userData\.boatFeel,/);
     expect(script).toMatch(/boatFeel: getBoatFeelDebug\(localBoatFeelState\) \|\| latestBoatFeelDebug,/);
     expect(script).not.toMatch(/createWakeRippleEffect/);
     expect(script).not.toMatch(/wakeRippleEffect/);
     expect(script).toMatch(/waterEffects: \{ wakeRipples: false, contactRing: false, engineParticles: ENGINE_WAKE_PARTICLES_ENABLED \},/);
+    expect(script).toMatch(/emitters = GAMEPLAY_PARTICLES_ENABLED[\s\S]{0,120}: null;/);
     expect(script).toMatch(/pickups: latestPickupDebug,/);
     expect(script).toMatch(/if \(key === yourId\) \{/);
     expect(script).toMatch(/try \{ disableReflectionForSprite\(sprite\); \} catch \(_\) \{\}/);
