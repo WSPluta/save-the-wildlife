@@ -3,8 +3,8 @@ export function reinitializeItemForSpawn(obj, type, options = {}) {
   const {
     idFactory,
     coordinateFactory,
-    worldSizeX = 88,
-    worldSizeZ = 22,
+    worldSizeX = 128,
+    worldSizeZ = 42,
     itemMinSize = 0.5,
     itemMaxSize = 0.9,
     random = Math.random,

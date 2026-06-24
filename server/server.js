@@ -120,10 +120,10 @@ const ITEM_MIN_SIZE = process.env.ITEM_MIN_SIZE
 
 const WORLD_SIZE_X = process.env.WORLD_SIZE_X
   ? parseInt(process.env.WORLD_SIZE_X)
-  : 88;
+  : 128;
 const WORLD_SIZE_Z = process.env.WORLD_SIZE_Z
   ? parseInt(process.env.WORLD_SIZE_Z)
-  : 22;
+  : 42;
 
 let worldSizeX = WORLD_SIZE_X;
 let worldSizeZ = WORLD_SIZE_Z;

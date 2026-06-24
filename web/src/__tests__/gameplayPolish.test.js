@@ -33,7 +33,7 @@ describe("gameplay polish regressions", () => {
 
   it("renders demo bots as bounded visible participants for gameplay and commentary proof", () => {
     expect(script).toMatch(/const BOT_RENDER_MODE = "demo-visible";/);
-    expect(script).toMatch(/const BOT_VISUAL_SCALE = 0\.28;/);
+    expect(script).toMatch(/const BOT_VISUAL_SCALE = 0\.18;/);
     expect(script).toMatch(/const BOT_VISUAL_COLOR = 0x15c7b8;/);
     expect(script).toMatch(/function isBotDisplayName\(name\)/);
     expect(script).toMatch(/function isBotPlayerId\(id\)/);
@@ -45,7 +45,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/function keepBotRemoteBoatVisible\(group\)/);
     expect(script).toMatch(/function ensureBotRosterVisuals\(\)/);
     expect(script).toMatch(/function botDemoLabel\(\) \{\s*return "BOT";\s*\}/);
-    expect(script).toMatch(/const BOT_NAME_TAG_SCALE = Object\.freeze\(\{ x: 0\.42, y: 0\.13, z: 1 \}\);/);
+    expect(script).toMatch(/const BOT_NAME_TAG_SCALE = Object\.freeze\(\{ x: 0\.32, y: 0\.1, z: 1 \}\);/);
     expect(script).toMatch(/function configureNameTagForOwner\(sprite, object3d\)/);
     expect(script).toMatch(/sprite\.scale\.set\(scale\.x, scale\.y, scale\.z\);/);
     expect(script).toMatch(/\.\.\.Object\.keys\(otherPlayersInfo \|\| \{\}\),/);
@@ -127,6 +127,12 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/authStates\[id\] = state;/);
     expect(script).toMatch(/authStateSeenAt\[id\] = receivedAt;/);
     expect(script).toMatch(/REMOTE_AUTH_STATE_STALE_MS = 3000/);
+    expect(script).toMatch(/const REMOTE_PLAYER_POSITION_SMOOTHING = 7\.5;/);
+    expect(script).toMatch(/const REMOTE_PLAYER_ROTATION_SMOOTHING = 8\.5;/);
+    expect(script).toMatch(/const REMOTE_PLAYER_FROZEN_SMOOTHING = 3\.5;/);
+    expect(script).toMatch(/const remoteDt = Math\.max\(0\.001, Math\.min\(0\.05, frameDt \|\| 0\.016\)\);/);
+    expect(script).toMatch(/const lerpFactor = 1 - Math\.exp\(-remoteRate \* remoteDt\);/);
+    expect(script).toMatch(/const rotLerpFactor = 1 - Math\.exp\(-remoteRotRate \* remoteDt\);/);
   });
 
   it("replaces stale room items when authoritative items arrive", () => {

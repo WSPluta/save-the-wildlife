@@ -301,8 +301,8 @@ export function chooseSpawnPositionAwayFromPlayers({
   players = [],
   requiredPlayers,
   coordinateFactory,
-  worldSizeX = 88,
-  worldSizeZ = 22,
+  worldSizeX = 128,
+  worldSizeZ = 42,
   clearRadius = DEFAULT_SPAWN_PLAYER_CLEAR_RADIUS,
   attempts = 24,
 } = {}) {
@@ -370,8 +370,8 @@ export function buildStartPositionItemRelocations({
   items = {},
   startPosition,
   coordinateFactory,
-  worldSizeX = 88,
-  worldSizeZ = 22,
+  worldSizeX = 128,
+  worldSizeZ = 42,
   clearRadius = DEFAULT_START_POSITION_ITEM_CLEAR_RADIUS,
   attempts = 48,
 } = {}) {
@@ -439,8 +439,8 @@ export function buildOpeningCollectiblePositions({
   ringRadius = 8,
   clearRadius = DEFAULT_START_POSITION_ITEM_CLEAR_RADIUS,
   minSpacing = 3.5,
-  worldSizeX = 88,
-  worldSizeZ = 22,
+  worldSizeX = 128,
+  worldSizeZ = 42,
 } = {}) {
   const start = {
     x: Number(startPosition?.x),

@@ -185,12 +185,15 @@ const TRASH_ARCADE_PICKUP_RADIUS = 3.6;
 const POWERUP_ARCADE_PICKUP_RADIUS = 3.6;
 const ENGINE_WAKE_PARTICLES_ENABLED = false;
 const BOT_RENDER_MODE = "demo-visible";
-const BOT_VISUAL_SCALE = 0.28;
+const BOT_VISUAL_SCALE = 0.18;
 const BOT_VISUAL_COLOR = 0x15c7b8;
 const NAME_TAG_SCALE = Object.freeze({ x: 1.22, y: 0.3, z: 1 });
 const NAME_TAG_POSITION_Y = 1.16;
-const BOT_NAME_TAG_SCALE = Object.freeze({ x: 0.42, y: 0.13, z: 1 });
-const BOT_NAME_TAG_POSITION_Y = 0.82;
+const BOT_NAME_TAG_SCALE = Object.freeze({ x: 0.32, y: 0.1, z: 1 });
+const BOT_NAME_TAG_POSITION_Y = 0.58;
+const REMOTE_PLAYER_POSITION_SMOOTHING = 7.5;
+const REMOTE_PLAYER_ROTATION_SMOOTHING = 8.5;
+const REMOTE_PLAYER_FROZEN_SMOOTHING = 3.5;
 const BOAT_BADGE_LAYOUT = Object.freeze({
   desktop: {
     powerupScale: 0.46,
@@ -5555,7 +5558,11 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   function animateOtherPlayers(playerMeshes) {
     if (!playerMeshes) return;
     const timeFreezeActive = Date.now() < (powerUpState.freezeUntil || 0);
-    const lerpFactor = timeFreezeActive ? 0.12 : 0.35;
+    const remoteDt = Math.max(0.001, Math.min(0.05, frameDt || 0.016));
+    const remoteRate = timeFreezeActive ? REMOTE_PLAYER_FROZEN_SMOOTHING : REMOTE_PLAYER_POSITION_SMOOTHING;
+    const remoteRotRate = timeFreezeActive ? REMOTE_PLAYER_FROZEN_SMOOTHING : REMOTE_PLAYER_ROTATION_SMOOTHING;
+    const lerpFactor = 1 - Math.exp(-remoteRate * remoteDt);
+    const rotLerpFactor = 1 - Math.exp(-remoteRotRate * remoteDt);
     if (serverAuthEnabled && authStates) {
       const nowAuth = performance.now();
       Object.entries(authStates).forEach(([id, state]) => {
@@ -5581,7 +5588,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         m.position.x = THREE.MathUtils.lerp(m.position.x, s.x, lerpFactor);
         m.position.z = THREE.MathUtils.lerp(m.position.z, s.z, lerpFactor);
         const delta = ((s.rotY - m.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
-        m.rotation.y += delta * lerpFactor;
+        m.rotation.y += delta * rotLerpFactor;
         updateBoatFeel(m, m.userData && m.userData.boatFeel, {
           dt: frameDt || 0.016,
           time: performance.now() * 0.001,
@@ -5602,7 +5609,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         playerMeshes[id].position.x = THREE.MathUtils.lerp(playerMeshes[id].position.x, otherPlayers[id].x, lerpFactor);
         playerMeshes[id].position.z = THREE.MathUtils.lerp(playerMeshes[id].position.z, otherPlayers[id].z, lerpFactor);
         const delta = ((otherPlayers[id].rotY - playerMeshes[id].rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
-        playerMeshes[id].rotation.y += delta * lerpFactor;
+        playerMeshes[id].rotation.y += delta * rotLerpFactor;
         updateBoatFeel(playerMeshes[id], playerMeshes[id].userData && playerMeshes[id].userData.boatFeel, {
           dt: frameDt || 0.016,
           time: performance.now() * 0.001,

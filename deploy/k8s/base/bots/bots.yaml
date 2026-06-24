@@ -45,7 +45,19 @@ spec:
             - name: BOT_SYNTHETIC_MECHANICS_EVENTS
               value: "true"
             - name: BOT_TRACE_RATE_MS
-              value: "50"
+              value: "80"
+            - name: BOT_THROTTLE
+              value: "0.58"
+            - name: BOT_ACCELERATION
+              value: "3.2"
+            - name: BOT_MAX_SPEED
+              value: "1.85"
+            - name: BOT_TURN_SPEED
+              value: "0.46"
+            - name: BOT_WORLD_HALF_WIDTH
+              value: "64"
+            - name: BOT_WORLD_HALF_HEIGHT
+              value: "21"
             - name: BOT_POSITION_EVENT_INTERVAL_MS
               value: "2500"
             - name: BOT_MECHANICS_EVENT_INTERVAL_MS
