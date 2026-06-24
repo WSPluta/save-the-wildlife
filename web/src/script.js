@@ -176,10 +176,11 @@ const scoredItemCollisions = new Set();
 const COLLISION_PENDING_TIMEOUT_MS = 1500;
 const TRASH_VISUAL_SCALE_MIN = 1.08;
 const TRASH_VISUAL_SCALE_MAX = 1.42;
-const TRASH_FLOAT_Y = 0.075;
+const TRASH_FLOAT_Y = 0.18;
 const TRASH_GEOMETRY_WIDTH = 1.0;
 const TRASH_GEOMETRY_HEIGHT = 0.13;
 const TRASH_GEOMETRY_DEPTH = 0.66;
+const POWERUP_FLOAT_Y = 0.34;
 const POWERUP_VISUAL_SCALE_MIN = 0.68;
 const POWERUP_VISUAL_SCALE_MAX = 1.22;
 const TRASH_ARCADE_PICKUP_RADIUS = 3.6;
@@ -192,6 +193,10 @@ const NAME_TAG_SCALE = Object.freeze({ x: 1.22, y: 0.3, z: 1 });
 const NAME_TAG_POSITION_Y = 1.16;
 const BOT_NAME_TAG_SCALE = Object.freeze({ x: 0.32, y: 0.1, z: 1 });
 const BOT_NAME_TAG_POSITION_Y = 0.58;
+const LOCAL_AUTH_POSITION_SMOOTHING = 2.4;
+const LOCAL_AUTH_ROTATION_SMOOTHING = 3.2;
+const LOCAL_AUTH_SNAP_DISTANCE = 9.5;
+const LOCAL_AUTH_DEADZONE_DISTANCE = 0.08;
 const REMOTE_PLAYER_POSITION_SMOOTHING = 7.5;
 const REMOTE_PLAYER_ROTATION_SMOOTHING = 8.5;
 const REMOTE_PLAYER_FROZEN_SMOOTHING = 3.5;
@@ -630,6 +635,7 @@ const hudDebugEl = document.getElementById("hud-debug");
 const compactTimeEl = document.getElementById("compact-time");
 const compactScoreEl = document.getElementById("compact-score");
 const compactSpeedEl = document.getElementById("compact-speed");
+const compactFpsEl = document.getElementById("compact-fps");
 
 // Simple lifecycle state helpers to align button semantics with the flow
 // Phases: MAIN_MENU -> LOBBY -> GAMEPLAY -> POST_GAME
@@ -2752,7 +2758,7 @@ async function init() {
     const s = clampVisualScale(size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX);
     powerupTmpScale.set(s, s, s);
     const waterY = typeof position?.y === "number" ? position.y : 0;
-    powerupTmpPos.set(position.x, waterY + 0.2, position.z);
+    powerupTmpPos.set(position.x, waterY + POWERUP_FLOAT_Y, position.z);
     powerupTmpEuler.set(0, Math.random() * Math.PI * 2, 0);
     powerupTmpQuat.setFromEuler(powerupTmpEuler);
     powerupTmpMatrix.compose(powerupTmpPos, powerupTmpQuat, powerupTmpScale);
@@ -3841,7 +3847,7 @@ async function init() {
       scene.add(itemMesh);
     }
     itemMesh.renderOrder = 2;
-    const y = (typeof position.y === "number" ? position.y : 0) + (isMarineLife(itemType) ? 0 : 0.08);
+    const y = (typeof position.y === "number" ? position.y : 0) + (isMarineLife(itemType) ? 0 : isPowerUp(itemType) ? POWERUP_FLOAT_Y : TRASH_FLOAT_Y);
     itemMesh.position.set(position.x, y, position.z);
 
     // Placeholder for trash animation system (kept from original, guarded)
@@ -5272,7 +5278,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       const s = clampVisualScale(item.size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX);
       const px = Number(item.position && item.position.x) || 0;
       const pz = Number(item.position && item.position.z) || 0;
-      const py = (typeof item.position?.y === "number" ? item.position.y : 0) + 0.08;
+      const py = (typeof item.position?.y === "number" ? item.position.y : 0) + TRASH_FLOAT_Y;
       itemCollisionCenter.set(px, py, pz);
       itemCollisionSize.set(TRASH_GEOMETRY_WIDTH * s, Math.max(TRASH_GEOMETRY_HEIGHT * s, 0.45), TRASH_GEOMETRY_DEPTH * s);
       itemCollisionBox.setFromCenterAndSize(itemCollisionCenter, itemCollisionSize);
@@ -5309,7 +5315,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       const s = clampVisualScale(item.size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX);
       const px = Number(item.position && item.position.x) || 0;
       const pz = Number(item.position && item.position.z) || 0;
-      const py = (typeof item.position?.y === "number" ? item.position.y : 0) + 0.08;
+      const py = (typeof item.position?.y === "number" ? item.position.y : 0) + POWERUP_FLOAT_Y;
       itemCollisionCenter.set(px, py, pz);
       itemCollisionSize.set(s, Math.max(s, 0.75), s);
       itemCollisionBox.setFromCenterAndSize(itemCollisionCenter, itemCollisionSize);
@@ -5468,9 +5474,12 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       } else if (throttle < 0) {
         playerSpeed -= BRAKE * (-throttle) * dt;
       }
+    } else {
+      const s = authStates && authStates[yourId];
+      playerSpeed += ((s && typeof s.speed === "number" ? s.speed : 0) - playerSpeed) * Math.min(1, dt * 8);
     }
 
-    if ((!serverAuthEnabled || !authFreshForYou) && steer !== 0) {
+    if (steer !== 0) {
       player.rotation.y += TURN_SPEED * steer * dt;
       if (keyboard["ArrowUp"]) {
         playerSpeed *= Math.exp(-FRICTION * dt);
@@ -5511,9 +5520,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     );
 
     const lastPosition = player.position.clone();
-    if (!serverAuthEnabled || !authFreshForYou) {
-      player.position.addScaledVector(direction, playerSpeed * dt);
-    }
+    player.position.addScaledVector(direction, effectiveSignedSpeed * dt);
 
     // 2D bounds check against world boundaries (ignore Y thickness)
     const halfW = (boundaries?.width || 100) / 2;
@@ -5525,16 +5532,22 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       player.position.copy(lastPosition);
     }
 
-    applyFollowCamera(player, player.rotation.y);
-
     // Reconcile local player to authoritative server state (smoothly)
     if (authFreshForYou) {
       const s = authStates[yourId];
       const target = new THREE.Vector3(s.x, player.position.y, s.z);
-      player.position.lerp(target, 0.2);
+      const localAuthDt = Math.max(0.001, Math.min(0.05, frameDt || 0.016));
+      const localAuthLerp = 1 - Math.exp(-LOCAL_AUTH_POSITION_SMOOTHING * localAuthDt);
+      const localAuthRotLerp = 1 - Math.exp(-LOCAL_AUTH_ROTATION_SMOOTHING * localAuthDt);
+      const authDistance = player.position.distanceTo(target);
+      if (authDistance > LOCAL_AUTH_SNAP_DISTANCE) {
+        player.position.copy(target);
+      } else if (authDistance > LOCAL_AUTH_DEADZONE_DISTANCE) {
+        player.position.lerp(target, localAuthLerp);
+      }
       // shortest-angle lerp for yaw
       const delta = ((s.rotY - player.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
-      player.rotation.y += delta * 0.2;
+      player.rotation.y += delta * localAuthRotLerp;
     }
     latestBoatFeelDebug = updateBoatFeel(player, localBoatFeelState, {
       dt,
@@ -5545,6 +5558,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       throttle,
       isMobile: window.innerWidth < 800,
     }) || getBoatFeelDebug(localBoatFeelState);
+    applyFollowCamera(player, player.rotation.y);
     // Leave a trail point for the local player
     addTrailPoint(yourId, player.position);
     // Emit engine particles based on speed
@@ -5636,9 +5650,12 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     frameDt = dt;
     const frameMs = dt * 1000;
     smoothedFrameMs = smoothedFrameMs * 0.9 + frameMs * 0.1;
+    const fps = Number.isFinite(renderStats.fps) ? renderStats.fps.toFixed(1) : "-";
+    const frame = Number.isFinite(renderStats.frameMs) ? renderStats.frameMs.toFixed(1) : "-";
+    const nowDbg = performance.now();
+    const lag = serverAuthEnabled ? Math.max(0, Math.round(nowDbg - (authStatesTime || nowDbg))) : 0;
+    if (compactFpsEl) compactFpsEl.innerText = `FPS: ${fps} / ${frame}ms / lag ${lag}ms`;
     if (hudDebugEl) {
-      const nowDbg = performance.now();
-      const lag = serverAuthEnabled ? Math.max(0, Math.round(nowDbg - (authStatesTime || nowDbg))) : 0;
       const th = (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0);
       const st = (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0);
       const sp = Number.isFinite(latestEffectiveSpeed) ? latestEffectiveSpeed.toFixed(2) : "0.00";
@@ -5648,7 +5665,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       const netRtt = networkStats.rttMs != null ? `${networkStats.rttMs}ms` : "-";
       const netUp = `${(Number(networkStats.upKbps) || 0).toFixed(1)}k`;
       const netDown = `${(Number(networkStats.downKbps) || 0).toFixed(1)}k`;
-      const fps = Number.isFinite(renderStats.fps) ? renderStats.fps.toFixed(1) : "-";
       const draws = Number.isFinite(renderStats.drawCalls) ? renderStats.drawCalls : "-";
       const tris = Number.isFinite(renderStats.triangles) ? Math.round(renderStats.triangles / 1000) : "-";
       hudDebugEl.innerText = `Auth: ${serverAuthEnabled ? "on" : "off"} | admin: ${isAdmin ? "yes" : "no"} | lag: ${lag}ms | fps:${fps} draw:${draws} tri:${tris}k | net:${netQ}/${netRtt} up:${netUp} down:${netDown} | cull:${lastCullingNodeCount} | th:${th} st:${st} sp:${sp} pos:${px},${pz}`;
@@ -5956,6 +5972,14 @@ function renderGameToText() {
       : null,
     serverAuthEnabled,
     authLagMs: latestAuthLagMs,
+    frame: {
+      fps: Number((renderStats.fps || 0).toFixed(1)),
+      frameMs: Number((renderStats.frameMs || 0).toFixed(2)),
+      rawFrameMs: Number(((frameDt || 0) * 1000).toFixed(2)),
+      authLagMs: latestAuthLagMs,
+      localAuthPositionSmoothing: LOCAL_AUTH_POSITION_SMOOTHING,
+      remotePositionSmoothing: REMOTE_PLAYER_POSITION_SMOOTHING,
+    },
     authStateCount: Object.keys(authStates || {}).length,
     authStateSamples,
     score: Number(localScore || 0),
@@ -5971,6 +5995,8 @@ function renderGameToText() {
     pickupRadii: {
       trash: TRASH_ARCADE_PICKUP_RADIUS,
       powerup: POWERUP_ARCADE_PICKUP_RADIUS,
+      trashFloatY: TRASH_FLOAT_Y,
+      powerupFloatY: POWERUP_FLOAT_Y,
     },
     trashSamples,
     powerupInstances: powerupInstances && powerupInstances.map ? powerupInstances.map.size : 0,

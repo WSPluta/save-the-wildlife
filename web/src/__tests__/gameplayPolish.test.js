@@ -81,7 +81,8 @@ describe("gameplay polish regressions", () => {
   it("keeps trash and power-ups readable without turning pickups into wall geometry", () => {
     expect(script).toMatch(/const TRASH_VISUAL_SCALE_MIN = 1\.08;/);
     expect(script).toMatch(/const TRASH_VISUAL_SCALE_MAX = 1\.42;/);
-    expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.075;/);
+    expect(script).toMatch(/const TRASH_FLOAT_Y = 0\.18;/);
+    expect(script).toMatch(/const POWERUP_FLOAT_Y = 0\.34;/);
     expect(script).toMatch(/const TRASH_GEOMETRY_WIDTH = 1\.0;/);
     expect(script).toMatch(/const TRASH_GEOMETRY_HEIGHT = 0\.13;/);
     expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.66;/);
@@ -105,6 +106,8 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/clampVisualScale\(item\.size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX\)/);
     expect(script).toMatch(/visualScale: Number\(clampVisualScale\(item\.size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX\)/);
     expect(script).toMatch(/pickupRadii: \{/);
+    expect(script).toMatch(/trashFloatY: TRASH_FLOAT_Y,/);
+    expect(script).toMatch(/powerupFloatY: POWERUP_FLOAT_Y,/);
     expect(script).toMatch(/engineParticles: ENGINE_WAKE_PARTICLES_ENABLED/);
   });
 
@@ -132,9 +135,31 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const REMOTE_PLAYER_POSITION_SMOOTHING = 7\.5;/);
     expect(script).toMatch(/const REMOTE_PLAYER_ROTATION_SMOOTHING = 8\.5;/);
     expect(script).toMatch(/const REMOTE_PLAYER_FROZEN_SMOOTHING = 3\.5;/);
+    expect(script).toMatch(/const LOCAL_AUTH_POSITION_SMOOTHING = 2\.4;/);
+    expect(script).toMatch(/const LOCAL_AUTH_ROTATION_SMOOTHING = 3\.2;/);
+    expect(script).toMatch(/const LOCAL_AUTH_SNAP_DISTANCE = 9\.5;/);
+    expect(script).toMatch(/const LOCAL_AUTH_DEADZONE_DISTANCE = 0\.08;/);
     expect(script).toMatch(/const remoteDt = Math\.max\(0\.001, Math\.min\(0\.05, frameDt \|\| 0\.016\)\);/);
     expect(script).toMatch(/const lerpFactor = 1 - Math\.exp\(-remoteRate \* remoteDt\);/);
     expect(script).toMatch(/const rotLerpFactor = 1 - Math\.exp\(-remoteRotRate \* remoteDt\);/);
+    expect(script).toMatch(/player\.position\.addScaledVector\(direction, effectiveSignedSpeed \* dt\);/);
+    expect(script).toMatch(/if \(authDistance > LOCAL_AUTH_SNAP_DISTANCE\) \{/);
+    expect(script).toMatch(/else if \(authDistance > LOCAL_AUTH_DEADZONE_DISTANCE\) \{/);
+    expect(script).toMatch(/updateBoatFeel\(player, localBoatFeelState,[\s\S]{0,260}applyFollowCamera\(player, player\.rotation\.y\);/);
+  });
+
+  it("surfaces frame-rate and frame-time diagnostics in the gameplay HUD", () => {
+    const index = readFileSync("src/index.html", "utf8");
+    expect(index).toContain('id="compact-fps"');
+    expect(script).toMatch(/const compactFpsEl = document\.getElementById\("compact-fps"\);/);
+    expect(script).toMatch(/const fps = Number\.isFinite\(renderStats\.fps\) \? renderStats\.fps\.toFixed\(1\) : "-";/);
+    expect(script).toMatch(/const frame = Number\.isFinite\(renderStats\.frameMs\) \? renderStats\.frameMs\.toFixed\(1\) : "-";/);
+    expect(script).toMatch(/compactFpsEl\.innerText = `FPS: \$\{fps\} \/ \$\{frame\}ms \/ lag \$\{lag\}ms`;/);
+    expect(script).toMatch(/frame: \{/);
+    expect(script).toMatch(/fps: Number\(\(renderStats\.fps \|\| 0\)\.toFixed\(1\)\),/);
+    expect(script).toMatch(/rawFrameMs: Number\(\(\(frameDt \|\| 0\) \* 1000\)\.toFixed\(2\)\),/);
+    expect(script).toMatch(/localAuthPositionSmoothing: LOCAL_AUTH_POSITION_SMOOTHING,/);
+    expect(script).toMatch(/remotePositionSmoothing: REMOTE_PLAYER_POSITION_SMOOTHING,/);
   });
 
   it("replaces stale room items when authoritative items arrive", () => {
