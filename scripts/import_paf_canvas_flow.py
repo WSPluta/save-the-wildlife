@@ -6,8 +6,6 @@ to run a short Python program inside the PAF container, then inserts or updates
 one flow graph in the PAF application database.
 """
 
-from __future__ import annotations
-
 import argparse
 import base64
 import json
@@ -15,6 +13,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+from typing import Dict, List, Optional
 
 
 DEFAULT_CONTAINER = "oracle-applied-ai-label"
@@ -65,15 +64,15 @@ def set_manifest_mcp_url(value: object, mcp_server_url: str) -> None:
             set_manifest_mcp_url(item, mcp_server_url)
 
 
-def validate_manifest(manifest: dict) -> list[str]:
-    issues: list[str] = []
+def validate_manifest(manifest: Dict) -> List[str]:
+    issues = []
     nodes = manifest.get("nodes")
     edges = manifest.get("edges")
     if not isinstance(nodes, list) or not isinstance(edges, list):
         return ["manifest must contain top-level nodes and edges lists"]
 
-    node_ids: set[str] = set()
-    connected_ids: set[str] = set()
+    node_ids = set()
+    connected_ids = set()
     for node in nodes:
         if not isinstance(node, dict):
             issues.append("node entry is not an object")
@@ -115,7 +114,7 @@ def build_remote_script(
     manifest: dict,
     flow_name: str,
     flow_description: str,
-    agent_factory_user: str | None,
+    agent_factory_user: Optional[str],
     llm_config_name: str,
     publish: bool,
     require_llm_config: bool,
@@ -273,7 +272,7 @@ def run(args: argparse.Namespace) -> int:
         print("PAF Canvas manifest validation failed:\n- " + "\n- ".join(issues), file=sys.stderr)
         return 2
     if args.validate_only:
-        mcp_urls: list[str] = []
+        mcp_urls = []
 
         def collect_mcp_urls(value: object) -> None:
             if isinstance(value, dict):
