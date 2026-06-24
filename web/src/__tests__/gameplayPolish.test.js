@@ -160,6 +160,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/rawFrameMs: Number\(\(\(frameDt \|\| 0\) \* 1000\)\.toFixed\(2\)\),/);
     expect(script).toMatch(/localAuthPositionSmoothing: LOCAL_AUTH_POSITION_SMOOTHING,/);
     expect(script).toMatch(/remotePositionSmoothing: REMOTE_PLAYER_POSITION_SMOOTHING,/);
+    expect(script).toMatch(/animateItems\(\);[\s\S]{0,220}animateOtherPlayers\(otherPlayersMeshes\);[\s\S]{0,220}render\(\);/);
   });
 
   it("replaces stale room items when authoritative items arrive", () => {

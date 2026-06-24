@@ -5688,11 +5688,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     }
     cleanupOldTrails();
     __pushReplayFrame();
-    render();
-    if ((now - lastClientMonitorUpdateAt) > 250) {
-      lastClientMonitorUpdateAt = now;
-      updateNetworkMonitorOnly();
-    }
     // Throttle sky/PMREM updates for Firefox/low-end GPUs
     if (!window.__lastSunUpdate) window.__lastSunUpdate = 0;
     if ((now - window.__lastSunUpdate) > 1000) { updateSun(); window.__lastSunUpdate = now; }
@@ -5702,6 +5697,11 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     if (BOT_RENDER_MODE === "demo-visible" && now - lastBotRosterVisualSyncAt > 1000) {
       lastBotRosterVisualSyncAt = now;
       try { ensureBotRosterVisualsForScene(); } catch (_) {}
+    }
+    render();
+    if ((now - lastClientMonitorUpdateAt) > 250) {
+      lastClientMonitorUpdateAt = now;
+      updateNetworkMonitorOnly();
     }
   }
 
