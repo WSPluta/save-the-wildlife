@@ -204,6 +204,11 @@ const LOCAL_AUTH_DEADZONE_DISTANCE = 0.08;
 const REMOTE_PLAYER_POSITION_SMOOTHING = 7.5;
 const REMOTE_PLAYER_ROTATION_SMOOTHING = 8.5;
 const REMOTE_PLAYER_FROZEN_SMOOTHING = 3.5;
+const CANONICAL_BOAT_ACCELERATION = 6;
+const CANONICAL_BOAT_BRAKE = 1.8;
+const CANONICAL_BOAT_MAX_SPEED = 3;
+const CANONICAL_BOAT_FRICTION = 0.18;
+const CANONICAL_BOAT_TURN_SPEED = Math.PI / 30;
 const BOAT_BADGE_LAYOUT = Object.freeze({
   desktop: {
     powerupScale: 0.46,
@@ -596,10 +601,10 @@ function captureGameplayCollisionBox(object3d) {
 
 function getPlayerCollisionBox() {
   if (!player) return playerCollisionBox.makeEmpty();
-  const localBox = player.userData && player.userData.gameplayCollisionBoxLocal;
-  if (!localBox) return playerCollisionBox.setFromObject(player).expandByVector(playerCollisionPadding);
-  player.updateMatrixWorld(true);
-  return playerCollisionBox.copy(localBox).applyMatrix4(player.matrixWorld).expandByVector(playerCollisionPadding);
+  // Canonical gameplay collision follows the live boat/root transform. The
+  // visual boat-feel pivot is decorative, so pickups should not depend on a
+  // captured local box from an earlier visual state.
+  return playerCollisionBox.setFromObject(player).expandByVector(playerCollisionPadding);
 }
 
 function isWithinArcadePickupRadius(position, radius) {
@@ -5154,7 +5159,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const spd = __effectiveSpeedForFrame();
     const ts = Date.now();
     const throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
-    const steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0) + Number(mobileInput.steer || 0)));
+    const steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) - Number(mobileInput.steer || 0)));
     return {
       ts,
       timeISO: new Date(ts).toISOString(),
@@ -5431,21 +5436,14 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       updateFrozenIndicators();
     }
 
-    // Align client physics with server defaults for visible motion
-    const phys = serverPhysics || {
-      acceleration: 6,
-      brake: 3,
-      maxSpeed: 3,
-      friction: 1.5,
-      turnSpeed: 0.78,
-      driftFactor: 0
-    };
-    const ACCELERATION_BASE = phys.acceleration;
-    const BRAKE = phys.brake;
-    const MAX_SPEED_BASE = phys.maxSpeed;
-    const FRICTION = phys.friction;
-    const TURN_SPEED = phys.turnSpeed;
-    const DRIFT_FACTOR = phys.driftFactor || 0;
+    // Match the original upstream boat feel: local client owns the responsive
+    // slide/yaw loop, while the server remains a multiplayer broadcast and
+    // collision confirmation path. This keeps 60 FPS from still feeling jumpy.
+    const ACCELERATION_BASE = CANONICAL_BOAT_ACCELERATION;
+    const BRAKE = CANONICAL_BOAT_BRAKE;
+    const MAX_SPEED_BASE = CANONICAL_BOAT_MAX_SPEED;
+    const FRICTION = CANONICAL_BOAT_FRICTION;
+    const TURN_SPEED = CANONICAL_BOAT_TURN_SPEED;
 
     let ACCELERATION = ACCELERATION_BASE * powerUpState.speedMultiplier;
     let MAX_SPEED = MAX_SPEED_BASE * powerUpState.speedMultiplier;
@@ -5453,12 +5451,9 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const dt = frameDt || 0.016;
     const nowMs = performance.now();
     const lagMs = serverAuthEnabled ? (nowMs - (authStatesTime || 0)) : 0;
-    const yourAuthLagMs = serverAuthEnabled ? (nowMs - Number(authStateSeenAt?.[yourId] || 0)) : 0;
-    const authFreshForYou = !!(serverAuthEnabled && authStates && authStates[yourId] && yourAuthLagMs <= SNAPSHOT_STALE_MS);
     const movement = new THREE.Vector3(0, 0, 0);
-    const lateralVelocity = new THREE.Vector3(0, 0, 0);
     let throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
-    let steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0) + Number(mobileInput.steer || 0)));
+    let steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) - Number(mobileInput.steer || 0)));
     if (trailSlowActive) {
       throttle *= TRAIL_SLOW_SPEED_MULT;
       steer *= 0.75;
@@ -5472,21 +5467,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         body: { id: yourId, seq: inputSeq, throttle, steer, brake: throttle < 0 }
       });
     }
-    // Slight boost while predicting locally for clearer motion in client-only/lagged mode
-    if (!serverAuthEnabled || !authFreshForYou) {
-      ACCELERATION *= 1.15;
-      MAX_SPEED *= 1.2;
-    }
-
-    if (!serverAuthEnabled || !authFreshForYou) {
-      if (throttle > 0) {
-        playerSpeed += ACCELERATION * throttle * dt;
-      } else if (throttle < 0) {
-        playerSpeed -= BRAKE * (-throttle) * dt;
-      }
-    } else {
-      const s = authStates && authStates[yourId];
-      playerSpeed += ((s && typeof s.speed === "number" ? s.speed : 0) - playerSpeed) * Math.min(1, dt * 8);
+    if (throttle > 0) {
+      playerSpeed += ACCELERATION * throttle * dt;
+    } else if (throttle < 0) {
+      playerSpeed -= BRAKE * (-throttle) * dt;
     }
 
     if (steer !== 0) {
@@ -5496,31 +5480,19 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       }
     }
 
-    if ((!serverAuthEnabled || !authFreshForYou) && !keyboard["ArrowUp"] && !keyboard["ArrowDown"]) {
+    if (!keyboard["ArrowUp"] && !keyboard["ArrowDown"] && Math.abs(Number(mobileInput.throttle || 0)) < 0.01) {
       playerSpeed *= Math.exp(-FRICTION * dt);
     }
 
 
     let effectiveSignedSpeed = playerSpeed;
-    if (!serverAuthEnabled || !authFreshForYou) {
-      playerSpeed = Math.max(Math.min(playerSpeed, MAX_SPEED), -MAX_SPEED);
-      effectiveSignedSpeed = playerSpeed;
-      if (speedElement) {
-        speedElement.innerHTML = `Speed: ${playerSpeed.toFixed(2)}`;
-      }
-      if (compactSpeedEl) {
-        compactSpeedEl.innerHTML = `Speed: ${playerSpeed.toFixed(2)}`;
-      }
-    } else {
-      const s = authStates && authStates[yourId];
-      effectiveSignedSpeed = s && typeof s.speed === "number" ? s.speed : 0;
-      const shown = Math.abs(effectiveSignedSpeed);
-      if (speedElement) {
-        speedElement.innerHTML = `Speed: ${shown.toFixed(2)}`;
-      }
-      if (compactSpeedEl) {
-        compactSpeedEl.innerHTML = `Speed: ${shown.toFixed(2)}`;
-      }
+    playerSpeed = Math.max(Math.min(playerSpeed, MAX_SPEED), -MAX_SPEED);
+    effectiveSignedSpeed = playerSpeed;
+    if (speedElement) {
+      speedElement.innerHTML = `Speed: ${Math.abs(playerSpeed).toFixed(2)}`;
+    }
+    if (compactSpeedEl) {
+      compactSpeedEl.innerHTML = `Speed: ${Math.abs(playerSpeed).toFixed(2)}`;
     }
     latestEffectiveSpeed = Math.abs(Number(effectiveSignedSpeed) || 0);
     latestAuthLagMs = serverAuthEnabled ? Math.max(0, Math.round(lagMs || 0)) : 0;
@@ -5542,23 +5514,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       player.position.copy(lastPosition);
     }
 
-    // Reconcile local player to authoritative server state (smoothly)
-    if (authFreshForYou) {
-      const s = authStates[yourId];
-      const target = new THREE.Vector3(s.x, player.position.y, s.z);
-      const localAuthDt = Math.max(0.001, Math.min(0.05, frameDt || 0.016));
-      const localAuthLerp = 1 - Math.exp(-LOCAL_AUTH_POSITION_SMOOTHING * localAuthDt);
-      const localAuthRotLerp = 1 - Math.exp(-LOCAL_AUTH_ROTATION_SMOOTHING * localAuthDt);
-      const authDistance = player.position.distanceTo(target);
-      if (authDistance > LOCAL_AUTH_SNAP_DISTANCE) {
-        player.position.copy(target);
-      } else if (authDistance > LOCAL_AUTH_DEADZONE_DISTANCE) {
-        player.position.lerp(target, localAuthLerp);
-      }
-      // shortest-angle lerp for yaw
-      const delta = ((s.rotY - player.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
-      player.rotation.y += delta * localAuthRotLerp;
-    }
     latestBoatFeelDebug = updateBoatFeel(player, localBoatFeelState, {
       dt,
       time: performance.now() * 0.001,
@@ -5687,7 +5642,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         speed: Number(__effectiveSpeedForFrame() || 0),
         input: {
           throttle: (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0),
-          steer: (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0) + Number(mobileInput.steer || 0),
+          steer: (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) - Number(mobileInput.steer || 0),
         },
       });
     }
@@ -5702,7 +5657,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     if (!window.__lastSunUpdate) window.__lastSunUpdate = 0;
     if ((now - window.__lastSunUpdate) > 1000) { updateSun(); window.__lastSunUpdate = now; }
     animateItems();
-    if (gameState !== "STARTING" && !serverAuthEnabled && sendYourPosition) sendYourPosition();
+    if (gameState !== "STARTING" && sendYourPosition) sendYourPosition();
     animateOtherPlayers(otherPlayersMeshes);
     if (BOT_RENDER_MODE === "demo-visible" && now - lastBotRosterVisualSyncAt > 1000) {
       lastBotRosterVisualSyncAt = now;
@@ -5937,6 +5892,17 @@ function renderGameToText() {
     .slice(0, 5);
   const remotePlayerEntries = Object.entries(otherPlayersMeshes || {})
     .filter(([, mesh]) => mesh && mesh.visible !== false);
+  const remotePlayerSamples = remotePlayerEntries
+    .slice(0, 5)
+    .map(([id, mesh]) => ({
+      id,
+      name: getDisplayNameForPlayer(id) || id,
+      x: Number((mesh.position?.x || 0).toFixed(3)),
+      y: Number((mesh.position?.y || 0).toFixed(3)),
+      z: Number((mesh.position?.z || 0).toFixed(3)),
+      rotY: Number((mesh.rotation?.y || 0).toFixed(3)),
+      isBot: isBotPlayerId(id),
+    }));
   const authStateSamples = Object.entries(authStates || {})
     .filter(([id]) => id !== yourId)
     .slice(0, 5)
@@ -5995,6 +5961,7 @@ function renderGameToText() {
     score: Number(localScore || 0),
     timeRemaining: Number(remainingTime || 0),
     playersVisible: remotePlayerEntries.length,
+    remotePlayerSamples,
     botsVisible: botSamples.length,
     botsKnown: Math.max(knownBotCount, botSamples.length),
     botRenderMode: BOT_RENDER_MODE,

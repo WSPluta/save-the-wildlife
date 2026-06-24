@@ -135,16 +135,17 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const REMOTE_PLAYER_POSITION_SMOOTHING = 7\.5;/);
     expect(script).toMatch(/const REMOTE_PLAYER_ROTATION_SMOOTHING = 8\.5;/);
     expect(script).toMatch(/const REMOTE_PLAYER_FROZEN_SMOOTHING = 3\.5;/);
-    expect(script).toMatch(/const LOCAL_AUTH_POSITION_SMOOTHING = 2\.4;/);
-    expect(script).toMatch(/const LOCAL_AUTH_ROTATION_SMOOTHING = 3\.2;/);
-    expect(script).toMatch(/const LOCAL_AUTH_SNAP_DISTANCE = 9\.5;/);
-    expect(script).toMatch(/const LOCAL_AUTH_DEADZONE_DISTANCE = 0\.08;/);
+    expect(script).toMatch(/const CANONICAL_BOAT_ACCELERATION = 6;/);
+    expect(script).toMatch(/const CANONICAL_BOAT_BRAKE = 1\.8;/);
+    expect(script).toMatch(/const CANONICAL_BOAT_MAX_SPEED = 3;/);
+    expect(script).toMatch(/const CANONICAL_BOAT_FRICTION = 0\.18;/);
+    expect(script).toMatch(/const CANONICAL_BOAT_TURN_SPEED = Math\.PI \/ 30;/);
     expect(script).toMatch(/const remoteDt = Math\.max\(0\.001, Math\.min\(0\.05, frameDt \|\| 0\.016\)\);/);
     expect(script).toMatch(/const lerpFactor = 1 - Math\.exp\(-remoteRate \* remoteDt\);/);
     expect(script).toMatch(/const rotLerpFactor = 1 - Math\.exp\(-remoteRotRate \* remoteDt\);/);
     expect(script).toMatch(/player\.position\.addScaledVector\(direction, effectiveSignedSpeed \* dt\);/);
-    expect(script).toMatch(/if \(authDistance > LOCAL_AUTH_SNAP_DISTANCE\) \{/);
-    expect(script).toMatch(/else if \(authDistance > LOCAL_AUTH_DEADZONE_DISTANCE\) \{/);
+    expect(script).toMatch(/const steer = Math\.max\(-1, Math\.min\(1, \(keyboard\["ArrowLeft"\] \? 1 : 0\) \+ \(keyboard\["ArrowRight"\] \? -1 : 0\) - Number\(mobileInput\.steer \|\| 0\)\)\);/);
+    expect(script).toMatch(/if \(gameState !== "STARTING" && sendYourPosition\) sendYourPosition\(\);/);
     expect(script).toMatch(/updateBoatFeel\(player, localBoatFeelState,[\s\S]{0,260}applyFollowCamera\(player, player\.rotation\.y\);/);
   });
 
@@ -224,7 +225,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/updateBoatFeel,/);
     expect(script).toMatch(/function captureGameplayCollisionBox\(object3d\)/);
     expect(script).toMatch(/function getPlayerCollisionBox\(\)/);
-    expect(script).toMatch(/object3d\.userData\.gameplayCollisionBoxLocal = playerCollisionWorldBox\.clone\(\)\.applyMatrix4\(playerCollisionMatrix\);/);
+    expect(script).toMatch(/return playerCollisionBox\.setFromObject\(player\)\.expandByVector\(playerCollisionPadding\);/);
     expect(script).toMatch(/const playerRoot = new THREE\.Group\(\);/);
     expect(script).toMatch(/playerRoot\.name = "localPlayerGameplayRoot";/);
     expect(script).toMatch(/playerRoot\.add\(boat\);/);

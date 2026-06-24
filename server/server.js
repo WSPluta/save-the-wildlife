@@ -1394,6 +1394,8 @@ function scheduleRoomRefill(room, delayMs = 0) {
       } else {
         mapPlayersTraces[id] = body;
       }
+      const room = playerRooms.get(id) || getSocketRoom(socket);
+      io.to(room).volatile.compress(true).emit("player.trace.all", { [id]: body });
     });
 
     // Server-authoritative input stream (optional; gated by env flag)
