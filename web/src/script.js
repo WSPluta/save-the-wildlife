@@ -176,7 +176,7 @@ const scoredItemCollisions = new Set();
 const COLLISION_PENDING_TIMEOUT_MS = 1500;
 const TRASH_VISUAL_SCALE_MIN = 1.08;
 const TRASH_VISUAL_SCALE_MAX = 1.42;
-const TRASH_FLOAT_Y = 0.18;
+const TRASH_FLOAT_Y = 0.08;
 const TRASH_GEOMETRY_WIDTH = 1.0;
 const TRASH_GEOMETRY_HEIGHT = 0.13;
 const TRASH_GEOMETRY_DEPTH = 0.66;
@@ -190,7 +190,7 @@ const TRASH_FOOTPRINT_HALF_WIDTH = 0.5;
 const TRASH_FOOTPRINT_HALF_DEPTH = 0.33;
 const TRASH_FOOTPRINT_RADIUS = 0.95;
 const POWERUP_FOOTPRINT_RADIUS = 1.05;
-const TURTLE_FOOTPRINT_RADIUS = 1.35;
+const TURTLE_FOOTPRINT_RADIUS = 1.2;
 const GAMEPLAY_PARTICLES_ENABLED = false;
 const ENGINE_WAKE_PARTICLES_ENABLED = false;
 const BOT_RENDER_MODE = "demo-visible";
@@ -1107,12 +1107,21 @@ async function enterWaitingLobby() {
     setPhase("ADMIN");
     return;
   }
-  if (!gameInitialized) await init();
+  setPhase("LOBBY");
+  if (!gameInitialized) {
+    try {
+      await init();
+    } catch (error) {
+      console.warn("Game renderer init failed while entering lobby; keeping lobby visible", error);
+      const status = document.getElementById("lobby-status");
+      if (status) status.textContent = "Waiting for game...";
+      return;
+    }
+  }
   try {
     const wanted = normalizeRoomId(roomId) || normalizeRoomId(roomsDirectory && roomsDirectory.default) || null;
     if (worker) postWorkerMessage({ type: "room.join", body: wanted ? { id: wanted } : {} });
   } catch (_) {}
-  setPhase("LOBBY");
 }
 
 async function enterAdminConsole() {

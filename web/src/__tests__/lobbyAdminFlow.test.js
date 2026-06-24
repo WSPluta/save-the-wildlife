@@ -46,6 +46,9 @@ describe("presenter-controlled lobby flow", () => {
     expect(script).toMatch(/accessContinueBtn\.addEventListener\("click", async \(\) =>/);
     expect(script).toMatch(/await enterWaitingLobby\(\)/);
     expect(script).toMatch(/setPhase\("LOBBY"\)/);
+    expect(script).toMatch(/Game renderer init failed while entering lobby; keeping lobby visible/);
+    const enterLobby = script.slice(script.indexOf("async function enterWaitingLobby"), script.indexOf("async function enterAdminConsole"));
+    expect(enterLobby.indexOf('setPhase("LOBBY")')).toBeLessThan(enterLobby.indexOf("await init()"));
     expect(script).toMatch(/if \(!IS_ADMIN_VIEW\)\s*{\s*try\s*{\s*postWorkerMessage\(\{\s*type: "player\.info\.joining"/);
   });
 
@@ -67,6 +70,9 @@ describe("presenter-controlled lobby flow", () => {
     expect(server).toMatch(/const profileRoom = v && v\.room \? normalizeRoom\(v\.room\) : null;/);
     expect(server).toMatch(/const profileRoom = value && value\.room \? normalizeRoom\(value\.room\) : null;/);
     expect(server).toMatch(/playerName: canonicalPlayerName,/);
+    expect(server).toMatch(/function isBotProfile\(profile = \{\}, id = ""\)/);
+    expect(server).toMatch(/function countHumansAndBots\(playersInfo = \{\}\)/);
+    expect(server).toMatch(/const \{ humans: humansGlobal \} = countHumansAndBots\(info\)/);
   });
 
   it("uses presenter socket commands instead of player admin claim for /admin start", () => {

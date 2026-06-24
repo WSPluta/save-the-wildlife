@@ -113,7 +113,7 @@ export function recomputeWorldSize(humans, worldScaleCfg) {
 
 export const DEFAULT_COLLISION_VALIDATE_RADIUS = 3.6;
 export const DEFAULT_ITEM_COLLISION_RADIUS = 0.95;
-export const TURTLE_ITEM_COLLISION_RADIUS = 1.35;
+export const TURTLE_ITEM_COLLISION_RADIUS = 1.2;
 export const POWERUP_ITEM_COLLISION_RADIUS = 1.05;
 
 export function resolveCollisionValidateRadius(value) {

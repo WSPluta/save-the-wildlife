@@ -271,15 +271,26 @@ function collisionBoatRadius(playerId) {
   return Number.isFinite(radius) && radius > 0 ? radius : 1.25;
 }
 
-function buildMetricsObject(playersInfo, counts, targets, roomStats = {}, socketStats = {}) {
+function isBotProfile(profile = {}, id = "") {
+  const name = profile && profile.name ? String(profile.name).trim().toLowerCase() : "";
+  return !!(profile && profile.isBot) ||
+    !!(profile && profile.botPolicy) ||
+    !!(profile && profile.teacher) ||
+    String(id || "").toLowerCase().startsWith("bot-") ||
+    name.startsWith("bot ");
+}
+
+function countHumansAndBots(playersInfo = {}) {
   const ids = Object.keys(playersInfo || {});
-  const total = ids.length;
   let bots = 0;
   ids.forEach((id) => {
-    const name = (playersInfo[id] && playersInfo[id].name) ? String(playersInfo[id].name) : "";
-    if (name.toLowerCase().startsWith("bot ")) bots++;
+    if (isBotProfile(playersInfo[id], id)) bots++;
   });
-  const humans = Math.max(0, total - bots);
+  return { total: ids.length, bots, humans: Math.max(0, ids.length - bots) };
+}
+
+function buildMetricsObject(playersInfo, counts, targets, roomStats = {}, socketStats = {}) {
+  const { total, humans, bots } = countHumansAndBots(playersInfo);
   return {
     players: { total, humans, bots },
     sockets: {
@@ -412,8 +423,7 @@ async function humansInRoomDirectory(room) {
     const profileRoom = v && v.room ? normalizeRoom(v.room) : null;
     const r = profileRoom || playerRooms.get(id) || DEFAULT_ROOM_ID;
     if (r !== want) continue;
-    const name = v && v.name ? String(v.name) : "";
-    if (!name.toLowerCase().startsWith("bot ")) humans++;
+    if (!isBotProfile(v, id)) humans++;
   }
   return humans;
 }
@@ -742,8 +752,7 @@ export async function start(
     for (const id of ids) {
       const r = playerRooms.get(id) || GLOBAL_ROOM;
       if (r !== (room || GLOBAL_ROOM)) continue;
-      const name = (info[id] && info[id].name) ? String(info[id].name) : "";
-      if (!name.toLowerCase().startsWith("bot ")) humans++;
+      if (!isBotProfile(info[id], id)) humans++;
     }
     return Math.max(0, humans);
   }
@@ -758,8 +767,7 @@ export async function start(
     for (const id of ids) {
       const r = playerRooms.get(id) || GLOBAL_ROOM;
       if (r !== want) continue;
-      const name = (info[id] && info[id].name) ? String(info[id].name) : "";
-      if (!includeBots && name.toLowerCase().startsWith("bot ")) continue;
+      if (!includeBots && isBotProfile(info[id], id)) continue;
       players.push(id);
     }
     players.sort(); // deterministic next-admin / spawn initialization
@@ -1103,14 +1111,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
   async function emitPlayerCount() {
     try {
       const info = await getPlayersInfoObject();
-      const ids = Object.keys(info || {});
-      const total = ids.length;
-      let bots = 0;
-      ids.forEach((id) => {
-        const name = (info[id] && info[id].name) ? String(info[id].name) : "";
-        if (name.toLowerCase().startsWith("bot ")) bots++;
-      });
-      const humans = Math.max(0, total - bots);
+      const { total, humans, bots } = countHumansAndBots(info);
       io.emit("player.count", { total, humans, bots });
     } catch (e) {
       logger.error(`emitPlayerCount error: ${e && e.message ? e.message : e}`);
@@ -1211,8 +1212,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         playerRooms.set(id, cur);
         // Assign admin if unset for this room and joiner is a human
         try {
-          const isBot = typeof profile?.name === "string" && profile.name.toLowerCase().startsWith("bot ");
-          if (cur && !loadRoom && !roomAdmin.has(cur) && !isBot) {
+          if (cur && !loadRoom && !roomAdmin.has(cur) && !isBotProfile(profile, id)) {
             roomAdmin.set(cur, id);
             io.to(cur).emit("room.admin", { id });
           }
@@ -1871,8 +1871,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           return;
         }
         const info = await getPlayersInfoObject();
-        const name = info && info[target] && info[target].name ? String(info[target].name) : "";
-        if (name.toLowerCase().startsWith("bot ")) {
+        if (isBotProfile(info && info[target], target)) {
           try { if (typeof ack === "function") ack({ ok: false, error: "target_is_bot" }); } catch (_) {}
           return;
         }
@@ -2085,8 +2084,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         if (playerRooms.get(target) !== room) { try { if (typeof ack === "function") ack({ ok: false, error: "wrong_room" }); } catch (_) {} return; }
         // Ensure target is a human
         const info = await getPlayersInfoObject();
-        const name = info && info[target] && info[target].name ? String(info[target].name) : "";
-        if (name.toLowerCase().startsWith("bot ")) { try { if (typeof ack === "function") ack({ ok: false, error: "target_is_bot" }); } catch (_) {} return; }
+        if (isBotProfile(info && info[target], target)) { try { if (typeof ack === "function") ack({ ok: false, error: "target_is_bot" }); } catch (_) {} return; }
         roomAdmin.set(room, target);
         io.to(room).emit("room.admin", { id: target });
         try { if (typeof ack === "function") ack({ ok: true, room, id: target }); } catch (_) {}
@@ -2119,13 +2117,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         if (Number.isFinite(basePlayers)) worldScaleCfg.basePlayers = parseInt(basePlayers);
         runAsyncTask("admin.worldScaling.set", async () => {
           const info = await getPlayersInfoObject();
-          const ids = Object.keys(info || {});
-          let bots = 0;
-          ids.forEach((id) => {
-            const name = (info[id] && info[id].name) ? String(info[id].name) : "";
-            if (name.toLowerCase().startsWith("bot ")) bots++;
-          });
-          const humans = Math.max(0, ids.length - bots);
+          const { humans } = countHumansAndBots(info);
           const desired = recomputeWorldSize(humans);
           worldSizeX = desired.x;
           worldSizeZ = desired.z;
@@ -2279,10 +2271,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
     if (roomParam && !shouldSyncVisualItems(roomParam)) return;
     // Keep world scaling based on global humans (shared water surface), but items are per-room.
     const info = await getPlayersInfoObject();
-    const ids = Object.keys(info || {});
-    let bots = 0;
-    ids.forEach((id) => { const n = (info[id] && info[id].name) ? String(info[id].name) : ""; if (n.toLowerCase().startsWith("bot ")) bots++; });
-    const humansGlobal = Math.max(0, ids.length - bots);
+    const { humans: humansGlobal } = countHumansAndBots(info);
 
     // Dynamic world scaling (global)
     const desired = recomputeWorldSize(humansGlobal);
@@ -2438,13 +2427,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         marine: await mapEntryCount(mapMarineLife),
         powerups: await mapEntryCount(mapPowerUps),
       };
-      const ids = Object.keys(info || {});
-      let bots = 0;
-      ids.forEach((id) => {
-        const name = (info[id] && info[id].name) ? String(info[id].name) : "";
-        if (name.toLowerCase().startsWith("bot ")) bots++;
-      });
-      const humans = Math.max(0, ids.length - bots);
+      const { humans } = countHumansAndBots(info);
       const targets = computeEffectiveTargets(humans);
       let roomStats = { active: 0, waiting: 0, starting: 0, running: 0, ended: 0 };
       try {
@@ -2472,10 +2455,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         const roomCounts = await countItemsForRoom(room);
         const roomHumans = Math.max(
           0,
-          Object.values(roomInfo || {}).filter((value) => {
-            const name = value?.name ? String(value.name) : "";
-            return !name.toLowerCase().startsWith("bot ");
-          }).length
+          Object.entries(roomInfo || {}).filter(([id, value]) => !isBotProfile(value, id)).length
         );
         const roomMetrics = buildMetricsObject(
           roomInfo,
