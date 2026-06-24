@@ -194,7 +194,7 @@ const TURTLE_FOOTPRINT_RADIUS = 1.2;
 const GAMEPLAY_PARTICLES_ENABLED = false;
 const ENGINE_WAKE_PARTICLES_ENABLED = false;
 const BOT_RENDER_MODE = "demo-visible";
-const BOT_VISUAL_SCALE = 0.18;
+const BOT_VISUAL_SCALE = 0.34;
 const BOT_VISUAL_COLOR = 0x15c7b8;
 const NAME_TAG_SCALE = Object.freeze({ x: 1.22, y: 0.3, z: 1 });
 const NAME_TAG_POSITION_Y = 1.16;
@@ -989,6 +989,7 @@ let pendingRoomJoinId = null;    // queued join before worker init
 let roomJoinedAck = false;       // true after server confirms room.joined
 let pendingStartRequested = false; // start requested before room ack
 let autoStartMatch = false;      // autostart match when URL flag present
+let allowJoinRunningMatch = false; // explicit debug/late-join escape hatch
 
 function normalizeDisplayName(value, fallback = "Default") {
   const raw = value == null ? "" : String(value).trim();
@@ -2512,6 +2513,9 @@ try {
     autoStartMatch = true;
     setTimeout(() => { if (!gameInitialized) init(); }, 100);
   }
+  if (!IS_ADMIN_VIEW && url.searchParams.get("joinRunning") === "1") {
+    allowJoinRunningMatch = true;
+  }
 } catch (_) {}
 // Set initial phase based on stored name (no flicker)
 (function initialPhase() {
@@ -3128,6 +3132,15 @@ async function init() {
           if (currentPhase === "MENU" || currentPhase === "ACCESS" || currentPhase === "ADMIN") {
             break;
           }
+          // Demo safety: a normal public page load must wait in the lobby even
+          // if the default room is stale/RUNNING from a previous smoke test.
+          // Presenter starts still work because they enter STARTING first.
+          if (currentPhase === "LOBBY" && gameState !== "STARTING" && !autoStartMatch && !allowJoinRunningMatch) {
+            const statusEl = document.getElementById("lobby-status");
+            if (statusEl) statusEl.textContent = "Waiting for presenter start...";
+            gameState = "WAITING";
+            break;
+          }
           const sp = body && body.startPosition ? body.startPosition : null;
           startPosition = sp;
           if (clientGameStarted) {
@@ -3325,7 +3338,7 @@ async function init() {
         updatePlayersHud();
         break;
       case "game.state": {
-        gameState = body;
+        const incomingState = body;
         // Respect manual navigation: do not override when user is in Menu or Access
         if (currentPhase === "MENU" || currentPhase === "ACCESS" || currentPhase === "ADMIN") {
           if (currentPhase === "ADMIN") {
@@ -3334,7 +3347,17 @@ async function init() {
           }
           break;
         }
-        if (body === "WAITING") {
+        if (incomingState === "RUNNING" && currentPhase === "LOBBY" && !autoStartMatch && !allowJoinRunningMatch) {
+          const statusEl = document.getElementById("lobby-status");
+          if (statusEl) statusEl.textContent = "Waiting for presenter start...";
+          gameState = "WAITING";
+          stopLocalTimeTicker();
+          setPhase("LOBBY");
+          if (typeof updateControls === "function") updateControls();
+          break;
+        }
+        gameState = incomingState;
+        if (incomingState === "WAITING") {
           const statusEl = document.getElementById("lobby-status");
           if (statusEl) statusEl.textContent = "Waiting for game...";
           if (Number.isFinite(gameDuration)) {
@@ -3344,17 +3367,17 @@ async function init() {
           }
           stopLocalTimeTicker();
           setPhase("LOBBY");
-        } else if (body === "STARTING") {
+        } else if (incomingState === "STARTING") {
           stopLocalTimeTicker();
           setPhase("STARTING");
-        } else if (body === "RUNNING") {
+        } else if (incomingState === "RUNNING") {
           if (!Number.isFinite(lastServerTimeSyncValue) && Number.isFinite(gameDuration)) {
             lastServerTimeSyncValue = Number(gameDuration);
             lastServerTimeSyncAtMs = Date.now();
           }
           startLocalTimeTicker();
           setPhase("GAMEPLAY");
-        } else if (body === "ENDED") {
+        } else if (incomingState === "ENDED") {
           stopLocalTimeTicker();
           endGame();
           setPhase("POST_GAME");

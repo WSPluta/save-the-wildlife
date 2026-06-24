@@ -27,6 +27,11 @@ test("parses production bot defaults for persistent demo data generation", () =>
   assert.equal(config.maxBots, 12);
   assert.equal(config.eventGeneration, true);
   assert.equal(config.emitSyntheticMechanics, true);
+  assert.equal(config.traceRateMs, 90);
+  assert.equal(config.throttle, 0.58);
+  assert.equal(config.acceleration, 2.8);
+  assert.equal(config.maxSpeed, 1.45);
+  assert.equal(config.turnSpeed, 0.42);
   assert.equal(config.spawnFanoutRadius, 7.5);
   assert.equal(config.scaleDownGraceMs, 15000);
   assert.equal(config.scaleDownCooldownMs, 2500);

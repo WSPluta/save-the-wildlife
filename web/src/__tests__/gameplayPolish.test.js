@@ -21,6 +21,14 @@ describe("gameplay polish regressions", () => {
     expect(script).not.toMatch(/autoStartMatch[\s\S]{0,180}admin\.claim/);
   });
 
+  it("keeps normal public room entry in the lobby until the presenter countdown", () => {
+    expect(script).toMatch(/let allowJoinRunningMatch = false;/);
+    expect(script).toMatch(/url\.searchParams\.get\("joinRunning"\) === "1"/);
+    expect(script).toMatch(/currentPhase === "LOBBY" && gameState !== "STARTING" && !autoStartMatch && !allowJoinRunningMatch/);
+    expect(script).toMatch(/incomingState === "RUNNING" && currentPhase === "LOBBY" && !autoStartMatch && !allowJoinRunningMatch/);
+    expect(script).toMatch(/Waiting for presenter start/);
+  });
+
   it("uses root-relative static assets so nested admin routes do not fetch /admin/assets", () => {
     expect(assets).toContain('loadGLTF("/assets/boat.gltf"');
     expect(assets).toContain('loadGLTF("/assets/turtle.gltf"');
@@ -33,7 +41,7 @@ describe("gameplay polish regressions", () => {
 
   it("renders demo bots as bounded visible participants for gameplay and commentary proof", () => {
     expect(script).toMatch(/const BOT_RENDER_MODE = "demo-visible";/);
-    expect(script).toMatch(/const BOT_VISUAL_SCALE = 0\.18;/);
+    expect(script).toMatch(/const BOT_VISUAL_SCALE = 0\.34;/);
     expect(script).toMatch(/const BOT_VISUAL_COLOR = 0x15c7b8;/);
     expect(script).toMatch(/function isBotDisplayName\(name\)/);
     expect(script).toMatch(/function isBotPlayerId\(id\)/);
