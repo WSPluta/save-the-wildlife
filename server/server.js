@@ -1344,10 +1344,10 @@ function scheduleRoomRefill(room, delayMs = 0) {
       await emitLobbyPlayersForRoom(room);
       await emitPlayerCount();
 
-      // Initialize authoritative state for late joiners when a match is already RUNNING
-      const rs = roomTimers.get(room);
-      const matchRunning = rs ? rs.state === 'RUNNING' : gameState === 'RUNNING';
-      if (SERVER_AUTH_ENABLED && matchRunning && !playersState.has(playerId)) {
+      // Initialize authoritative state as soon as the player enters the game flow.
+      // Players often press Continue while the room is still waiting/counting down;
+      // they still need to appear in authoritative multiplayer snapshots.
+      if (SERVER_AUTH_ENABLED && !playersState.has(playerId)) {
         const startX = randSpawnCoord(worldSizeX);
         const startZ = randSpawnCoord(worldSizeZ);
         playersState.set(playerId, {

@@ -159,14 +159,14 @@ describe("recomputeWorldSize", () => {
 
 describe("resolveCollisionValidateRadius", () => {
   it("defaults to an arcade pickup radius that matches the visible client hitbox", () => {
-    expect(DEFAULT_COLLISION_VALIDATE_RADIUS).toBe(5.2);
-    expect(resolveCollisionValidateRadius()).toBe(5.2);
+    expect(DEFAULT_COLLISION_VALIDATE_RADIUS).toBe(3.6);
+    expect(resolveCollisionValidateRadius()).toBe(3.6);
   });
 
   it("accepts explicit positive overrides and ignores invalid values", () => {
     expect(resolveCollisionValidateRadius("2.25")).toBe(2.25);
-    expect(resolveCollisionValidateRadius("0")).toBe(5.2);
-    expect(resolveCollisionValidateRadius("bad")).toBe(5.2);
+    expect(resolveCollisionValidateRadius("0")).toBe(3.6);
+    expect(resolveCollisionValidateRadius("bad")).toBe(3.6);
   });
 });
 
@@ -174,6 +174,15 @@ describe("production collision configuration", () => {
   it("keeps the OKE ws-server pickup radius aligned with the server default", () => {
     const template = readFileSync("../deploy/k8s/base/ws-server/env_server_template", "utf8");
     expect(template).toContain(`COLLISION_VALIDATE_RADIUS=${DEFAULT_COLLISION_VALIDATE_RADIUS}`);
+  });
+});
+
+describe("authoritative multiplayer lifecycle", () => {
+  it("initializes player state on game.start before the room reaches RUNNING", () => {
+    const server = readFileSync("server.js", "utf8");
+    expect(server).toMatch(/socket\.on\("game\.start"/);
+    expect(server).toMatch(/if \(SERVER_AUTH_ENABLED && !playersState\.has\(playerId\)\)/);
+    expect(server).not.toMatch(/SERVER_AUTH_ENABLED && matchRunning && !playersState\.has\(playerId\)/);
   });
 });
 

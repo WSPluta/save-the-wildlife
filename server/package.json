@@ -1,6 +1,6 @@
 {
   "name": "server",
-  "version": "0.0.42",
+  "version": "0.0.43",
   "description": "OCI Multiplayer Server",
   "repository": "https://github.com/oracle-devrel/save-the-wildlife",
   "main": "index.js",

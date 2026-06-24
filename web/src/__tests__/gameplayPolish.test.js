@@ -87,8 +87,8 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const TRASH_GEOMETRY_DEPTH = 0\.66;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MIN = 0\.68;/);
     expect(script).toMatch(/const POWERUP_VISUAL_SCALE_MAX = 1\.22;/);
-    expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 5\.2;/);
-    expect(script).toMatch(/const POWERUP_ARCADE_PICKUP_RADIUS = 5\.2;/);
+    expect(script).toMatch(/const TRASH_ARCADE_PICKUP_RADIUS = 3\.6;/);
+    expect(script).toMatch(/const POWERUP_ARCADE_PICKUP_RADIUS = 3\.6;/);
     expect(script).toMatch(/const ENGINE_WAKE_PARTICLES_ENABLED = false;/);
     expect(script).toMatch(/function clampVisualScale\(size, min, max\)/);
     expect(script).toMatch(/function isWithinArcadePickupRadius\(position, radius\)/);
@@ -117,6 +117,12 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/applyConfirmedCollisionOutcome\(payload\);/);
     expect(script).toMatch(/removeItemFromScene\(payload\.itemId \|\| payload\.id\);/);
     expect(worker).toMatch(/socket\.timeout\(1200\)\.emit\("items\.collision"/);
+  });
+
+  it("creates remote boats from authoritative player state snapshots", () => {
+    expect(script).toMatch(/function ensureRemotePlayerVisual\(id, state\)/);
+    expect(script).toMatch(/Object\.entries\(authStates\)\.forEach\(\(\[id, state\]\) =>/);
+    expect(script).toMatch(/ensureRemotePlayerVisual\(id, state\);/);
   });
 
   it("replaces stale room items when authoritative items arrive", () => {

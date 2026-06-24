@@ -180,8 +180,8 @@ const TRASH_GEOMETRY_HEIGHT = 0.13;
 const TRASH_GEOMETRY_DEPTH = 0.66;
 const POWERUP_VISUAL_SCALE_MIN = 0.68;
 const POWERUP_VISUAL_SCALE_MAX = 1.22;
-const TRASH_ARCADE_PICKUP_RADIUS = 5.2;
-const POWERUP_ARCADE_PICKUP_RADIUS = 5.2;
+const TRASH_ARCADE_PICKUP_RADIUS = 3.6;
+const POWERUP_ARCADE_PICKUP_RADIUS = 3.6;
 const ENGINE_WAKE_PARTICLES_ENABLED = false;
 const BOT_RENDER_MODE = "demo-visible";
 const BOT_VISUAL_SCALE = 0.28;
@@ -402,6 +402,26 @@ function removeRemotePlayerVisual(id) {
     if (trails[id].line && trails[id].line.material) trails[id].line.material.dispose();
     delete trails[id];
   }
+}
+
+function ensureRemotePlayerVisual(id, state) {
+  if (!id || id === yourId || !shouldRenderRemotePlayer(id)) {
+    if (id && id !== yourId) removeRemotePlayerVisual(id);
+    return null;
+  }
+  if (!otherPlayersMeshes[id]) {
+    otherPlayersMeshes[id] = makePlayerMesh(boatModel, id);
+    if (state && Number.isFinite(Number(state.x)) && Number.isFinite(Number(state.z))) {
+      otherPlayersMeshes[id].position.x = Number(state.x);
+      otherPlayersMeshes[id].position.z = Number(state.z);
+      if (Number.isFinite(Number(state.rotY))) {
+        otherPlayersMeshes[id].rotation.y = Number(state.rotY);
+      }
+    }
+    refreshNameTagForPlayer(id);
+    updatePlayersHud();
+  }
+  return otherPlayersMeshes[id] || null;
 }
 
 function applyFollowCamera(root, yaw) {
@@ -3248,6 +3268,9 @@ async function init() {
             if (!shouldRenderRemotePlayer(id)) {
               removeRemotePlayerVisual(id);
               delete otherPlayers[id];
+            } else if (id !== yourId && !otherPlayersMeshes[id]) {
+              otherPlayersMeshes[id] = makePlayerMesh(boatModel, id);
+              refreshNameTagForPlayer(id);
             } else if (otherPlayersMeshes[id]) {
               refreshNameTagForPlayer(id);
             }
@@ -5524,10 +5547,17 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const timeFreezeActive = Date.now() < (powerUpState.freezeUntil || 0);
     const lerpFactor = timeFreezeActive ? 0.12 : 0.35;
     if (serverAuthEnabled && authStates) {
+      Object.entries(authStates).forEach(([id, state]) => {
+        if (id === yourId) return;
+        ensureRemotePlayerVisual(id, state);
+      });
       Object.keys(playerMeshes).forEach((id) => {
         if (id === yourId) return;
         const s = authStates[id];
-        if (!s) return;
+        if (!s) {
+          removeRemotePlayerVisual(id);
+          return;
+        }
         const m = playerMeshes[id];
         if (!m) return;
         // Smoothly approach authoritative state
@@ -5855,6 +5885,17 @@ function renderGameToText() {
     .slice(0, 5);
   const remotePlayerEntries = Object.entries(otherPlayersMeshes || {})
     .filter(([, mesh]) => mesh && mesh.visible !== false);
+  const authStateSamples = Object.entries(authStates || {})
+    .filter(([id]) => id !== yourId)
+    .slice(0, 5)
+    .map(([id, state]) => ({
+      id,
+      x: Number((Number(state?.x) || 0).toFixed(3)),
+      z: Number((Number(state?.z) || 0).toFixed(3)),
+      rotY: Number((Number(state?.rotY) || 0).toFixed(3)),
+      speed: Number((Number(state?.speed) || 0).toFixed(3)),
+      hasMesh: !!(otherPlayersMeshes && otherPlayersMeshes[id]),
+    }));
   const botSamples = remotePlayerEntries
     .filter(([id]) => isBotPlayerId(id))
     .slice(0, 5)
@@ -5889,6 +5930,8 @@ function renderGameToText() {
       : null,
     serverAuthEnabled,
     authLagMs: latestAuthLagMs,
+    authStateCount: Object.keys(authStates || {}).length,
+    authStateSamples,
     score: Number(localScore || 0),
     timeRemaining: Number(remainingTime || 0),
     playersVisible: remotePlayerEntries.length,
