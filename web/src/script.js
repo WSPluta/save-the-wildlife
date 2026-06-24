@@ -193,6 +193,10 @@ const NAME_TAG_SCALE = Object.freeze({ x: 1.22, y: 0.3, z: 1 });
 const NAME_TAG_POSITION_Y = 1.16;
 const BOT_NAME_TAG_SCALE = Object.freeze({ x: 0.32, y: 0.1, z: 1 });
 const BOT_NAME_TAG_POSITION_Y = 0.58;
+const RENDER_PIXEL_RATIO_DESKTOP_MAX = 1.25;
+const RENDER_PIXEL_RATIO_MOBILE_MAX = 1;
+const WATER_REFLECTION_TEXTURE_SIZE = 256;
+const REALTIME_SHADOWS_ENABLED = false;
 const LOCAL_AUTH_POSITION_SMOOTHING = 2.4;
 const LOCAL_AUTH_ROTATION_SMOOTHING = 3.2;
 const LOCAL_AUTH_SNAP_DISTANCE = 9.5;
@@ -301,6 +305,12 @@ function getFollowCameraComposition() {
   return isMobileGameViewport()
     ? FOLLOW_CAMERA_COMPOSITION.mobile
     : FOLLOW_CAMERA_COMPOSITION.desktop;
+}
+
+function getRendererPixelRatio() {
+  const deviceRatio = Number(window.devicePixelRatio || 1);
+  const cap = isMobileGameViewport() ? RENDER_PIXEL_RATIO_MOBILE_MAX : RENDER_PIXEL_RATIO_DESKTOP_MAX;
+  return Math.max(1, Math.min(cap, Number.isFinite(deviceRatio) ? deviceRatio : 1));
 }
 
 function clampVisualScale(size, min, max) {
@@ -4559,16 +4569,16 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   // renderer
   renderer = new THREE.WebGLRenderer({
     canvas: canvas,
-    antialias: true,
+    antialias: false,
     alpha: true,
     powerPreference: "high-performance",
     failIfMajorPerformanceCaveat: false
   });
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setPixelRatio(getRendererPixelRatio());
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = ARCADE_ENVIRONMENT.toneMappingExposure;
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = REALTIME_SHADOWS_ENABLED;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
   // Cross-browser WebGL context loss handlers
@@ -4693,7 +4703,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   window.addEventListener("resize", function () {
     const width = window.innerWidth;
     const height = window.innerHeight;
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setPixelRatio(getRendererPixelRatio());
     renderer.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
@@ -4735,8 +4745,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     waternormals.needsUpdate = true;
   }
   water = new Water(waterGeometry, {
-    textureWidth: 512,
-    textureHeight: 512,
+    textureWidth: WATER_REFLECTION_TEXTURE_SIZE,
+    textureHeight: WATER_REFLECTION_TEXTURE_SIZE,
     waterNormals: waternormals,
     sunDirection: new THREE.Vector3(),
     sunColor: ARCADE_ENVIRONMENT.waterSunColor,

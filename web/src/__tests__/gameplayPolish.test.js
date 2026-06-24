@@ -163,6 +163,19 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/animateItems\(\);[\s\S]{0,220}animateOtherPlayers\(otherPlayersMeshes\);[\s\S]{0,220}render\(\);/);
   });
 
+  it("uses a conservative renderer profile for smooth first-person play", () => {
+    expect(script).toMatch(/const RENDER_PIXEL_RATIO_DESKTOP_MAX = 1\.25;/);
+    expect(script).toMatch(/const RENDER_PIXEL_RATIO_MOBILE_MAX = 1;/);
+    expect(script).toMatch(/const WATER_REFLECTION_TEXTURE_SIZE = 256;/);
+    expect(script).toMatch(/const REALTIME_SHADOWS_ENABLED = false;/);
+    expect(script).toMatch(/function getRendererPixelRatio\(\)/);
+    expect(script).toMatch(/renderer = new THREE\.WebGLRenderer\(\{[\s\S]{0,80}antialias: false,/);
+    expect(script).toMatch(/renderer\.setPixelRatio\(getRendererPixelRatio\(\)\);/);
+    expect(script).toMatch(/renderer\.shadowMap\.enabled = REALTIME_SHADOWS_ENABLED;/);
+    expect(script).toMatch(/textureWidth: WATER_REFLECTION_TEXTURE_SIZE,/);
+    expect(script).toMatch(/textureHeight: WATER_REFLECTION_TEXTURE_SIZE,/);
+  });
+
   it("replaces stale room items when authoritative items arrive", () => {
     expect(script).toMatch(/function syncAuthoritativeItems\(nextItems = \{\}\)/);
     expect(script).toMatch(/const nextIds = new Set\(Object\.keys\(scopedItems\)\);/);
