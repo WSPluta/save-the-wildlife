@@ -123,6 +123,10 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/function ensureRemotePlayerVisual\(id, state\)/);
     expect(script).toMatch(/Object\.entries\(authStates\)\.forEach\(\(\[id, state\]\) =>/);
     expect(script).toMatch(/ensureRemotePlayerVisual\(id, state\);/);
+    expect(script).toMatch(/let authStateSeenAt = \{\};/);
+    expect(script).toMatch(/authStates\[id\] = state;/);
+    expect(script).toMatch(/authStateSeenAt\[id\] = receivedAt;/);
+    expect(script).toMatch(/REMOTE_AUTH_STATE_STALE_MS = 3000/);
   });
 
   it("replaces stale room items when authoritative items arrive", () => {

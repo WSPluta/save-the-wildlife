@@ -131,6 +131,7 @@ let serverPhysics = null;
 let inputSeq = 0;
 let authStates = null;
 let authStatesTime = 0;
+let authStateSeenAt = {};
 let startPosition = null;
 let cullingDebugEnabled = false;
 const cullingHelpers = new Map();
@@ -633,6 +634,7 @@ let networkStats = {
 
 // Client-side prediction config
 const SNAPSHOT_STALE_MS = 300;
+const REMOTE_AUTH_STATE_STALE_MS = 3000;
 
 // HUD element references (if present)
 const hudTimeEl = document.getElementById("hud-time");
@@ -3324,8 +3326,15 @@ async function init() {
         break;
       case "player.state":
         if (body && body.states) {
-          authStates = body.states;
-          authStatesTime = body.t || performance.now();
+          const receivedAt = performance.now();
+          authStates = authStates && typeof authStates === "object" ? authStates : {};
+          authStateSeenAt = authStateSeenAt && typeof authStateSeenAt === "object" ? authStateSeenAt : {};
+          Object.entries(body.states || {}).forEach(([id, state]) => {
+            if (!id || !state) return;
+            authStates[id] = state;
+            authStateSeenAt[id] = receivedAt;
+          });
+          authStatesTime = body.t || receivedAt;
         }
         break;
       case "server.metrics":
@@ -5422,8 +5431,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const dt = frameDt || 0.016;
     const nowMs = performance.now();
     const lagMs = serverAuthEnabled ? (nowMs - (authStatesTime || 0)) : 0;
-    const authFreshGlobal = serverAuthEnabled && authStates && lagMs <= SNAPSHOT_STALE_MS;
-    const authFreshForYou = !!(authFreshGlobal && authStates && authStates[yourId]);
+    const yourAuthLagMs = serverAuthEnabled ? (nowMs - Number(authStateSeenAt?.[yourId] || 0)) : 0;
+    const authFreshForYou = !!(serverAuthEnabled && authStates && authStates[yourId] && yourAuthLagMs <= SNAPSHOT_STALE_MS);
     const movement = new THREE.Vector3(0, 0, 0);
     const lateralVelocity = new THREE.Vector3(0, 0, 0);
     let throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
@@ -5547,14 +5556,21 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const timeFreezeActive = Date.now() < (powerUpState.freezeUntil || 0);
     const lerpFactor = timeFreezeActive ? 0.12 : 0.35;
     if (serverAuthEnabled && authStates) {
+      const nowAuth = performance.now();
       Object.entries(authStates).forEach(([id, state]) => {
         if (id === yourId) return;
+        if (nowAuth - Number(authStateSeenAt?.[id] || 0) > REMOTE_AUTH_STATE_STALE_MS) {
+          delete authStates[id];
+          delete authStateSeenAt[id];
+          removeRemotePlayerVisual(id);
+          return;
+        }
         ensureRemotePlayerVisual(id, state);
       });
       Object.keys(playerMeshes).forEach((id) => {
         if (id === yourId) return;
         const s = authStates[id];
-        if (!s) {
+        if (!s || nowAuth - Number(authStateSeenAt?.[id] || 0) > REMOTE_AUTH_STATE_STALE_MS) {
           removeRemotePlayerVisual(id);
           return;
         }
