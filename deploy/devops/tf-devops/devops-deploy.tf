@@ -58,7 +58,17 @@ resource "oci_devops_deploy_artifact" "command_spec_deploy" {
       paf_image_repository              = var.paf_image_repository
       paf_version                       = var.paf_version
       genai_model_id                    = var.genai_model_id
+      paf_mcp_enabled                   = var.paf_mcp_enabled
+      paf_mcp_public_url                = var.paf_mcp_public_url
       paf_canvas_run_endpoint_url       = var.paf_canvas_run_endpoint_url
+      paf_canvas_import_enabled         = var.paf_canvas_import_enabled
+      paf_canvas_host                   = var.paf_canvas_host
+      paf_canvas_ssh_user               = var.paf_canvas_ssh_user
+      paf_canvas_ssh_key_secret_id      = var.paf_canvas_ssh_key_secret_id
+      paf_canvas_flow_name              = var.paf_canvas_flow_name
+      paf_canvas_agent_factory_user     = var.paf_canvas_agent_factory_user
+      paf_canvas_llm_config_name        = var.paf_canvas_llm_config_name
+      paf_canvas_require_llm_config     = var.paf_canvas_require_llm_config
       paf_canvas_room_id                = var.paf_canvas_room_id
       paf_canvas_timeout_ms             = var.paf_canvas_timeout_ms
       paf_commentary_deadline_ms        = var.paf_commentary_deadline_ms
@@ -76,6 +86,8 @@ resource "oci_devops_deploy_artifact" "command_spec_deploy" {
       model_ai_ft_upstream_format       = var.model_ai_ft_upstream_format
       model_ai_base_upstream_model_id   = var.model_ai_base_upstream_model_id
       model_ai_ft_upstream_model_id     = var.model_ai_ft_upstream_model_id
+      model_ai_require_upstream_ready   = var.model_ai_require_upstream_ready
+      model_ai_require_private_ollama   = var.model_ai_require_private_ollama
       oci_model_endpoint_auth_secret_id = var.oci_model_endpoint_auth_secret_id
       oci_model_endpoint_timeout_ms     = var.oci_model_endpoint_timeout_ms
       oci_model_endpoint_verify_tls     = var.oci_model_endpoint_verify_tls

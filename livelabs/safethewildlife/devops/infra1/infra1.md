@@ -18,6 +18,7 @@ In this lab, you are going to deploy that foundational infrastructure that inclu
 - Identity and Access Management policies and dynamic groups control what services use what resources in Oracle Cloud.
 - Oracle Autonomous Database to be used by the application.
 - OCI Generative AI access for the Oracle Private Agent Factory commentary service.
+- Optional Terraform-managed Oracle Private Agent Factory Canvas host for the commentary agent workflow.
 - Oracle Notification Service to receive emails every time  OCI DevOps finishes an operation.
 
 ### Prerequisites
@@ -48,6 +49,61 @@ In this lab, you are going to deploy that foundational infrastructure that inclu
 4. The third one is the _GitHub Token_. You just paste the GitHub access token you copied from the previous task.
   
   ![tfvars env GitHub token](images/tfvars-env-github-token.png)
+
+5. Optional: if you want Terraform to create a brand-new Oracle Private Agent Factory Canvas host for the demo, export the Canvas variables before running `tfvars.mjs env`.
+
+    The default path uses the Oracle AI Database Private Agent Factory Marketplace image discovered for this tenancy and region:
+
+    - listing: `ocid1.appcataloglisting.oc1..aaaaaaaatzpebex5ocjaj33xkt6o2qxvcbvsb3fmcd2ypa74yogfj37246ba`
+    - x86 image: `ocid1.image.oc1..aaaaaaaamsa27joy3ad3mjsbsfjgsddqmx6qtynqtx3hjumg6bmj5lwqnwma`
+    - x86 package: `25.3.0.0.9.X86`
+
+    ```bash
+    <copy>export PAF_CANVAS_ENABLED=true</copy>
+    <copy>export PAF_CANVAS_USE_MARKETPLACE_IMAGE=true</copy>
+    <copy>export PAF_CANVAS_ACCEPT_MARKETPLACE_TERMS=true</copy>
+    <copy>export PAF_CANVAS_SSH_PUBLIC_KEY="$(cat ~/.ssh/stwl-paf-canvas.pub)"</copy>
+    <copy>export PAF_CANVAS_GENAI_MODEL_ID=cohere.command-r-08-2024</copy>
+    <copy>export PAF_CANVAS_SELECT_AI_PROFILE=STWL_GAMEPLAY_AI</copy>
+    <copy>export PAF_CANVAS_SELECT_AI_AGENT_TEAM=STWL_GAMEPLAY_COMMENTARY_TEAM</copy>
+    ```
+
+    You can also override the Marketplace image with a prebuilt PAF custom image OCID, an installer script URL, or a PAF Canvas container image URI. Do not enable this with a plain Oracle Linux image and no installer/container; that only creates an empty VM, not a working PAF Canvas.
+
+    ```bash
+    <copy>export PAF_CANVAS_ENABLED=true</copy>
+    <copy>export PAF_CANVAS_SSH_PUBLIC_KEY="$(cat ~/.ssh/stwl-paf-canvas.pub)"</copy>
+    <copy>export PAF_CANVAS_IMAGE_OCID="ocid1.image.oc1...prebuilt-paf-image"</copy>
+    <copy>export PAF_CANVAS_GENAI_MODEL_ID=cohere.command-r-08-2024</copy>
+    <copy>export PAF_CANVAS_SELECT_AI_PROFILE=STWL_GAMEPLAY_AI</copy>
+    <copy>export PAF_CANVAS_SELECT_AI_AGENT_TEAM=STWL_GAMEPLAY_COMMENTARY_TEAM</copy>
+    ```
+
+    Or, when using an installer script:
+
+    ```bash
+    <copy>export PAF_CANVAS_ENABLED=true</copy>
+    <copy>export PAF_CANVAS_SSH_PUBLIC_KEY="$(cat ~/.ssh/stwl-paf-canvas.pub)"</copy>
+    <copy>export PAF_CANVAS_INSTALL_SCRIPT_URL="https://objectstorage.../paf-install.sh"</copy>
+    <copy>export PAF_CANVAS_GENAI_MODEL_ID=cohere.command-r-08-2024</copy>
+    <copy>export PAF_CANVAS_SELECT_AI_PROFILE=STWL_GAMEPLAY_AI</copy>
+    <copy>export PAF_CANVAS_SELECT_AI_AGENT_TEAM=STWL_GAMEPLAY_COMMENTARY_TEAM</copy>
+    ```
+
+    Or, when using a PAF Canvas container image:
+
+    ```bash
+    <copy>export PAF_CANVAS_ENABLED=true</copy>
+    <copy>export PAF_CANVAS_SSH_PUBLIC_KEY="$(cat ~/.ssh/stwl-paf-canvas.pub)"</copy>
+    <copy>export PAF_CANVAS_CONTAINER_IMAGE_URI="container-registry.oracle.com/.../private-agent-factory:tag"</copy>
+    <copy>export PAF_CANVAS_CONTAINER_NAME=oracle-applied-ai-label</copy>
+    <copy>export PAF_CANVAS_CONTAINER_PORT=8080</copy>
+    <copy>export PAF_CANVAS_GENAI_MODEL_ID=cohere.command-r-08-2024</copy>
+    <copy>export PAF_CANVAS_SELECT_AI_PROFILE=STWL_GAMEPLAY_AI</copy>
+    <copy>export PAF_CANVAS_SELECT_AI_AGENT_TEAM=STWL_GAMEPLAY_COMMENTARY_TEAM</copy>
+    ```
+
+    The PAF Canvas host cloud-init writes `/etc/save-the-wildlife-paf-canvas.env` with the Oracle AI Database OCID, service name, ADB admin password secret OCID, tenancy, compartment, region, Select AI profile/team, and OCI Generative AI model. Your PAF image or installer should read that file to configure Canvas directly on top of the same database used by the game.
 
 ## Task 2: Apply foundational infrastructure
 

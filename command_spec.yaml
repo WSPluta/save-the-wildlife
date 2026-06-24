@@ -54,6 +54,10 @@ steps:
       export OCI_GENAI_MODEL_ID=${genai_model_id}
       export PAF_IMAGE_REPOSITORY=${paf_image_repository}
       export PAF_VERSION="$${PAF_VERSION:-${paf_version}}"
+      export PAF_MCP_ENABLED="${paf_mcp_enabled}"
+      export PAF_MCP_PUBLIC_URL="${paf_mcp_public_url}"
+      export MODEL_AI_TRAINING_VERSION="$${MODEL_AI_TRAINING_VERSION:-latest}"
+      export MODEL_AI_INFERENCE_VERSION="$${MODEL_AI_INFERENCE_VERSION:-latest}"
       export PAF_CANVAS_RUN_ENDPOINT_URL="${paf_canvas_run_endpoint_url}"
       export PAF_CANVAS_ROOM_ID="${paf_canvas_room_id}"
       export PAF_CANVAS_TIMEOUT_MS="${paf_canvas_timeout_ms}"
@@ -72,6 +76,8 @@ steps:
       export MODEL_AI_FT_UPSTREAM_FORMAT="$${MODEL_AI_FT_UPSTREAM_FORMAT:-${model_ai_ft_upstream_format}}"
       export MODEL_AI_BASE_UPSTREAM_MODEL_ID="$${MODEL_AI_BASE_UPSTREAM_MODEL_ID:-${model_ai_base_upstream_model_id}}"
       export MODEL_AI_FT_UPSTREAM_MODEL_ID="$${MODEL_AI_FT_UPSTREAM_MODEL_ID:-${model_ai_ft_upstream_model_id}}"
+      export MODEL_AI_REQUIRE_UPSTREAM_READY="${model_ai_require_upstream_ready}"
+      export MODEL_AI_REQUIRE_PRIVATE_OLLAMA="${model_ai_require_private_ollama}"
       export OCI_MODEL_ENDPOINT_TIMEOUT_MS="${oci_model_endpoint_timeout_ms}"
       export OCI_MODEL_ENDPOINT_VERIFY_TLS="${oci_model_endpoint_verify_tls}"
       export PAF_TRACE_PERSIST="${paf_trace_persist}"
@@ -79,9 +85,85 @@ steps:
       export PAF_MODEL_FAST_PATH_ENABLED="${paf_model_fast_path_enabled}"
       export PAF_EVAL_RUBRIC_VERSION="${paf_eval_rubric_version}"
       export PAF_TRAINING_CAPTURE_ENABLED="${paf_training_capture_enabled}"
+      if [ "$MODEL_AI_REQUIRE_UPSTREAM_READY" = "true" ] || [ "$MODEL_AI_REQUIRE_PRIVATE_OLLAMA" = "true" ] || \
+         [ "$MODEL_AI_BASE_UPSTREAM_URL" != "http://stwl-ollama-fallback:11434/api/chat" ] || \
+         [ "$MODEL_AI_FT_UPSTREAM_URL" != "http://stwl-ollama-fallback:11434/api/chat" ]; then
+        check_flags=(--mode cluster)
+        if [ "$MODEL_AI_REQUIRE_PRIVATE_OLLAMA" = "true" ]; then
+          check_flags+=(--require-private)
+        fi
+        node scripts/model-ollama-upstream-check.mjs \
+          --base-url "$MODEL_AI_BASE_UPSTREAM_URL" \
+          --ft-url "$MODEL_AI_FT_UPSTREAM_URL" \
+          --base-model "$MODEL_AI_BASE_UPSTREAM_MODEL_ID" \
+          --ft-model "$MODEL_AI_FT_UPSTREAM_MODEL_ID" \
+          "$${check_flags[@]}"
+      fi
       npx zx scripts/kustom.mjs ${region_key} $adb_admin_password ${adb_service} "$adb_wallet_password"
-      rm -f .adb_wallet_password
       echo "Wallet and config files generated successfully"
+  - type: Command
+    name: "Import PAF Canvas flow"
+    shell: bash
+    timeoutInSeconds: 300
+    command: |
+      cd save-the-wildlife
+      if [ "${paf_canvas_import_enabled}" != "true" ]; then
+        echo "PAF Canvas import disabled; skipping."
+        exit 0
+      fi
+      if [ -z "${paf_canvas_host}" ]; then
+        echo "paf_canvas_host is required when paf_canvas_import_enabled=true"
+        exit 1
+      fi
+      if [ -z "${paf_canvas_ssh_key_secret_id}" ]; then
+        echo "paf_canvas_ssh_key_secret_id is required when paf_canvas_import_enabled=true"
+        exit 1
+      fi
+      canvas_ssh_key=/tmp/stwl-paf-canvas.key
+      oci secrets secret-bundle get --secret-id ${paf_canvas_ssh_key_secret_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d > "$canvas_ssh_key"
+      chmod 600 "$canvas_ssh_key"
+      mcp_public_url="${paf_mcp_public_url}"
+      if [ -z "$mcp_public_url" ]; then
+        echo "paf_mcp_public_url is required when paf_canvas_import_enabled=true"
+        exit 1
+      fi
+      import_args=(
+        --paf-ip "${paf_canvas_host}"
+        --ssh-user "${paf_canvas_ssh_user}"
+        --ssh-key "$canvas_ssh_key"
+        --manifest manifests/private-agent-factory/save-the-wildlife-commentary-canvas-flow.json
+        --flow-name "${paf_canvas_flow_name}"
+        --flow-description "Save the Wildlife live commentator for Oracle AI Database gameplay telemetry."
+        --llm-config-name "${paf_canvas_llm_config_name}"
+        --mcp-server-url "$mcp_public_url"
+      )
+      if [ -n "${paf_canvas_agent_factory_user}" ]; then
+        import_args+=(--agent-factory-user "${paf_canvas_agent_factory_user}")
+      fi
+      if [ "${paf_canvas_require_llm_config}" = "true" ]; then
+        import_args+=(--require-llm-config)
+      fi
+      python3 scripts/import_paf_canvas_flow.py "$${import_args[@]}" | tee /tmp/stwl-paf-canvas-import.log
+      run_endpoint_url=$$(grep '^run_endpoint_url=' /tmp/stwl-paf-canvas-import.log | tail -1 | cut -d= -f2-)
+      if [ -z "$run_endpoint_url" ]; then
+        echo "PAF Canvas import did not produce a run endpoint."
+        exit 1
+      fi
+      export PAF_CANVAS_RUN_ENDPOINT_URL="$run_endpoint_url"
+      export PAF_MCP_PUBLIC_URL="$mcp_public_url"
+      adb_admin_password=$(oci secrets secret-bundle get --secret-id ${adb_admin_password_id} --query 'data."secret-bundle-content".content' | tr -d '\"' | base64 -d)
+      adb_wallet_password=$(cat .adb_wallet_password)
+      npx zx scripts/kustom.mjs ${region_key} "$adb_admin_password" ${adb_service} "$adb_wallet_password"
+      rm -f "$canvas_ssh_key"
+      rm -f .adb_wallet_password
+      echo "Imported PAF Canvas flow and configured run endpoint: $run_endpoint_url"
+  - type: Command
+    name: "Clean generated ADB wallet password"
+    shell: bash
+    timeoutInSeconds: 60
+    command: |
+      cd save-the-wildlife
+      rm -f .adb_wallet_password
   - type: Command
     name: "Create OCIR Secret"
     shell: bash

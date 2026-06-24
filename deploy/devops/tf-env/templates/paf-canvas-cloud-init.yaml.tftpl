@@ -1,0 +1,47 @@
+#cloud-config
+package_update: true
+packages:
+  - podman
+  - unzip
+  - python3
+  - jq
+write_files:
+  - path: /etc/save-the-wildlife-paf-canvas.env
+    permissions: "0600"
+    owner: root:root
+    content: |
+      OCI_REGION=${region}
+      OCI_TENANCY_OCID=${tenancy_ocid}
+      OCI_COMPARTMENT_OCID=${compartment_ocid}
+      ADB_ID=${adb_id}
+      ADB_SERVICE=${adb_service}
+      ADB_ADMIN_PASSWORD_SECRET_ID=${adb_admin_password_secret_id}
+      SELECT_AI_PROFILE=${select_ai_profile}
+      SELECT_AI_AGENT_TEAM=${select_ai_agent_team}
+      OCI_GENAI_MODEL_ID=${genai_model_id}
+      PAF_INSTALL_SCRIPT_URL=${install_script_url}
+      PAF_CONTAINER_IMAGE_URI=${container_image_uri}
+      PAF_CONTAINER_NAME=${container_name}
+      PAF_CONTAINER_PORT=${container_port}
+      PAF_DB_CONFIG_SOURCE=terraform-oracle-ai-database
+runcmd:
+  - systemctl enable --now podman || true
+  - mkdir -p /opt/save-the-wildlife/paf-canvas
+  - echo "Save the Wildlife PAF Canvas host provisioned by Terraform at $(date -Is)" > /opt/save-the-wildlife/paf-canvas/README.txt
+  - |
+    if [ -n "${install_script_url}" ]; then
+      curl -fsSL "${install_script_url}" -o /opt/save-the-wildlife/paf-canvas/install.sh
+      chmod +x /opt/save-the-wildlife/paf-canvas/install.sh
+      /opt/save-the-wildlife/paf-canvas/install.sh
+    else
+      echo "No paf_canvas_install_script_url supplied; expecting prebuilt PAF image or manual install." >> /opt/save-the-wildlife/paf-canvas/README.txt
+    fi
+  - |
+    if [ -n "${container_image_uri}" ]; then
+      podman run -d --replace \
+        --name "${container_name}" \
+        --env-file /etc/save-the-wildlife-paf-canvas.env \
+        -p 8080:${container_port} \
+        "${container_image_uri}"
+      echo "Started Private Agent Factory container ${container_name} from ${container_image_uri}" >> /opt/save-the-wildlife/paf-canvas/README.txt
+    fi

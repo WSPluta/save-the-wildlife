@@ -26,9 +26,9 @@
         ]
       }
     },
-    {
-      "id": "stwl-commentary-prompt",
-      "type": "flowGenericNode",
+        {
+            "id": "stwl-commentary-prompt",
+            "type": "flowGenericNode",
       "position": {
         "x": -40,
         "y": 220
@@ -82,12 +82,52 @@
               "message"
             ]
           }
-        ]
-      }
-    },
-    {
-      "id": "stwl-commentary-agent",
-      "type": "flowGenericNode",
+                ]
+            }
+        },
+        {
+            "id": "stwl-game-telemetry-mcp",
+            "type": "flowGenericNode",
+            "position": {
+                "x": -40,
+                "y": 520
+            },
+            "data": {
+                "title": "Save the Wildlife Oracle AI Database MCP",
+                "type": "mcpServer",
+                "description": "Read-only MCP server that exposes Oracle AI Database gameplay telemetry, session summaries, and bounded commentary tools.",
+                "icon": "plug",
+                "fieldOrder": [
+                    "serverUrl"
+                ],
+                "passInlineData": false,
+                "template": {
+                    "serverUrl": {
+                        "componentType": "inputText",
+                        "componentProps": {
+                            "label": "MCP server URL",
+                            "placeholder": "http://130.162.174.167/paf/mcp"
+                        },
+                        "display": true,
+                        "required": true,
+                        "value": "PAF_MCP_PUBLIC_URL",
+                        "valueType": "str"
+                    }
+                },
+                "outputs": [
+                    {
+                        "id": "tool",
+                        "label": "MCP tools",
+                        "outputTypes": [
+                            "tool"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "id": "stwl-commentary-agent",
+            "type": "flowGenericNode",
       "position": {
         "x": 360,
         "y": 180
@@ -290,20 +330,31 @@
         "targetHandleId": "user_input"
       }
     },
-    {
-      "id": "xy-edge__stwl-commentary-promptoutput-stwl-commentary-agentprompt",
-      "source": "stwl-commentary-prompt",
+        {
+            "id": "xy-edge__stwl-commentary-promptoutput-stwl-commentary-agentprompt",
+            "source": "stwl-commentary-prompt",
       "target": "stwl-commentary-agent",
       "sourceHandle": "output-stwl-commentary-prompt",
       "targetHandle": "prompt-stwl-commentary-agent",
       "data": {
         "sourceHandleId": "output",
-        "targetHandleId": "prompt"
-      }
-    },
-    {
-      "id": "xy-edge__stwl-commentary-agenttool_output-stwl-chat-outputmessage",
-      "source": "stwl-commentary-agent",
+                "targetHandleId": "prompt"
+            }
+        },
+        {
+            "id": "xy-edge__stwl-game-telemetry-mcptool-stwl-commentary-agenttools",
+            "source": "stwl-game-telemetry-mcp",
+            "target": "stwl-commentary-agent",
+            "sourceHandle": "tool-stwl-game-telemetry-mcp",
+            "targetHandle": "tools-stwl-commentary-agent",
+            "data": {
+                "sourceHandleId": "tool",
+                "targetHandleId": "tools"
+            }
+        },
+        {
+            "id": "xy-edge__stwl-commentary-agenttool_output-stwl-chat-outputmessage",
+            "source": "stwl-commentary-agent",
       "target": "stwl-chat-output",
       "sourceHandle": "tool_output-stwl-commentary-agent",
       "targetHandle": "message-stwl-chat-output",

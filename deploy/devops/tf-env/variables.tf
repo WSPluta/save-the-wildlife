@@ -220,3 +220,147 @@ variable "model_ollama_ssh_public_key" {
   default     = ""
   description = "Optional SSH public key for break-glass access to the private Ollama host."
 }
+
+variable "paf_canvas_enabled" {
+  type        = bool
+  default     = false
+  description = "Create an optional public Private Agent Factory Canvas host for the Save the Wildlife demo. Bill-impacting when enabled."
+}
+
+variable "paf_canvas_use_marketplace_image" {
+  type        = bool
+  default     = true
+  description = "Use the Oracle AI Database Private Agent Factory Marketplace image when paf_canvas_image_ocid is empty."
+}
+
+variable "paf_canvas_accept_marketplace_terms" {
+  type        = bool
+  default     = true
+  description = "Accept Oracle AI Database Private Agent Factory Marketplace terms before launching the image. Required for first-time marketplace use."
+}
+
+variable "paf_canvas_marketplace_listing_id" {
+  type        = string
+  default     = "ocid1.appcataloglisting.oc1..aaaaaaaatzpebex5ocjaj33xkt6o2qxvcbvsb3fmcd2ypa74yogfj37246ba"
+  description = "Oracle AI Database Private Agent Factory Marketplace listing OCID."
+}
+
+variable "paf_canvas_marketplace_x86_image_ocid" {
+  type        = string
+  default     = "ocid1.image.oc1..aaaaaaaamsa27joy3ad3mjsbsfjgsddqmx6qtynqtx3hjumg6bmj5lwqnwma"
+  description = "Oracle AI Database Private Agent Factory Marketplace x86 image OCID for uk-london-1."
+}
+
+variable "paf_canvas_marketplace_x86_package_version" {
+  type        = string
+  default     = "25.3.0.0.9.X86"
+  description = "Oracle AI Database Private Agent Factory Marketplace x86 package version."
+}
+
+variable "paf_canvas_marketplace_arm_image_ocid" {
+  type        = string
+  default     = "ocid1.image.oc1..aaaaaaaadhoxm6n2vfbzxrzsnfsvuaai64jrgiv6j5vahuhbuxzcdxauot5a"
+  description = "Oracle AI Database Private Agent Factory Marketplace Arm image OCID."
+}
+
+variable "paf_canvas_marketplace_arm_package_version" {
+  type        = string
+  default     = "25.3.0.0.9.ARM"
+  description = "Oracle AI Database Private Agent Factory Marketplace Arm package version."
+}
+
+variable "paf_canvas_arm_shapes" {
+  type        = list(string)
+  description = "Compute shapes that should use the Arm Oracle AI Database Private Agent Factory Marketplace image."
+  default = [
+    "BM.Standard.A1.160",
+    "BM.Standard.A4.48",
+    "VM.Standard.A1.Flex",
+    "VM.Standard.A2.Flex",
+    "VM.Standard.A4.Flex"
+  ]
+}
+
+variable "paf_canvas_shape" {
+  type        = string
+  default     = "VM.Standard.E4.Flex"
+  description = "Compute shape for the optional Private Agent Factory Canvas host."
+}
+
+variable "paf_canvas_ocpus" {
+  type        = number
+  default     = 2
+  description = "OCPUs for the optional Private Agent Factory Canvas flexible shape."
+}
+
+variable "paf_canvas_memory_in_gbs" {
+  type        = number
+  default     = 16
+  description = "Memory in GB for the optional Private Agent Factory Canvas flexible shape."
+}
+
+variable "paf_canvas_boot_volume_size_in_gbs" {
+  type        = number
+  default     = 120
+  description = "Boot volume size for the optional Private Agent Factory Canvas host."
+}
+
+variable "paf_canvas_image_ocid" {
+  type        = string
+  default     = ""
+  description = "Optional prebuilt Private Agent Factory image OCID. If omitted, paf_canvas_install_script_url must install PAF on the latest matching Oracle Linux 8 image."
+}
+
+variable "paf_canvas_ssh_public_key" {
+  type        = string
+  default     = ""
+  description = "SSH public key for the optional Private Agent Factory Canvas host."
+}
+
+variable "paf_canvas_allowed_cidrs" {
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+  description = "CIDR blocks allowed to access PAF Canvas SSH and HTTPS/8080. Restrict this for production."
+}
+
+variable "paf_canvas_install_script_url" {
+  type        = string
+  default     = ""
+  description = "Optional HTTPS/Object Storage URL to a PAF installer script run by cloud-init. Required unless paf_canvas_image_ocid points to a prebuilt PAF image."
+}
+
+variable "paf_canvas_container_image_uri" {
+  type        = string
+  default     = ""
+  description = "Optional PAF Canvas container image URI. When set, cloud-init starts it with Podman and passes the Oracle AI Database/Select AI env file."
+}
+
+variable "paf_canvas_container_name" {
+  type        = string
+  default     = "oracle-applied-ai-label"
+  description = "Container name for the optional PAF Canvas container image."
+}
+
+variable "paf_canvas_container_port" {
+  type        = number
+  default     = 8080
+  description = "Internal HTTP port exposed by the optional PAF Canvas container image."
+}
+
+variable "paf_canvas_select_ai_profile" {
+  type        = string
+  default     = "STWL_GAMEPLAY_AI"
+  description = "Select AI profile name the Terraform-managed PAF Canvas installer should configure against the Oracle AI Database."
+}
+
+variable "paf_canvas_select_ai_agent_team" {
+  type        = string
+  default     = "STWL_GAMEPLAY_COMMENTARY_TEAM"
+  description = "Select AI agent team name the Terraform-managed PAF Canvas installer should configure when supported."
+}
+
+variable "paf_canvas_genai_model_id" {
+  type        = string
+  default     = "cohere.command-r-08-2024"
+  description = "OCI Generative AI model id the Terraform-managed PAF Canvas installer should register for Canvas workflows."
+}

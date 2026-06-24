@@ -80,10 +80,71 @@ variable "genai_model_id" {
   description = "OCI Generative AI model id used by the Oracle Private Agent Factory deployment."
 }
 
+variable "paf_mcp_enabled" {
+  type        = string
+  default     = "true"
+  description = "Whether the Save the Wildlife PAF deployment exposes a read-only MCP server backed by Oracle AI Database telemetry."
+}
+
+variable "paf_mcp_public_url" {
+  type        = string
+  default     = ""
+  description = "Public MCP endpoint URL to register in PAF Canvas, for example http://PUBLIC_IP/paf/mcp."
+}
+
 variable "paf_canvas_run_endpoint_url" {
   type        = string
   default     = ""
   description = "Published Oracle Private Agent Factory Canvas run endpoint consumed by the Save the Wildlife commentary adapter."
+}
+
+variable "paf_canvas_import_enabled" {
+  type        = string
+  default     = "false"
+  description = "When true, the deploy command imports and publishes the Save the Wildlife Canvas flow into a Private Agent Factory host."
+}
+
+variable "paf_canvas_host" {
+  type        = string
+  default     = ""
+  description = "Private Agent Factory host/IP used for automated Canvas flow import."
+}
+
+variable "paf_canvas_ssh_user" {
+  type        = string
+  default     = "opc"
+  description = "SSH user for the Private Agent Factory host used by the Canvas import script."
+}
+
+variable "paf_canvas_ssh_key_secret_id" {
+  type        = string
+  default     = ""
+  description = "Vault secret OCID containing the SSH private key for the Private Agent Factory host."
+  sensitive   = true
+}
+
+variable "paf_canvas_flow_name" {
+  type        = string
+  default     = "Save the Wildlife Commentator"
+  description = "Canvas flow name to create or update in Private Agent Factory."
+}
+
+variable "paf_canvas_agent_factory_user" {
+  type        = string
+  default     = ""
+  description = "Optional Private Agent Factory user id that owns the imported Canvas flow."
+}
+
+variable "paf_canvas_llm_config_name" {
+  type        = string
+  default     = "llm_model_entry"
+  description = "Registered Private Agent Factory LLM config name used by the imported Canvas flow."
+}
+
+variable "paf_canvas_require_llm_config" {
+  type        = string
+  default     = "false"
+  description = "When true, Canvas import fails if the configured PAF LLM entry does not exist."
 }
 
 variable "paf_canvas_room_id" {
@@ -186,6 +247,18 @@ variable "model_ai_ft_upstream_model_id" {
   type        = string
   default     = "llama3.2:1b-stwl"
   description = "Model id passed to the fine-tuned private model adapter upstream."
+}
+
+variable "model_ai_require_upstream_ready" {
+  type        = string
+  default     = "false"
+  description = "When true, the deploy command verifies configured model upstream URLs from inside OKE before applying Kustomize."
+}
+
+variable "model_ai_require_private_ollama" {
+  type        = string
+  default     = "false"
+  description = "When true, the deploy command rejects the in-cluster fallback Ollama URL for model adapters."
 }
 
 variable "oci_model_endpoint_auth_secret_id" {

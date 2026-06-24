@@ -14,7 +14,9 @@ Watch the video below for a quick walk-through of this lab.
 
 In this lab, you are going to deploy the artifacts (container images) into the Kubernetes Cluster. As part of this lab, you will run the Deployment pipeline that will do all the work for you automatically. The deployment pipeline will access secrets from OCI Vault and create all the config files. Finally, it will deploy with Kustomize running `kubectl`.
 
-The same deployment pipeline also deploys Oracle Private Agent Factory. During the Kustomize step it wires PAF to Oracle Autonomous Database gameplay telemetry, configures the OCI Generative AI model, and exposes the service through the application ingress at `/paf`.
+The same deployment pipeline also deploys the Save the Wildlife Private Agent Factory adapter. During the Kustomize step it wires the adapter to Oracle Autonomous Database gameplay telemetry, configures OCI Generative AI and Select AI settings, and exposes the service through the application ingress at `/paf`.
+
+When `PAF_CANVAS_IMPORT_ENABLED=true`, the deployment pipeline also imports and publishes the Oracle Private Agent Factory Canvas flow. The Canvas flow includes an MCP component that points to `/paf/mcp`, so the Canvas agent reads bounded gameplay context from Oracle AI Database through tools instead of raw SQL or screen scraping.
 
 ### Prerequisites
 
@@ -33,7 +35,7 @@ The same deployment pipeline also deploys Oracle Private Agent Factory. During t
 
   ![Deployment pipelines](images/deployment-pipelines.png)
 
-3. Take a look, there is one stage: **Deploy with Kustomize**. This stage will deploy with Kustomize to the Kubernetes Cluster, including `web`, `ws-server`, `score`, `replay`, and `private-agent-factory`.
+3. Take a look, there is one stage: **Deploy with Kustomize**. This stage will deploy with Kustomize to the Kubernetes Cluster, including `web`, `ws-server`, `score`, `replay`, and `private-agent-factory`. If Canvas import is enabled, the command spec also publishes the `Save the Wildlife Commentator` Canvas flow before applying Kustomize.
 
   ![Deployment pipeline stage](images/deployment-stage.png)
 
@@ -72,6 +74,14 @@ The same deployment pipeline also deploys Oracle Private Agent Factory. During t
 12.  Click **Create New Game**.
 
   ![Game Top Score](./images/game-top-score.png)
+
+13. Verify the PAF Canvas and MCP wiring from your shell.
+
+    ```bash
+    <copy>npm run check:paf-canvas-mcp</copy>
+    ```
+
+    A successful proof means `/paf/healthz` reports MCP enabled, `/paf/mcp` answers the MCP handshake, the Canvas-facing MCP tools can read SQL-backed game context, and commentary is grounded in recorded Oracle AI Database events.
 
 You may now [proceed to the next lab](#next).
 

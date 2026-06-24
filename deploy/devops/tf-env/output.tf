@@ -27,6 +27,21 @@ output "github_access_token_secret_ocid" {
   value = oci_vault_secret.github_access_token_secret.id
 }
 
+output "devops_vault_id" {
+  sensitive = false
+  value     = oci_kms_vault.vault_devops.id
+}
+
+output "devops_vault_management_endpoint" {
+  sensitive = false
+  value     = oci_kms_vault.vault_devops.management_endpoint
+}
+
+output "devops_vault_key_id" {
+  sensitive = false
+  value     = oci_kms_key.key_devops.id
+}
+
 output "deploy_id" {
   value = random_string.deploy_id.result
 }
@@ -127,4 +142,19 @@ output "model_ollama_base_model_id" {
 output "model_ollama_custom_model_id" {
   sensitive = false
   value     = var.model_ollama_custom_model_id
+}
+
+output "paf_canvas_instance_id" {
+  sensitive = false
+  value     = try(oci_core_instance.paf_canvas[0].id, "")
+}
+
+output "paf_canvas_public_ip" {
+  sensitive = false
+  value     = try(oci_core_instance.paf_canvas[0].public_ip, "")
+}
+
+output "paf_canvas_url" {
+  sensitive = false
+  value     = try(format("https://%s:8080/agentFactory/", oci_core_instance.paf_canvas[0].public_ip), "")
 }

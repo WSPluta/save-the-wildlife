@@ -195,6 +195,14 @@ function boolEnv(name, defaultValue = false) {
   return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
 }
 
+function mcpConfig() {
+  return {
+    enabled: boolEnv("PAF_MCP_ENABLED", true),
+    publicUrl: textValue(process.env.PAF_MCP_PUBLIC_URL || process.env.PAF_PUBLIC_MCP_URL),
+    serverName: textValue(process.env.PAF_MCP_SERVER_NAME || "save-the-wildlife-match-intelligence"),
+  };
+}
+
 function optionalIdentifier(value) {
   const id = textValue(value);
   return id ? safeIdentifier(id) : "";
@@ -3295,6 +3303,7 @@ app.get("/healthz", async (req, res) => {
   const inDbConfig = inDbAgentConfig();
   const matchConfig = matchIntelligenceConfig();
   const modelConfig = modelRouterConfig();
+  const mcp = mcpConfig();
   const health = {
     ok: true,
     service: "private-agent-factory",
@@ -3319,6 +3328,10 @@ app.get("/healthz", async (req, res) => {
     vector_top_k: matchConfig.vectorTopK,
     replay_clips_table: matchConfig.replayClipsTable,
     agent_memories_table: matchConfig.agentMemoriesTable,
+    mcp_enabled: mcp.enabled,
+    mcp_server_name: mcp.serverName,
+    mcp_public_url: mcp.publicUrl,
+    mcp_tools: mcp.enabled ? mcpTools().map((tool) => tool.name) : [],
     bot_policy_schema_version: BOT_POLICY_SCHEMA_VERSION,
     bot_policy_count: buildBotPolicyCatalog().policies.length,
     model_router: {
@@ -3412,6 +3425,180 @@ app.get("/api/bot-policies", (_req, res) => {
   res.json(buildBotPolicyCatalog());
 });
 
+function mcpTextContent(payload) {
+  return [
+    {
+      type: "text",
+      text: typeof payload === "string" ? payload : JSON.stringify(payload, null, 2),
+    },
+  ];
+}
+
+function mcpTools() {
+  return [
+    {
+      name: "get_live_match_context",
+      description: "Read the latest Save the Wildlife match intelligence context from Oracle AI Database for a room, session, or player.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          room_id: { type: "string", description: "Room id, for example ROOM-0001. Used to resolve the latest non-bot player when session/player are omitted." },
+          session_id: { type: "string", description: "Optional gameplay session id." },
+          player_id: { type: "string", description: "Optional player id." },
+          output_format: { type: "string", enum: ["live_line", "replay_caption", "post_match_recap", "clip_title"] },
+          max_chars: { type: "number", minimum: 40, maximum: 500 },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "get_session_summary",
+      description: "Return the compact SQL-derived gameplay summary for a player/session.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          room_id: { type: "string" },
+          session_id: { type: "string" },
+          player_id: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "create_commentary_line",
+      description: "Create a bounded Save the Wildlife commentary line from Oracle AI Database evidence.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          room_id: { type: "string" },
+          session_id: { type: "string" },
+          player_id: { type: "string" },
+          output_format: { type: "string", enum: ["live_line", "replay_caption", "post_match_recap", "clip_title"] },
+          max_chars: { type: "number", minimum: 40, maximum: 500 },
+        },
+        additionalProperties: false,
+      },
+    },
+  ];
+}
+
+async function callMcpTool(name, args = {}) {
+  if (name === "get_live_match_context") {
+    return buildMatchContext({
+      room_id: args.room_id,
+      session_id: args.session_id,
+      player_id: args.player_id,
+      output_format: args.output_format || args.outputFormat || "live_line",
+      max_chars: args.max_chars || args.maxChars || COMMENTARY_MAX_CHARS,
+    });
+  }
+  if (name === "get_session_summary") {
+    const context = await buildMatchContext({
+      room_id: args.room_id,
+      session_id: args.session_id,
+      player_id: args.player_id,
+      output_format: "live_line",
+    });
+    return {
+      ok: context.ok,
+      source: context.source,
+      summary: context.summary,
+      capabilities: context.capabilities,
+      warning: context.warning,
+    };
+  }
+  if (name === "create_commentary_line") {
+    return buildCommentary({
+      room_id: args.room_id,
+      session_id: args.session_id,
+      player_id: args.player_id,
+      output_format: args.output_format || args.outputFormat || "live_line",
+      max_chars: args.max_chars || args.maxChars || COMMENTARY_MAX_CHARS,
+    });
+  }
+  throw new Error(`unknown_tool:${name}`);
+}
+
+async function handleMcpRequest(payload = {}) {
+  const id = payload.id ?? null;
+  const method = textValue(payload.method);
+  if (!method) {
+    return { jsonrpc: "2.0", id, error: { code: -32600, message: "Missing MCP method." } };
+  }
+
+  if (method === "initialize") {
+    const config = mcpConfig();
+    return {
+      jsonrpc: "2.0",
+      id,
+      result: {
+        protocolVersion: "2024-11-05",
+        capabilities: { tools: {} },
+        serverInfo: {
+          name: config.serverName,
+          version: packageJson.version,
+        },
+      },
+    };
+  }
+  if (method === "notifications/initialized") {
+    return { jsonrpc: "2.0", id, result: {} };
+  }
+  if (method === "tools/list") {
+    return { jsonrpc: "2.0", id, result: { tools: mcpTools() } };
+  }
+  if (method === "tools/call") {
+    const params = payload.params || {};
+    const toolResult = await callMcpTool(params.name, params.arguments || {});
+    return {
+      jsonrpc: "2.0",
+      id,
+      result: {
+        content: mcpTextContent(toolResult),
+        structuredContent: toolResult,
+        isError: false,
+      },
+    };
+  }
+  return { jsonrpc: "2.0", id, error: { code: -32601, message: `Unsupported MCP method: ${method}` } };
+}
+
+app.get("/mcp", (_req, res) => {
+  const config = mcpConfig();
+  if (!config.enabled) {
+    res.status(404).json({ ok: false, error: "mcp_disabled" });
+    return;
+  }
+  res.json({
+    ok: true,
+    service: config.serverName,
+    version: packageJson.version,
+    transport: "streamable-http-json-rpc",
+    tools: mcpTools().map((tool) => ({ name: tool.name, description: tool.description })),
+  });
+});
+
+app.post("/mcp", async (req, res) => {
+  const config = mcpConfig();
+  if (!config.enabled) {
+    res.status(404).json({ jsonrpc: "2.0", id: req.body?.id ?? null, error: { code: -32004, message: "MCP disabled." } });
+    return;
+  }
+  try {
+    res.json(await handleMcpRequest(req.body || {}));
+  } catch (error) {
+    res.status(500).json({
+      jsonrpc: "2.0",
+      id: req.body?.id ?? null,
+      error: {
+        code: -32000,
+        message: "MCP tool call failed.",
+        data: { detail: error.message },
+      },
+    });
+  }
+});
+
 app.get("/api/commentary", async (req, res) => {
   pafMetrics.commentaryRequests++;
   try {
@@ -3469,6 +3656,7 @@ export {
   selectAiInitStatements,
   enforceCommentary,
   extractCanvasText,
+  handleMcpRequest,
   normalizeSummary,
   safeCanvasEndpoint,
   summarizeAdapterHealth,

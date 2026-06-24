@@ -49,6 +49,22 @@ def set_manifest_llm_config(value: object, llm_config_name: str) -> None:
             set_manifest_llm_config(item, llm_config_name)
 
 
+def set_manifest_mcp_url(value: object, mcp_server_url: str) -> None:
+    if not mcp_server_url:
+        return
+    if isinstance(value, dict):
+        if value.get("type") == "mcpServer" and isinstance(value.get("template"), dict):
+            template = value["template"]
+            for key in ("serverUrl", "server_url", "url", "endpoint", "mcpServerUrl"):
+                if isinstance(template.get(key), dict):
+                    template[key]["value"] = mcp_server_url
+        for item in value.values():
+            set_manifest_mcp_url(item, mcp_server_url)
+    elif isinstance(value, list):
+        for item in value:
+            set_manifest_mcp_url(item, mcp_server_url)
+
+
 def validate_manifest(manifest: dict) -> list[str]:
     issues: list[str] = []
     nodes = manifest.get("nodes")
@@ -251,10 +267,35 @@ def run(args: argparse.Namespace) -> int:
     manifest_path = Path(args.manifest).expanduser().resolve()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     set_manifest_llm_config(manifest, args.llm_config_name)
+    set_manifest_mcp_url(manifest, args.mcp_server_url)
     issues = validate_manifest(manifest)
     if issues:
         print("PAF Canvas manifest validation failed:\n- " + "\n- ".join(issues), file=sys.stderr)
         return 2
+    if args.validate_only:
+        mcp_urls: list[str] = []
+
+        def collect_mcp_urls(value: object) -> None:
+            if isinstance(value, dict):
+                if value.get("type") == "mcpServer" and isinstance(value.get("template"), dict):
+                    for key in ("serverUrl", "server_url", "url", "endpoint", "mcpServerUrl"):
+                        field = value["template"].get(key)
+                        if isinstance(field, dict) and field.get("value"):
+                            mcp_urls.append(str(field["value"]))
+                for item in value.values():
+                    collect_mcp_urls(item)
+            elif isinstance(value, list):
+                for item in value:
+                    collect_mcp_urls(item)
+
+        collect_mcp_urls(manifest)
+        print("STWL_PAF_CANVAS_VALIDATE " + json.dumps({
+            "ok": True,
+            "node_count": len(manifest.get("nodes", [])),
+            "edge_count": len(manifest.get("edges", [])),
+            "mcp_urls": mcp_urls,
+        }, sort_keys=True))
+        return 0
 
     remote_script = build_remote_script(
         manifest=manifest,
@@ -318,6 +359,8 @@ def main() -> int:
     parser.add_argument("--flow-description", required=True)
     parser.add_argument("--agent-factory-user")
     parser.add_argument("--llm-config-name", default="llm_model_entry")
+    parser.add_argument("--mcp-server-url", default="")
+    parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--require-llm-config", action="store_true")
     parser.add_argument("--no-publish", action="store_true")
     return run(parser.parse_args())

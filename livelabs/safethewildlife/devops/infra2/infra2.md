@@ -41,6 +41,21 @@ In this lab, you are going to deploy OCI DevOps components that include:
     <copy>export PAF_VERSION=latest</copy>
     <copy>export OCI_GENAI_MODEL_ID=cohere.command-r-08-2024</copy>
     ```
+
+    If the Foundation Infrastructure lab created a new PAF Canvas host, create a Vault secret for the matching SSH private key and enable automated Canvas import. This lets the deployment pipeline publish the `Save the Wildlife Commentator` flow and inject the game MCP endpoint into the Canvas `mcpServer` node.
+
+    ```bash
+    <copy>npm run create:paf-canvas-ssh-secret -- --key-file ~/.ssh/stwl-paf-canvas</copy>
+    <copy>export PAF_CANVAS_SSH_KEY_SECRET_ID="ocid1.vaultsecret.oc1..."</copy>
+    <copy>export PAF_CANVAS_IMPORT_ENABLED=true</copy>
+    <copy>export PAF_MCP_PUBLIC_URL="http://PUBLIC_IP/paf/mcp"</copy>
+    ```
+
+    You can print the full environment block at any time:
+
+    ```bash
+    <copy>npm run print:paf-canvas-deploy-env</copy>
+    ```
     
     ```bash
     <copy>npx zx scripts/tfvars.mjs devops</copy>
@@ -99,6 +114,7 @@ In this lab, you are going to deploy OCI DevOps components that include:
     >     - DevOps Build Pipeline and its stages
     >     - DevOps Deployment Pipeline and its stages
     >     - Oracle Private Agent Factory deployment configuration
+    >     - Optional Oracle Private Agent Factory Canvas flow import with an MCP component backed by Oracle AI Database
     >     - Networking requirements.
     > <br>
     > <br>

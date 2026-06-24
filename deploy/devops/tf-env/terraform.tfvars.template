@@ -19,6 +19,9 @@ model_ollama_model_id        = "llama3.1:8b"
 model_ollama_custom_model_id = "llama3.1:8b-stwl"
 model_ollama_adapter_uri     = ""
 
+# Optional Terraform-managed PAF Canvas host values are appended by
+# scripts/tfvars.mjs from PAF_CANVAS_* environment variables.
+
 # Wire these to output model_ollama_chat_url after enabling model_ollama_enabled.
 model_ai_base_upstream_format = "ollama"
 model_ai_ft_upstream_format   = "ollama"

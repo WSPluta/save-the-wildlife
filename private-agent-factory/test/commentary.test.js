@@ -14,6 +14,7 @@ const {
   callPafCanvas,
   evaluateModelOutputs,
   extractCanvasText,
+  handleMcpRequest,
   learningTraceStatements,
   matchIntelligenceStatements,
   modelRouterConfig,
@@ -73,6 +74,73 @@ test("builds a Canvas prompt from recorded SQL gameplay telemetry", () => {
     inDbCommentary: "Select AI draft: shield, freeze, and 42 points.",
   });
   assert.match(withDraft, /oracle_ai_database_draft=Select AI draft/);
+});
+
+test("exposes read-only MCP tools for PAF Canvas to call game telemetry", async () => {
+  await withEnv({
+    PAF_MCP_ENABLED: "true",
+    PAF_MCP_SERVER_NAME: "save-the-wildlife-match-intelligence",
+    ORACLE_CONNECT_STRING: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    INDB_AGENT_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "off",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+  }, async () => {
+    const init = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {},
+    });
+    assert.equal(init.result.serverInfo.name, "save-the-wildlife-match-intelligence");
+    assert.deepEqual(init.result.capabilities, { tools: {} });
+
+    const listed = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/list",
+      params: {},
+    });
+    const toolNames = listed.result.tools.map((tool) => tool.name);
+    assert.deepEqual(toolNames, [
+      "get_live_match_context",
+      "get_session_summary",
+      "create_commentary_line",
+    ]);
+    assert.ok(!toolNames.includes("query_sql"));
+  });
+});
+
+test("MCP commentary tool returns bounded evidence-shaped content", async () => {
+  await withEnv({
+    PAF_MCP_ENABLED: "true",
+    ORACLE_CONNECT_STRING: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    INDB_AGENT_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "off",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+  }, async () => {
+    const response = await handleMcpRequest({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: {
+        name: "create_commentary_line",
+        arguments: {
+          room_id: "ROOM-0001",
+          output_format: "live_line",
+          max_chars: 200,
+        },
+      },
+    });
+
+    assert.equal(response.result.isError, false);
+    assert.equal(response.result.content[0].type, "text");
+    assert.equal(response.result.structuredContent.ok, true);
+    assert.ok(response.result.structuredContent.commentary.length <= 200);
+  });
 });
 
 test("serves approved PAF-trained bot policy cards", () => {
