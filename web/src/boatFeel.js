@@ -3,7 +3,7 @@ import { getHeightAndNormalInto } from "./buoyancy";
 
 export const BOAT_FEEL_DEFAULTS = Object.freeze({
   waterSurfaceY: 0,
-  waterlineOffset: 0.045,
+  waterlineOffset: 0.051,
   minVisualY: 0.018,
   maxVisualY: 0.072,
   surfaceRippleY: 0.006,
