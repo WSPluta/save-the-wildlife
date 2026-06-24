@@ -325,7 +325,14 @@ def run(args: argparse.Namespace) -> int:
         remote_command,
     ]
     print(f"+ ssh -i {shlex.quote(args.ssh_key)} {ssh_target} 'podman exec ... {args.remote_python} -'")
-    result = subprocess.run(command, input=remote_script, text=True, capture_output=True, check=False)
+    result = subprocess.run(
+        command,
+        input=remote_script,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        check=False,
+    )
     if result.stdout:
         print(result.stdout, end="")
     if result.stderr:
