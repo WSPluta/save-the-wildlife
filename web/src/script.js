@@ -3422,6 +3422,10 @@ async function init() {
             renderTimeValue(gameDuration);
           }
           stopLocalTimeTicker();
+          if (currentPhase === "POST_GAME") {
+            if (typeof updateControls === "function") updateControls();
+            break;
+          }
           setPhase("LOBBY");
         } else if (incomingState === "STARTING") {
           stopLocalTimeTicker();

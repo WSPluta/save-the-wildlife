@@ -132,4 +132,10 @@ describe("presenter-controlled lobby flow", () => {
     expect(script).toMatch(/function applyLatestResultsCommentaryFromHistory\(entries = \[\]\)/);
     expect(script).toMatch(/function applyResultsCommentaryPayload\(payload = \{\}, \{ pending = false \} = \{\}\)/);
   });
+
+  it("keeps the result card visible while slow live commentary finishes", () => {
+    expect(script).toMatch(/if \(incomingState === "WAITING"\) \{[\s\S]*stopLocalTimeTicker\(\);[\s\S]*if \(currentPhase === "POST_GAME"\) \{[\s\S]*break;[\s\S]*\}[\s\S]*setPhase\("LOBBY"\);/);
+    expect(script).toMatch(/case "commentary\.ready":[\s\S]*applyResultsCommentaryPayload\(body \|\| \{\}\);/);
+    expect(script).toMatch(/case "commentary\.pending":[\s\S]*applyResultsCommentaryPayload\(body \|\| \{\}, \{ pending: true \}\);/);
+  });
 });
