@@ -144,7 +144,7 @@ steps:
         import_args+=(--require-llm-config)
       fi
       python3 scripts/import_paf_canvas_flow.py "$${import_args[@]}" | tee /tmp/stwl-paf-canvas-import.log
-      run_endpoint_url=$$(grep '^run_endpoint_url=' /tmp/stwl-paf-canvas-import.log | tail -1 | cut -d= -f2-)
+      run_endpoint_url=$(grep '^run_endpoint_url=' /tmp/stwl-paf-canvas-import.log | tail -1 | cut -d= -f2-)
       if [ -z "$run_endpoint_url" ]; then
         echo "PAF Canvas import did not produce a run endpoint."
         exit 1
