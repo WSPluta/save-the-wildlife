@@ -6,7 +6,7 @@ RUN mkdir config
 
 RUN echo "PORT=3000" >> config/.env
 RUN echo "BROADCAST_REFRESH_UPDATE=20" >> config/.env
-RUN echo "GAME_DURATION_IN_SECONDS=180" >> config/.env
+RUN echo "GAME_DURATION_IN_SECONDS=60" >> config/.env
 RUN echo "ENABLE_COHERENCE_BACKEND=true" >> config/.env
 RUN echo "REALTIME_CLUSTER_BACKEND=coherence" >> config/.env
 RUN echo "COHERENCE_SOCKET_BUS_MAP=socketEvents" >> config/.env

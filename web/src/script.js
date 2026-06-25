@@ -3089,7 +3089,7 @@ async function init() {
 
 
   if (!IS_ADMIN_VIEW && !clientGameStarted) {
-    const fallbackDuration = gameDuration || 180;
+    const fallbackDuration = gameDuration || 60;
     startGame(
       fallbackDuration,
       [boatModel, turtleModel, boxModel],

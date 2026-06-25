@@ -315,7 +315,7 @@ function buildMetricsObject(playersInfo, counts, targets, roomStats = {}, socket
 
 const GAME_DURATION_IN_SECONDS = process.env.GAME_DURATION_IN_SECONDS
   ? parseInt(process.env.GAME_DURATION_IN_SECONDS)
-  : 180;
+  : 60;
 
 const BOAT_TYPES = resolveAuthoritativeBoatTypes(process.env);
 

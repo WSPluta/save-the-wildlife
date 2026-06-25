@@ -185,7 +185,7 @@ variable "paf_canvas_verify_tls" {
 
 variable "paf_model_route_mode" {
   type        = string
-  default     = "shadow"
+  default     = "primary"
   description = "PAF model router mode: off, primary, or shadow."
 }
 
@@ -294,7 +294,7 @@ variable "paf_eval_enabled" {
 
 variable "paf_model_fast_path_enabled" {
   type        = string
-  default     = "false"
+  default     = "true"
   description = "Whether PAF may route directly to private OCI model endpoints before Oracle AI Database in-db agent enrichment."
 }
 

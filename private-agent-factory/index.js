@@ -810,6 +810,7 @@ function buildCanvasMessage(summary, options = {}) {
     requestedOutput === "post_match_recap"
       ? "Return one profanity-free post-match recap grounded in evidence."
       : "Return one profanity-free commentator line under 200 characters.",
+    "Do not mention Oracle, database, SQL, model, LLM, AI, telemetry, evidence, or the agent system in the final visible line.",
     "Mention powerups, trail crossing/freezing, coordinates, or prior best only when present.",
     "Mention bot policy/persona only when bot_policy is not none.",
     "Mention replay clips only when replay_evidence is not none.",
@@ -896,6 +897,7 @@ function buildModelPrompt(summary, context = {}, legacy = {}, outputFormatValue 
     "",
     "Model comparison task:",
     "Return JSON-compatible concise commentary text only. Do not store or invent changing facts in weights; use the supplied evidence.",
+    "The visible commentary must stay in-world: no Oracle/database/SQL/model/LLM/AI/telemetry/evidence wording.",
     "Include evidence-aware phrasing, avoid unsupported claims, and keep confidence proportional to the evidence.",
     `max_chars=${requestedOutput === "clip_title" ? Math.min(80, maxChars) : maxChars}`,
   ].join("\n");

@@ -365,7 +365,7 @@ async function devopsTFvars() {
   const pafCanvasReturnReserveMs = process.env.PAF_CANVAS_RETURN_RESERVE_MS || "750";
   const pafCanvasMinTimeoutMs = process.env.PAF_CANVAS_MIN_TIMEOUT_MS || "100";
   const pafCanvasVerifyTls = process.env.PAF_CANVAS_VERIFY_TLS || "false";
-  const pafModelRouteMode = process.env.PAF_MODEL_ROUTE_MODE || "shadow";
+  const pafModelRouteMode = process.env.PAF_MODEL_ROUTE_MODE || "primary";
   const pafPrimaryModelProvider = process.env.PAF_PRIMARY_MODEL_PROVIDER || "oci-base";
   const pafCandidateModelProvider = process.env.PAF_CANDIDATE_MODEL_PROVIDER || "oci-fine-tuned";
   const ociBaseModelEndpointUrl = process.env.OCI_BASE_MODEL_ENDPOINT_URL || modelAiBaseEndpointUrl || "";
@@ -406,7 +406,7 @@ async function devopsTFvars() {
   const ociModelEndpointVerifyTls = process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true";
   const pafTracePersist = process.env.PAF_TRACE_PERSIST || "true";
   const pafEvalEnabled = process.env.PAF_EVAL_ENABLED || "true";
-  const pafModelFastPathEnabled = process.env.PAF_MODEL_FAST_PATH_ENABLED || "false";
+  const pafModelFastPathEnabled = process.env.PAF_MODEL_FAST_PATH_ENABLED || "true";
   const pafEvalRubricVersion = process.env.PAF_EVAL_RUBRIC_VERSION || "stwl-commentary-v1";
   const pafTrainingCaptureEnabled = process.env.PAF_TRAINING_CAPTURE_ENABLED || "true";
 
