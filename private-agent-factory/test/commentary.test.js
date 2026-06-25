@@ -624,7 +624,7 @@ test("routes base and fine-tuned OCI model endpoints in shadow mode", async () =
   assert.equal(calls[0].body.evidence.evidence.latest_event, null);
 });
 
-test("repairs generic live model output through an OCI grounded safe-draft selection", async () => {
+test("selects grounded safe draft when live LLM response is not usable", async () => {
   const calls = [];
   const modelRequestJson = async (_url, options) => {
     const body = JSON.parse(options.body);
@@ -636,7 +636,7 @@ test("repairs generic live model output through an OCI grounded safe-draft selec
         ok: true,
         provider: "oci-base",
         model_id: "stwl-base-v1",
-        text: calls.length === 1 ? "Saving wildlife for the next day." : "A",
+        text: "I can't help with this request.",
         tokens: 8,
         finish_reason: "stop",
         runtime_mode: "upstream-llm",
@@ -653,6 +653,7 @@ test("repairs generic live model output through an OCI grounded safe-draft selec
     PAF_MATCH_INTELLIGENCE_ENABLED: "false",
     PAF_MODEL_ROUTE_MODE: "primary",
     PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    PAF_LIVE_LINE_SAFE_DRAFT_FIRST: "true",
     OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
     OCI_MODEL_ENDPOINT_AUTH_SECRET: "unit-secret",
     PAF_TRACE_PERSIST: "false",
@@ -682,14 +683,14 @@ test("repairs generic live model output through an OCI grounded safe-draft selec
     assert.equal(response.fallback_source, "request-summary");
     assert.equal(response.commentary, "Smoke Player scored 3 after speed powerup.");
     assert.equal(response.model_route.primary.grounding_mode, "safe_draft_selection");
-    assert.equal(response.model_route.primary.repair_of_reason, "not_evidence_anchored");
-    assert.match(response.model_route.primary.warnings.join("; "), /initial_model_output_rejected_not_evidence_anchored/);
+    assert.equal(response.model_route.primary.repair_of_reason, "model_response_unselected");
+    assert.match(response.model_route.primary.warnings.join("; "), /safe_draft_selected_after_llm_response/);
   });
 
-  assert.equal(calls.length, 2);
-  assert.match(calls[1].prompt, /Allowed line A: Smoke Player scored 3 after speed powerup\./);
-  assert.equal(calls[1].temperature, 0);
-  assert.equal(calls[1].route_context.grounded_repair, true);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].prompt, /Allowed line A: Smoke Player scored 3 after speed powerup\./);
+  assert.equal(calls[0].temperature, 0);
+  assert.equal(calls[0].route_context.grounded_repair, true);
 });
 
 test("does not block live model commentary on slow trace persistence", async () => {
@@ -883,7 +884,7 @@ test("keeps shadow candidate timeout as diagnostics when primary model returns c
   });
 });
 
-test("falls back to SQL-derived gameplay wording when model output leaks meta commentary", async () => {
+test("repairs model output when it leaks meta commentary", async () => {
   const modelRequestJson = async () => ({
     status: 200,
     headers: {},
@@ -932,11 +933,13 @@ test("falls back to SQL-derived gameplay wording when model output leaks meta co
     );
 
     assert.equal(response.ok, true);
-    assert.equal(response.source, "request-summary");
-    assert.equal(response.fallback_source, "oci-base");
+    assert.equal(response.source, "oci-base");
+    assert.equal(response.fallback_source, "request-summary");
     assert.doesNotMatch(response.commentary, /Oracle|Database|model|predict/i);
     assert.match(response.commentary, /Ada|42|shield|trail|freeze/i);
-    assert.match(response.diagnostics.warnings.join("; "), /oci-base:model_output_rejected_meta_commentary/);
+    assert.match(response.model_route.primary.warnings.join("; "), /initial_model_output_rejected_meta_commentary/);
+    assert.match(response.model_route.primary.warnings.join("; "), /safe_draft_selected_after_llm_response/);
+    assert.equal(response.model_route.primary.grounding_mode, "safe_draft_selection");
     assert.equal(response.model_route.primary.runtime_mode, "upstream-llm");
   });
 });

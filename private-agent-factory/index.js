@@ -282,6 +282,7 @@ function modelRouterConfig() {
     tracePersist: boolEnv("PAF_TRACE_PERSIST", true),
     evalEnabled: boolEnv("PAF_EVAL_ENABLED", true),
     fastPathEnabled: boolEnv("PAF_MODEL_FAST_PATH_ENABLED", true),
+    liveLineSafeDraftFirst: boolEnv("PAF_LIVE_LINE_SAFE_DRAFT_FIRST", false),
     rubricVersion: textValue(process.env.PAF_EVAL_RUBRIC_VERSION || "stwl-commentary-v1"),
     trainingCaptureEnabled: boolEnv("PAF_TRAINING_CAPTURE_ENABLED", true),
     baseEndpointUrl: textValue(process.env.OCI_BASE_MODEL_ENDPOINT_URL),
@@ -1175,11 +1176,12 @@ async function callGroundedRepairProvider(provider, { traceId, summary, context,
   if (!repairedText) {
     return {
       ...output,
-      ok: false,
-      error: "grounded_repair_unselected",
+      ok: true,
       raw_text: output.text || null,
-      text: null,
+      text: groundedDraft,
       grounding_mode: "safe_draft_selection",
+      repair_of_reason: "model_response_unselected",
+      warnings: combineWarnings(output.warnings, `${provider}:safe_draft_selected_after_llm_response`),
     };
   }
   return {
@@ -1187,6 +1189,7 @@ async function callGroundedRepairProvider(provider, { traceId, summary, context,
     text: repairedText,
     raw_text: output.text || null,
     grounding_mode: "safe_draft_selection",
+    repair_of_reason: "grounded_repair_selected",
     warnings: combineWarnings(output.warnings, "grounded_repair_selected_safe_draft"),
   };
 }
@@ -1340,7 +1343,14 @@ async function runModelRoute({ summary, context, legacy, outputFormatValue, maxC
   let primary = null;
   let candidate = null;
   if (config.routeMode !== "off") {
-    const primaryPromise = callModelProvider(config.primaryProvider, requestPayload, config, options, legacy);
+    const primaryPromise = isLiveLine && config.liveLineSafeDraftFirst
+      ? callGroundedRepairProvider(
+          config.primaryProvider,
+          { traceId, summary, context, legacy, outputFormatValue, maxChars },
+          config,
+          options
+        )
+      : callModelProvider(config.primaryProvider, requestPayload, config, options, legacy);
     const shouldRunCandidate = config.routeMode === "shadow" && config.candidateProvider && config.candidateProvider !== config.primaryProvider;
     if (shouldRunCandidate) {
       [primary, candidate] = await Promise.all([
