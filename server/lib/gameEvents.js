@@ -426,7 +426,7 @@ export function deterministicCommentary(summary) {
 
 async function requestPafCommentary(summary) {
   const pafAgentBaseUrl = (process.env.PAF_AGENT_BASE_URL || "").replace(/\/+$/, "");
-  const pafAgentTimeoutMs = parseInt(process.env.PAF_AGENT_TIMEOUT_MS ?? "2500", 10);
+  const pafAgentTimeoutMs = parseInt(process.env.PAF_AGENT_TIMEOUT_MS ?? "45000", 10);
   if (!pafAgentBaseUrl) return null;
   try {
     const response = await fetch(`${pafAgentBaseUrl}/api/commentary`, {
