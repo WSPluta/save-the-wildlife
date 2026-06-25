@@ -3211,7 +3211,7 @@ async function init() {
               start_position: sp || null,
             });
             clearCountdown();
-            if (!Number.isFinite(lastServerTimeSyncValue) && Number.isFinite(gameDuration)) {
+            if (Number.isFinite(gameDuration)) {
               lastServerTimeSyncValue = Number(gameDuration);
               lastServerTimeSyncAtMs = Date.now();
               renderTimeValue(gameDuration);
@@ -5555,8 +5555,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   function updatePlayerPosition() {
     if (!player || !water || gameOverFlag) return;
 
-    // Freeze controls during synchronized STARTING countdown (authoritative)
-    if (gameState === "STARTING") {
+    // Freeze controls until the authoritative room state enters RUNNING.
+    // The scene can be initialized for fast startup, but gameplay movement
+    // and pickup attempts must not run from a local WAITING/Lobby state.
+    if (gameState !== "RUNNING") {
       applyFollowCamera(player, player.rotation.y);
       if (statusBadge) { setSpriteText(statusBadge, ""); statusBadge.visible = false; }
       playerSpeed = 0;
@@ -5796,7 +5798,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     if (!window.__lastSunUpdate) window.__lastSunUpdate = 0;
     if ((now - window.__lastSunUpdate) > 1000) { updateSun(); window.__lastSunUpdate = now; }
     animateItems();
-    if (gameState !== "STARTING" && sendYourPosition) sendYourPosition();
+    if (gameState === "RUNNING" && sendYourPosition) sendYourPosition();
     animateOtherPlayers(otherPlayersMeshes);
     if (BOT_RENDER_MODE === "demo-visible" && now - lastBotRosterVisualSyncAt > 1000) {
       lastBotRosterVisualSyncAt = now;

@@ -162,10 +162,16 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const remoteDt = Math\.max\(0\.001, Math\.min\(0\.05, frameDt \|\| 0\.016\)\);/);
     expect(script).toMatch(/const lerpFactor = 1 - Math\.exp\(-remoteRate \* remoteDt\);/);
     expect(script).toMatch(/const rotLerpFactor = 1 - Math\.exp\(-remoteRotRate \* remoteDt\);/);
+    expect(script).toMatch(/if \(gameState !== "RUNNING"\) \{[\s\S]{0,220}playerSpeed = 0;[\s\S]{0,80}return;/);
     expect(script).toMatch(/player\.position\.addScaledVector\(direction, effectiveSignedSpeed \* dt\);/);
     expect(script).toMatch(/const steer = Math\.max\(-1, Math\.min\(1, \(keyboard\["ArrowLeft"\] \? -1 : 0\) \+ \(keyboard\["ArrowRight"\] \? 1 : 0\) \+ Number\(mobileInput\.steer \|\| 0\)\)\);/);
-    expect(script).toMatch(/if \(gameState !== "STARTING" && sendYourPosition\) sendYourPosition\(\);/);
+    expect(script).toMatch(/if \(gameState === "RUNNING" && sendYourPosition\) sendYourPosition\(\);/);
     expect(script).toMatch(/updateBoatFeel\(player, localBoatFeelState,[\s\S]{0,260}applyFollowCamera\(player, player\.rotation\.y\);/);
+  });
+
+  it("resets the visible timer from the server duration when gameplay actually starts", () => {
+    expect(script).toMatch(/case "game\.on":/);
+    expect(script).toMatch(/if \(Number\.isFinite\(gameDuration\)\) \{[\s\S]{0,160}lastServerTimeSyncValue = Number\(gameDuration\);[\s\S]{0,120}lastServerTimeSyncAtMs = Date\.now\(\);[\s\S]{0,120}renderTimeValue\(gameDuration\);/);
   });
 
   it("surfaces frame-rate and frame-time diagnostics in the gameplay HUD", () => {

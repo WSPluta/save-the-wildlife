@@ -553,6 +553,10 @@ function compactPowerupNames(powerups) {
     .slice(0, 3);
 }
 
+function plural(count, singular, pluralValue = `${singular}s`) {
+  return Number(count) === 1 ? singular : pluralValue;
+}
+
 function historyPhrase(summary) {
   if (summary.prior_best_score == null) return "";
   const delta = summary.score - summary.prior_best_score;
@@ -601,6 +605,31 @@ function safeCanvasEndpoint(url) {
 function coordinatePhrase(position) {
   if (!position) return "coords=none";
   return `coords=(${Number(position.x).toFixed(1)},${Number(position.y).toFixed(1)},${Number(position.z).toFixed(1)})`;
+}
+
+function liveLineGroundedDraft(summary, maxChars = COMMENTARY_MAX_CHARS) {
+  const player = summary.player_name || summary.player_id || "Player";
+  const score = Number.isFinite(Number(summary.score)) ? Number(summary.score) : 0;
+  const powerups = compactPowerupNames(summary.powerups);
+  let detail = "";
+  if (summary.freezes > 0) {
+    detail = `after ${summary.freezes} ${plural(summary.freezes, "freeze")} and ${summary.trail_crosses || 0} ${plural(summary.trail_crosses || 0, "trail cross", "trail crosses")}`;
+  } else if (summary.trail_crosses > 0) {
+    detail = `with ${summary.trail_crosses} ${plural(summary.trail_crosses, "trail cross", "trail crosses")}`;
+  } else if (powerups.length > 0) {
+    detail = `after ${powerups.join(", ")} ${plural(powerups.length, "powerup")}`;
+  } else if (summary.trash_collected > 0) {
+    detail = `with ${summary.trash_collected} clean ${plural(summary.trash_collected, "pickup")}`;
+  } else if (summary.marine_hits > 0) {
+    detail = `despite ${summary.marine_hits} turtle ${plural(summary.marine_hits, "hit")}`;
+  } else if (summary.prior_best_score != null) {
+    detail = score >= summary.prior_best_score
+      ? `beating a prior best of ${summary.prior_best_score}`
+      : `${Math.abs(score - summary.prior_best_score)} off a prior best of ${summary.prior_best_score}`;
+  } else {
+    detail = "from the recorded run";
+  }
+  return enforceCommentary(`${player} scored ${score} ${detail}.`, maxChars);
 }
 
 function parseMetadata(value) {
@@ -926,13 +955,18 @@ function buildLiveLineModelPrompt(summary, context = {}, legacy = {}, maxChars =
   const prior = summary.prior_best_score == null ? "none" : String(summary.prior_best_score);
   const position = coordinatePhrase(summary.last_position);
   const memory = (context.vector_memories || [])[0]?.content || "none";
+  const groundedDraft = liveLineGroundedDraft(summary, maxChars);
   const draft = legacy.inDbAgent?.commentary || legacy.commentary || legacy.formats?.live_line || "";
+  const playerName = summary.player_name || summary.player_id || "Player";
+  const score = String(summary.score || 0);
   return [
     "Write exactly one in-world Save the Wildlife commentator line.",
     `Facts: player=${summary.player_name || summary.player_id || "Player"}; score=${summary.score || 0}; trash=${summary.trash_collected || 0}; marine_hits=${summary.marine_hits || 0}; powerups=${powerups}; trail_crosses=${summary.trail_crosses || 0}; freezes=${summary.freezes || 0}; ${position}; prior_best=${prior}.`,
+    `Safe draft line: ${groundedDraft}`,
     `Prior memory: ${memory}`,
     draft ? `Draft: ${draft}` : "Draft: none",
-    `Mandatory: include the player name and exact score number. Prefer one recorded detail: trash, powerup, trail, freeze, marine hit, or prior best.`,
+    `Mandatory: keep the exact player text "${playerName}" and exact score "${score}". Copy the safe draft line if unsure.`,
+    "Prefer one recorded detail already present in the safe draft line. Do not add new animals, wins, losses, footage, or facts.",
     `Rules: under ${Math.min(COMMENTARY_MAX_CHARS, maxChars)} chars; no profanity; no unrecorded events; no Oracle/database/SQL/model/AI/telemetry/evidence words; return the line only.`,
   ].join("\n");
 }
