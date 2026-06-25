@@ -205,7 +205,9 @@ describe("gameplay polish regressions", () => {
   });
 
   it("drives replay and telemetry from confirmed collision evidence", () => {
-    expect(script).toMatch(/function applyConfirmedCollisionOutcome\(rawPayload\)/);
+    expect(script).toMatch(/function applyConfirmedCollisionOutcome\(rawPayload, options = \{\}\)/);
+    expect(script).toMatch(/const forceLocalOutcome = options && options\.localAck === true && payload\.ok === true;/);
+    expect(script).toMatch(/applyConfirmedCollisionOutcome\(payload, \{ localAck: true \}\);/);
     expect(script).toMatch(/emitGameplayEvent\("trash_collected"/);
     expect(script).toMatch(/triggerReplayMomentCallback\("trash_collect"/);
     expect(script).toMatch(/emitGameplayEvent\("powerup_collected"/);

@@ -1941,7 +1941,7 @@ function syncAuthoritativeItems(nextItems = {}) {
   }
 }
 
-function applyConfirmedCollisionOutcome(rawPayload) {
+function applyConfirmedCollisionOutcome(rawPayload, options = {}) {
   const payload = normalizeItemDestroyPayload(rawPayload);
   const itemId = payload.itemId || payload.id;
   if (!itemId) return;
@@ -1949,8 +1949,9 @@ function applyConfirmedCollisionOutcome(rawPayload) {
   pendingItemCollisions.delete(itemId);
 
   const actorId = payload.playerId || payload.player_id || null;
-  if (actorId && actorId !== yourId) return;
-  if (!actorId && !pending) return;
+  const forceLocalOutcome = options && options.localAck === true && payload.ok === true;
+  if (!forceLocalOutcome && actorId && actorId !== yourId) return;
+  if (!forceLocalOutcome && !actorId && !pending) return;
   if (scoredItemCollisions.has(itemId)) return;
 
   const itemType =
@@ -3290,7 +3291,7 @@ async function init() {
               : null,
           };
           if (payload.ok) {
-            applyConfirmedCollisionOutcome(payload);
+            applyConfirmedCollisionOutcome(payload, { localAck: true });
             removeItemFromScene(payload.itemId || payload.id);
           } else if (payload.itemId || payload.id) {
             pendingItemCollisions.delete(payload.itemId || payload.id);
