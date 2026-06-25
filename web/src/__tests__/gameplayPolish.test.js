@@ -163,7 +163,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const lerpFactor = 1 - Math\.exp\(-remoteRate \* remoteDt\);/);
     expect(script).toMatch(/const rotLerpFactor = 1 - Math\.exp\(-remoteRotRate \* remoteDt\);/);
     expect(script).toMatch(/player\.position\.addScaledVector\(direction, effectiveSignedSpeed \* dt\);/);
-    expect(script).toMatch(/const steer = Math\.max\(-1, Math\.min\(1, \(keyboard\["ArrowLeft"\] \? 1 : 0\) \+ \(keyboard\["ArrowRight"\] \? -1 : 0\) - Number\(mobileInput\.steer \|\| 0\)\)\);/);
+    expect(script).toMatch(/const steer = Math\.max\(-1, Math\.min\(1, \(keyboard\["ArrowLeft"\] \? -1 : 0\) \+ \(keyboard\["ArrowRight"\] \? 1 : 0\) \+ Number\(mobileInput\.steer \|\| 0\)\)\);/);
     expect(script).toMatch(/if \(gameState !== "STARTING" && sendYourPosition\) sendYourPosition\(\);/);
     expect(script).toMatch(/updateBoatFeel\(player, localBoatFeelState,[\s\S]{0,260}applyFollowCamera\(player, player\.rotation\.y\);/);
   });

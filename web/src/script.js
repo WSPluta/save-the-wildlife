@@ -5277,7 +5277,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const spd = __effectiveSpeedForFrame();
     const ts = Date.now();
     const throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
-    const steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) - Number(mobileInput.steer || 0)));
+    const steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0) + Number(mobileInput.steer || 0)));
     return {
       ts,
       timeISO: new Date(ts).toISOString(),
@@ -5591,7 +5591,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const lagMs = serverAuthEnabled ? (nowMs - (authStatesTime || 0)) : 0;
     const movement = new THREE.Vector3(0, 0, 0);
     let throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
-    let steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) - Number(mobileInput.steer || 0)));
+    let steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0) + Number(mobileInput.steer || 0)));
     if (trailSlowActive) {
       throttle *= TRAIL_SLOW_SPEED_MULT;
       steer *= 0.75;
@@ -5780,7 +5780,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         speed: Number(__effectiveSpeedForFrame() || 0),
         input: {
           throttle: (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0),
-          steer: (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) - Number(mobileInput.steer || 0),
+          steer: (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0) + Number(mobileInput.steer || 0),
         },
       });
     }
