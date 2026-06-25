@@ -176,12 +176,12 @@ describe("resolveItemCollisionRadius", () => {
     expect(resolveItemCollisionRadius("trash")).toBe(0.95);
     expect(resolveItemCollisionRadius("powerup")).toBe(1.05);
     expect(resolveItemCollisionRadius("powerup_freeze")).toBe(1.05);
-    expect(resolveItemCollisionRadius("turtle")).toBe(1.2);
+    expect(resolveItemCollisionRadius("turtle")).toBe(0.72);
   });
 
   it("prefers the recorded item type when the cache namespace is generic", () => {
     expect(resolveItemCollisionRadius("powerup", { type: "powerup_shield" })).toBe(1.05);
-    expect(resolveItemCollisionRadius("trash", { type: "turtle" })).toBe(1.2);
+    expect(resolveItemCollisionRadius("trash", { type: "turtle" })).toBe(0.72);
   });
 });
 

@@ -387,22 +387,41 @@ function enforceCommentary(text) {
 
 export function deterministicCommentary(summary) {
   const powerups = Object.keys(summary.powerups || {});
-  if (summary.freezes > 0) {
-    return enforceCommentary(`Frozen ${summary.freezes}x by rival trails, still finished with ${summary.score}. That is stubborn navigation.`);
+  const score = Number.isFinite(Number(summary.score)) ? Number(summary.score) : 0;
+  const freezes = Number.isFinite(Number(summary.freezes)) ? Number(summary.freezes) : 0;
+  const trailCrosses = Number.isFinite(Number(summary.trail_crosses)) ? Number(summary.trail_crosses) : 0;
+  const trash = Number.isFinite(Number(summary.trash_collected)) ? Number(summary.trash_collected) : 0;
+  const marineHits = Number.isFinite(Number(summary.marine_hits)) ? Number(summary.marine_hits) : 0;
+  const priorBest = Number(summary.prior_best_score);
+  const hasPriorBest = summary.prior_best_score != null && Number.isFinite(priorBest) && priorBest > 0;
+
+  if (score <= 0 && freezes > 0) {
+    const crossingText = trailCrosses > 0 ? ` after ${trailCrosses} trail crossing(s)` : "";
+    return enforceCommentary(`Freeze-heavy run: ${freezes} freeze event(s)${crossingText}, no score yet. Needs a cleaner lane.`);
+  }
+  if (score <= 0 && powerups.length) {
+    return enforceCommentary(`Powerup data is in, but the score is still 0. Next run needs pickups, not just boosts.`);
+  }
+  if (score <= 0 && trash <= 0) {
+    return enforceCommentary("No score yet. The next clean pickup is the moment to watch.");
+  }
+  if (freezes > 0) {
+    const crossingText = trailCrosses > 0 ? ` after ${trailCrosses} trail crossing(s)` : "";
+    return enforceCommentary(`Trail pressure: ${freezes} freeze event(s)${crossingText}, still reached ${score} points.`);
   }
   if (powerups.length) {
-    return enforceCommentary(`Used ${powerups.join(", ")} and closed on ${summary.score}. Tactical boating, not just button mashing.`);
+    return enforceCommentary(`Powerup run: ${powerups.join(", ")} helped close on ${score} points.`);
   }
-  if (summary.prior_best_score != null) {
-    const delta = summary.score - summary.prior_best_score;
+  if (hasPriorBest) {
+    const delta = score - priorBest;
     return enforceCommentary(delta >= 0
-      ? `New personal best: ${summary.score}. The comeback arc just got a scoreboard.`
-      : `${summary.score} this run, ${Math.abs(delta)} behind your best. The rematch has a plot.`);
+      ? `New personal best: ${score}. Clean evidence, better run.`
+      : `${score} this run, ${Math.abs(delta)} behind the prior best. The rematch has a target.`);
   }
-  if (summary.marine_hits > 0) {
-    return enforceCommentary(`${summary.score} points, but ${summary.marine_hits} wildlife bumps. Fast hands, questionable steering.`);
+  if (marineHits > 0) {
+    return enforceCommentary(`${score} points with ${marineHits} marine hit(s). Fast route, costly contact.`);
   }
-  return enforceCommentary(`${summary.score} points and ${summary.trash_collected} clean pickups. Calm water, clean work.`);
+  return enforceCommentary(`${score} points and ${trash} clean pickups. Calm water, clean work.`);
 }
 
 async function requestPafCommentary(summary) {

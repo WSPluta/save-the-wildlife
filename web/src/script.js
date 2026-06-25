@@ -190,7 +190,7 @@ const TRASH_FOOTPRINT_HALF_WIDTH = 0.5;
 const TRASH_FOOTPRINT_HALF_DEPTH = 0.33;
 const TRASH_FOOTPRINT_RADIUS = 0.95;
 const POWERUP_FOOTPRINT_RADIUS = 1.05;
-const TURTLE_FOOTPRINT_RADIUS = 1.2;
+const TURTLE_FOOTPRINT_RADIUS = 0.72;
 const GAMEPLAY_PARTICLES_ENABLED = false;
 const ENGINE_WAKE_PARTICLES_ENABLED = false;
 const BOT_RENDER_MODE = "demo-visible";
@@ -1315,6 +1315,67 @@ function rememberAdminCommentaryHistory(payload = []) {
     rememberAdminCommentary(entry);
   }
   renderAdminCommentaryFeed();
+  applyLatestResultsCommentaryFromHistory(entries);
+}
+
+function commentaryTextFromPayload(payload = {}) {
+  return normalizeCommentaryText(payload.commentary || payload.text || payload.script);
+}
+
+function commentaryPlayerIdFromPayload(payload = {}) {
+  const summary = payload.summary && typeof payload.summary === "object" ? payload.summary : {};
+  return normalizeCommentaryText(payload.player_id || payload.playerId || summary.player_id || summary.playerId);
+}
+
+function commentarySessionIdFromPayload(payload = {}) {
+  const summary = payload.summary && typeof payload.summary === "object" ? payload.summary : {};
+  return normalizeCommentaryText(payload.session_id || payload.sessionId || summary.session_id || summary.sessionId);
+}
+
+function ensureResultsCommentaryElement() {
+  let el = document.getElementById("results-commentary");
+  if (el) return el;
+  const summary = document.getElementById("results-summary");
+  if (!summary) return null;
+  el = document.createElement("div");
+  el.id = "results-commentary";
+  el.className = "results-commentary";
+  summary.appendChild(el);
+  return el;
+}
+
+function isCurrentPlayerCommentaryPayload(payload = {}) {
+  const playerId = commentaryPlayerIdFromPayload(payload);
+  if (playerId && yourId && playerId !== yourId) return false;
+  const sessionId = commentarySessionIdFromPayload(payload);
+  if (sessionId && currentSessionId && sessionId !== currentSessionId) return false;
+  return true;
+}
+
+function applyResultsCommentaryPayload(payload = {}, { pending = false } = {}) {
+  if (IS_ADMIN_VIEW || !isCurrentPlayerCommentaryPayload(payload)) return false;
+  const el = ensureResultsCommentaryElement();
+  if (!el) return false;
+  const text = commentaryTextFromPayload(payload);
+  if (text) {
+    el.textContent = text;
+    return true;
+  }
+  if (pending) {
+    el.textContent = "Commentary is being drafted...";
+    return true;
+  }
+  return false;
+}
+
+function applyLatestResultsCommentaryFromHistory(entries = []) {
+  if (!Array.isArray(entries) || !entries.length) return false;
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    if (commentaryTextFromPayload(entries[i]) && applyResultsCommentaryPayload(entries[i])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function formatCommentaryTime(value) {
@@ -3090,22 +3151,15 @@ async function init() {
         appendEventConsole("log", body);
         break;
       case "commentary.ready": {
-        const text = body && (body.commentary || body.text || body.script);
         rememberAdminCommentary(body || {});
-        let el = document.getElementById("results-commentary");
-        if (!el) {
-          const summary = document.getElementById("results-summary");
-          if (summary) {
-            el = document.createElement("div");
-            el.id = "results-commentary";
-            el.className = "results-commentary";
-            summary.appendChild(el);
-          }
-        }
-        if (el && text) el.textContent = text;
+        applyResultsCommentaryPayload(body || {});
         appendEventConsole("commentary.ready", body);
         break;
       }
+      case "commentary.pending":
+        applyResultsCommentaryPayload(body || {}, { pending: true });
+        appendEventConsole("commentary.pending", body);
+        break;
       case "commentary.history":
         rememberAdminCommentaryHistory(body || []);
         break;

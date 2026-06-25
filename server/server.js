@@ -6,7 +6,7 @@ import { deleteCurrentScore, postCurrentScore } from "./score.js";
 import pkg from "./package.json" with { type: "json" };
 import ObjectPool from './object-pool.js';
 import { updateRuntimeMetrics } from "./metrics.js";
-import { buildCommentary, recordGameEvent, recordPlayerSessionProfile } from "./lib/gameEvents.js";
+import { buildCommentary, deterministicCommentary, recordGameEvent, recordPlayerSessionProfile, summarizeSession } from "./lib/gameEvents.js";
 import { createCoherenceAdapter } from "./lib/coherenceSocketAdapter.js";
 import {
   resolveRealtimeBackend,
@@ -346,6 +346,7 @@ const POWERUP_FREEZE_OTHER_MULT = parseFloat(process.env.POWERUP_FREEZE_OTHER_MU
  const roomChats = new Map();
 const COMMENTARY_HISTORY_LIMIT = 80;
 const roomCommentaryHistory = new Map();
+const pendingCommentaryTasks = new Map();
  // We reuse mapPlayersInfo as the lobby roster; emit 'lobby.players' when it changes.
 
 let gameState = 'WAITING';
@@ -386,6 +387,76 @@ function rememberRoomCommentary(room, payload = {}) {
 function commentaryHistoryForRoom(room) {
   const key = normalizeRoom(room) || DEFAULT_ROOM_ID;
   return [...(roomCommentaryHistory.get(key) || [])];
+}
+
+function commentaryTaskKey(sessionId, playerId) {
+  return `${String(sessionId || "session")}::${String(playerId || "player")}`;
+}
+
+function fallbackCommentaryFromEvent(event = {}) {
+  try {
+    const summary = summarizeSession(event.session_id, event.player_id);
+    return {
+      summary,
+      commentary: deterministicCommentary(summary),
+      source: "deterministic-fallback",
+    };
+  } catch (error) {
+    const score = Number.isFinite(Number(event.score)) ? Number(event.score) : 0;
+    return {
+      summary: {
+        session_id: event.session_id,
+        player_id: event.player_id,
+        player_name: event.player_name,
+        score,
+      },
+      commentary: `Game over recorded at ${score} points. Telemetry landed; commentary used the safe fallback.`,
+      source: "deterministic-fallback",
+      diagnostics: {
+        warnings: [`commentary_fallback:${error && error.message ? error.message : String(error)}`],
+      },
+    };
+  }
+}
+
+function queueGameOverCommentary(io, { room, event, playerName } = {}) {
+  if (!event) return null;
+  const safeRoom = normalizeRoom(room) || DEFAULT_ROOM_ID;
+  const key = commentaryTaskKey(event.session_id, event.player_id);
+  const pendingPayload = {
+    status: "queued",
+    room: safeRoom,
+    session_id: event.session_id,
+    player_id: event.player_id,
+    player_name: playerName || event.player_name || "Player",
+    score: event.score,
+    source: "commentary-pending",
+    at: new Date().toISOString(),
+  };
+  try { io.to(safeRoom).emit("commentary.pending", pendingPayload); } catch (_) {}
+  if (pendingCommentaryTasks.has(key)) return pendingPayload;
+  pendingCommentaryTasks.set(key, pendingPayload);
+  runAsyncTask(`commentary.${key}`, async () => {
+    let commentary;
+    try {
+      commentary = await buildCommentary(event.session_id, event.player_id);
+    } catch (error) {
+      logger.error(`commentary build failed for ${key}: ${error && error.message ? error.message : error}`);
+      commentary = fallbackCommentaryFromEvent(event);
+    } finally {
+      pendingCommentaryTasks.delete(key);
+    }
+    const commentaryPayload = rememberRoomCommentary(safeRoom, {
+      status: "ready",
+      session_id: event.session_id,
+      player_id: event.player_id,
+      player_name: commentary?.summary?.player_name || playerName || event.player_name || "Player",
+      score: commentary?.summary?.score ?? event.score,
+      ...commentary,
+    });
+    io.to(safeRoom).emit("commentary.ready", commentaryPayload);
+  });
+  return pendingPayload;
 }
 
 function isLoadCanaryRoom(room) {
@@ -1508,15 +1579,11 @@ function scheduleRoomRefill(room, delayMs = 0) {
         });
         let commentary = null;
         if (result.event && result.event.event_type === "game_over") {
-          commentary = await buildCommentary(result.event.session_id, result.event.player_id);
-          const commentaryPayload = rememberRoomCommentary(room, {
-            session_id: result.event.session_id,
-            player_id: result.event.player_id,
-            player_name: commentary?.summary?.player_name || canonicalPlayerName || result.event.player_name || "Player",
-            score: commentary?.summary?.score ?? result.event.score,
-            ...commentary,
+          commentary = queueGameOverCommentary(io, {
+            room,
+            event: result.event,
+            playerName: canonicalPlayerName,
           });
-          io.to(room).emit("commentary.ready", commentaryPayload);
         }
         const response = { ...result, commentary };
         try { if (typeof ack === "function") ack(response); } catch (_) {}

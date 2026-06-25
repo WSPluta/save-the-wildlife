@@ -116,10 +116,20 @@ describe("presenter-controlled lobby flow", () => {
 
   it("broadcasts commentary to the room so presenter admin can list lines per player", () => {
     expect(server).toMatch(/const roomCommentaryHistory = new Map\(\);/);
+    expect(server).toMatch(/const pendingCommentaryTasks = new Map\(\);/);
     expect(server).toMatch(/function rememberRoomCommentary\(room, payload = \{\}\)/);
+    expect(server).toMatch(/function queueGameOverCommentary\(io, \{ room, event, playerName \} = \{\}\)/);
+    expect(server).toMatch(/io\.to\(safeRoom\)\.emit\("commentary\.pending", pendingPayload\)/);
+    expect(server).toMatch(/runAsyncTask\(`commentary\.\$\{key\}`/);
     expect(server).toMatch(/socket\.emit\("commentary\.history", commentaryHistoryForRoom\(wanted\)\)/);
-    expect(server).toMatch(/io\.to\(room\)\.emit\("commentary\.ready", commentaryPayload\)/);
+    expect(server).toMatch(/io\.to\(safeRoom\)\.emit\("commentary\.ready", commentaryPayload\)/);
+    expect(worker).toMatch(/socket\.on\("commentary\.pending"/);
+    expect(worker).toMatch(/commentary\.commentary \|\| commentary\.text \|\| commentary\.script/);
+    expect(worker).toMatch(/postMessage\(\{ type: "commentary\.pending", body: commentary \}\)/);
+    expect(script).toMatch(/case "commentary\.pending":/);
     expect(script).toMatch(/case "commentary\.history":/);
     expect(script).toMatch(/rememberAdminCommentaryHistory\(body \|\| \[\]\)/);
+    expect(script).toMatch(/function applyLatestResultsCommentaryFromHistory\(entries = \[\]\)/);
+    expect(script).toMatch(/function applyResultsCommentaryPayload\(payload = \{\}, \{ pending = false \} = \{\}\)/);
   });
 });

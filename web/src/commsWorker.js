@@ -225,6 +225,10 @@ function init(wsURL, yourId, yourName, room, clientSessionId = null, debugWorker
     postMessage({ type: "commentary.ready", body: data });
   });
 
+  socket.on("commentary.pending", (data) => {
+    postMessage({ type: "commentary.pending", body: data });
+  });
+
   socket.on("commentary.history", (data) => {
     postMessage({ type: "commentary.history", body: data });
   });
@@ -397,8 +401,12 @@ onmessage = ({ data }) => {
       break;
     case "game.event":
       socket.emit("game.event", data.body, (res) => {
-        if (res && res.commentary) {
-          postMessage({ type: "commentary.ready", body: res.commentary });
+        const commentary = res && res.commentary;
+        if (!commentary) return;
+        if (commentary.commentary || commentary.text || commentary.script) {
+          postMessage({ type: "commentary.ready", body: commentary });
+        } else if (commentary.status) {
+          postMessage({ type: "commentary.pending", body: commentary });
         }
       });
       break;

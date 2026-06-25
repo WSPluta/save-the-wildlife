@@ -190,11 +190,42 @@ describe("game event telemetry", () => {
 
     const text = deterministicCommentary(summary);
     expect(text.length).toBeLessThanOrEqual(200);
-    expect(text).toMatch(/Frozen|12/);
+    expect(text).toMatch(/Trail pressure|12/);
 
     const response = await buildCommentary(sessionId, "P2");
     expect(response.commentary.length).toBeLessThanOrEqual(200);
     expect(response.summary.freezes).toBe(1);
+  });
+
+  it("keeps score-zero fallback commentary stage-safe", () => {
+    const text = deterministicCommentary({
+      score: 0,
+      trash_collected: 0,
+      marine_hits: 0,
+      trail_crosses: 7,
+      freezes: 7,
+      powerups: {},
+      prior_best_score: null,
+    });
+
+    expect(text).toBe("Freeze-heavy run: 7 freeze event(s) after 7 trail crossing(s), no score yet. Needs a cleaner lane.");
+    expect(text).not.toMatch(/still finished with 0|stubborn navigation/i);
+    expect(text.length).toBeLessThanOrEqual(200);
+  });
+
+  it("does not call a zero score a personal best", () => {
+    const text = deterministicCommentary({
+      score: 0,
+      trash_collected: 0,
+      marine_hits: 0,
+      trail_crosses: 0,
+      freezes: 0,
+      powerups: {},
+      prior_best_score: 0,
+    });
+
+    expect(text).toBe("No score yet. The next clean pickup is the moment to watch.");
+    expect(text).not.toMatch(/personal best/i);
   });
 
   it("reads PAF commentary config at request time", async () => {
