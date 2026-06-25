@@ -384,7 +384,7 @@ onmessage = ({ data }) => {
       socket.close();
       break;
     case "items.collision":
-      socket.timeout(1200).emit("items.collision", data.body, (err, res) => {
+      socket.timeout(2500).emit("items.collision", data.body, (err, res) => {
         if (err) {
           postMessage({
             type: "items.collision.result",

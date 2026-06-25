@@ -25,6 +25,7 @@ import {
   countMirroredMapEntries,
   resolveCollisionValidateRadius,
   resolveItemCollisionRadius,
+  resolvePickupTouchForgiveness,
   resolveServerAuthSpeedLimit,
 } from "./lib/gameLogic.js";
 
@@ -340,6 +341,7 @@ const POWERUP_MAGNET_DURATION_MS = parseInt(process.env.POWERUP_MAGNET_DURATION_
 const POWERUP_FREEZE_DURATION_MS = parseInt(process.env.POWERUP_FREEZE_DURATION_MS ?? "4000");
 const POWERUP_MAGNET_RADIUS = parseFloat(process.env.POWERUP_MAGNET_RADIUS ?? "3.5");
 const POWERUP_FREEZE_OTHER_MULT = parseFloat(process.env.POWERUP_FREEZE_OTHER_MULT ?? "0.45");
+const PICKUP_TOUCH_FORGIVENESS = resolvePickupTouchForgiveness(process.env.PICKUP_TOUCH_FORGIVENESS);
 
  // Lobby chat (per-room buffer) and settings
  const CHAT_HISTORY_LIMIT = 100;
@@ -1675,7 +1677,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           const dz = (validationPosition.z || 0) - ipos.z;
           const dist = Math.hypot(dx, dz);
           const footprintRadius = collisionBoatRadius(playerId) + collisionItemRadius(itemType, item);
-          let allowedRadius = footprintRadius;
+          let allowedRadius = footprintRadius + PICKUP_TOUCH_FORGIVENESS;
           const st = playersState.get(playerId);
           if (st?.effects && st.effects.magnetUntil && Date.now() < st.effects.magnetUntil) {
             allowedRadius = Math.max(allowedRadius, POWERUP_MAGNET_RADIUS);

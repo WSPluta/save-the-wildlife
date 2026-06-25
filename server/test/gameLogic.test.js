@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   clampNum,
   DEFAULT_COLLISION_VALIDATE_RADIUS,
+  DEFAULT_PICKUP_TOUCH_FORGIVENESS,
   DEFAULT_SERVER_AUTH_SPEED_LIMIT,
   MAX_PLAYER_SESSION_HISTORY,
   buildPlayerSessionProfile,
@@ -15,6 +16,7 @@ import {
   resolveAuthoritativeBoatTypes,
   resolveCollisionValidateRadius,
   resolveItemCollisionRadius,
+  resolvePickupTouchForgiveness,
   resolveServerAuthSpeedLimit,
   countMirroredMapEntries,
   chooseSpawnPositionAwayFromPlayers,
@@ -185,6 +187,27 @@ describe("resolveItemCollisionRadius", () => {
   });
 });
 
+describe("resolvePickupTouchForgiveness", () => {
+  it("adds a small bounded tolerance for visual-model pickup edge cases", () => {
+    expect(DEFAULT_PICKUP_TOUCH_FORGIVENESS).toBe(0.2);
+    expect(resolvePickupTouchForgiveness()).toBe(0.2);
+    expect(resolvePickupTouchForgiveness("0.18")).toBe(0.18);
+    expect(resolvePickupTouchForgiveness("0")).toBe(0);
+    expect(resolvePickupTouchForgiveness("5")).toBe(0.5);
+    expect(resolvePickupTouchForgiveness("bad")).toBe(0.2);
+  });
+
+  it("covers the observed deployed near-miss without widening pickups across lanes", () => {
+    const boat = resolveAuthoritativeBoatTypes().speed.collisionRadius;
+    const trash = resolveItemCollisionRadius("trash");
+    const allowed = boat + trash + resolvePickupTouchForgiveness();
+
+    expect(allowed).toBeCloseTo(2.4);
+    expect(2.224).toBeLessThanOrEqual(allowed);
+    expect(2.75).toBeGreaterThan(allowed);
+  });
+});
+
 describe("resolveAuthoritativeBoatTypes collision footprints", () => {
   it("defines boat-mode collision radii for server-side pickup validation", () => {
     const types = resolveAuthoritativeBoatTypes();
@@ -198,6 +221,8 @@ describe("production collision configuration", () => {
   it("keeps the OKE ws-server pickup radius aligned with the server default", () => {
     const template = readFileSync("../deploy/k8s/base/ws-server/env_server_template", "utf8");
     expect(template).toContain(`COLLISION_VALIDATE_RADIUS=${DEFAULT_COLLISION_VALIDATE_RADIUS}`);
+    expect(template).toContain(`PICKUP_TOUCH_FORGIVENESS=${DEFAULT_PICKUP_TOUCH_FORGIVENESS}`);
+    expect(template).toContain("PAF_AGENT_TIMEOUT_MS=65000");
   });
 });
 

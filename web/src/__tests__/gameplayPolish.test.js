@@ -102,6 +102,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const TRASH_FOOTPRINT_RADIUS = 0\.95;/);
     expect(script).toMatch(/const POWERUP_FOOTPRINT_RADIUS = 1\.05;/);
     expect(script).toMatch(/const TURTLE_FOOTPRINT_RADIUS = 1\.35;/);
+    expect(script).toMatch(/const PICKUP_TOUCH_FORGIVENESS = 0\.2;/);
     expect(script).toMatch(/const CANONICAL_BOAT_TURN_SPEED = 0\.78;/);
     expect(script).toMatch(/const GAMEPLAY_PARTICLES_ENABLED = false;/);
     expect(script).toMatch(/const ENGINE_WAKE_PARTICLES_ENABLED = false;/);
@@ -125,6 +126,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/visualScale: Number\(clampVisualScale\(item\.size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX\)/);
     expect(script).toMatch(/pickupFootprints: \{/);
     expect(script).toMatch(/trashShape: "box",/);
+    expect(script).toMatch(/touchForgiveness: PICKUP_TOUCH_FORGIVENESS,/);
     expect(script).toMatch(/trashFloatY: TRASH_FLOAT_Y,/);
     expect(script).toMatch(/powerupFloatY: POWERUP_FLOAT_Y,/);
     expect(script).toMatch(/engineParticles: ENGINE_WAKE_PARTICLES_ENABLED/);
@@ -138,7 +140,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/allowedRadius: Number\.isFinite\(Number\(body\.allowedRadius\)\)/);
     expect(script).toMatch(/applyConfirmedCollisionOutcome\(payload\);/);
     expect(script).toMatch(/removeItemFromScene\(payload\.itemId \|\| payload\.id\);/);
-    expect(worker).toMatch(/socket\.timeout\(1200\)\.emit\("items\.collision"/);
+    expect(worker).toMatch(/socket\.timeout\(2500\)\.emit\("items\.collision"/);
   });
 
   it("creates remote boats from authoritative player state snapshots", () => {

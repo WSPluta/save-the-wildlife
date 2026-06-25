@@ -115,6 +115,7 @@ export const DEFAULT_COLLISION_VALIDATE_RADIUS = 3.6;
 export const DEFAULT_ITEM_COLLISION_RADIUS = 0.95;
 export const TURTLE_ITEM_COLLISION_RADIUS = 1.35;
 export const POWERUP_ITEM_COLLISION_RADIUS = 1.05;
+export const DEFAULT_PICKUP_TOUCH_FORGIVENESS = 0.2;
 
 export function resolveCollisionValidateRadius(value) {
   if (value === undefined || value === null || value === "") {
@@ -131,6 +132,16 @@ export function resolveItemCollisionRadius(itemType, item = {}) {
   if (type === "turtle") return TURTLE_ITEM_COLLISION_RADIUS;
   if (type.startsWith("powerup_") || itemType === "powerup") return POWERUP_ITEM_COLLISION_RADIUS;
   return DEFAULT_ITEM_COLLISION_RADIUS;
+}
+
+export function resolvePickupTouchForgiveness(value) {
+  if (value === undefined || value === null || value === "") {
+    return DEFAULT_PICKUP_TOUCH_FORGIVENESS;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0
+    ? Math.min(parsed, 0.5)
+    : DEFAULT_PICKUP_TOUCH_FORGIVENESS;
 }
 
 function positiveNumber(value, fallback, max = Number.POSITIVE_INFINITY) {

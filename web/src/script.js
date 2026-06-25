@@ -191,6 +191,7 @@ const TRASH_FOOTPRINT_HALF_DEPTH = 0.33;
 const TRASH_FOOTPRINT_RADIUS = 0.95;
 const POWERUP_FOOTPRINT_RADIUS = 1.05;
 const TURTLE_FOOTPRINT_RADIUS = 1.35;
+const PICKUP_TOUCH_FORGIVENESS = 0.2;
 const GAMEPLAY_PARTICLES_ENABLED = false;
 const ENGINE_WAKE_PARTICLES_ENABLED = false;
 const BOT_RENDER_MODE = "demo-visible";
@@ -618,7 +619,7 @@ function isWithinFootprintOverlap(position, itemRadius, boatRadius = BOAT_FOOTPR
   if (!player || !position) return false;
   const dx = (player.position?.x || 0) - (Number(position.x) || 0);
   const dz = (player.position?.z || 0) - (Number(position.z) || 0);
-  return Math.hypot(dx, dz) <= Math.max(0, boatRadius + itemRadius);
+  return Math.hypot(dx, dz) <= Math.max(0, boatRadius + itemRadius + PICKUP_TOUCH_FORGIVENESS);
 }
 
 function isWithinTrashBoxFootprint(position, scale = 1, boatRadius = BOAT_FOOTPRINT_RADIUS) {
@@ -626,8 +627,8 @@ function isWithinTrashBoxFootprint(position, scale = 1, boatRadius = BOAT_FOOTPR
   const s = Math.max(0.1, Number(scale) || 1);
   const dx = Math.abs((player.position?.x || 0) - (Number(position.x) || 0));
   const dz = Math.abs((player.position?.z || 0) - (Number(position.z) || 0));
-  return dx <= boatRadius + TRASH_FOOTPRINT_HALF_WIDTH * s
-    && dz <= boatRadius + TRASH_FOOTPRINT_HALF_DEPTH * s;
+  return dx <= boatRadius + TRASH_FOOTPRINT_HALF_WIDTH * s + PICKUP_TOUCH_FORGIVENESS
+    && dz <= boatRadius + TRASH_FOOTPRINT_HALF_DEPTH * s + PICKUP_TOUCH_FORGIVENESS;
 }
 
 function itemFootprintRadius(itemType, scale = 1) {
@@ -6122,6 +6123,7 @@ function renderGameToText() {
       trash: TRASH_FOOTPRINT_RADIUS,
       powerup: POWERUP_FOOTPRINT_RADIUS,
       turtle: TURTLE_FOOTPRINT_RADIUS,
+      touchForgiveness: PICKUP_TOUCH_FORGIVENESS,
       trashFloatY: TRASH_FLOAT_Y,
       powerupFloatY: POWERUP_FLOAT_Y,
     },
