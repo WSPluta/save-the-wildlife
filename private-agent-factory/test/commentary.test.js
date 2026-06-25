@@ -615,7 +615,11 @@ test("routes base and fine-tuned OCI model endpoints in shadow mode", async () =
   });
 
   assert.equal(calls.length, 2);
-  assert.match(calls[0].body.prompt, /Facts stay in Oracle AI Database memory|Model comparison task/);
+  assert.match(calls[0].body.prompt, /Write one in-world Save the Wildlife commentator line/);
+  assert.match(calls[0].body.prompt, /score=42/);
+  assert.equal(calls[0].body.max_tokens, 40);
+  assert.equal(calls[0].body.evidence.summary.score, 42);
+  assert.equal(calls[0].body.evidence.evidence.latest_event, null);
 });
 
 test("runs shadow primary and candidate model calls concurrently", async () => {

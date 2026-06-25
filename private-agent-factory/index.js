@@ -22,6 +22,10 @@ const pafMetrics = {
 const AGENT_NAME = process.env.PAF_AGENT_NAME || "save-the-wildlife-commentator";
 const AGENT_MODE = process.env.PAF_AGENT_MODE || "moderated";
 const COMMENTARY_MAX_CHARS = Number(process.env.PAF_COMMENTARY_MAX_CHARS || 200);
+const LIVE_LINE_MODEL_MAX_TOKENS = Math.max(
+  16,
+  Math.min(96, Number(process.env.PAF_LIVE_LINE_MODEL_MAX_TOKENS || 40))
+);
 const ORACLE_QUERY_TIMEOUT_MS = Number(process.env.PAF_ORACLE_QUERY_TIMEOUT_MS || 2000);
 const INDB_AGENT_TIMEOUT_MS = Number(process.env.INDB_AGENT_TIMEOUT_MS || 2500);
 const INDB_AGENT_PACKAGE = safeIdentifier(process.env.INDB_AGENT_PACKAGE || "STWL_COMMENTARY_PKG");
@@ -885,8 +889,54 @@ function buildModelEvidence(summary, context = {}, legacy = {}) {
   };
 }
 
+function buildLiveLineModelEvidence(summary, context = {}, legacy = {}) {
+  return {
+    summary: {
+      session_id: summary.session_id || "",
+      room_id: summary.room_id || "",
+      player_id: summary.player_id || "",
+      player_name: summary.player_name || summary.player_id || "Player",
+      score: summary.score || 0,
+      trash_collected: summary.trash_collected || 0,
+      marine_hits: summary.marine_hits || 0,
+      trail_crosses: summary.trail_crosses || 0,
+      freezes: summary.freezes || 0,
+      powerups: summary.powerups || {},
+      last_position: summary.last_position || null,
+      prior_best_score: summary.prior_best_score ?? null,
+    },
+    formats: legacy.formats?.live_line ? { live_line: legacy.formats.live_line } : {},
+    legacy_source: legacy.source || "",
+    evidence: {
+      latest_event: (context.json_events || [])[0] || null,
+      graph_fact: (context.graph_facts || [])[0] || null,
+      replay_clip: (context.replay_clips || [])[0] || null,
+      memory: (context.vector_memories || [])[0]?.content || "",
+      capabilities: context.capabilities || null,
+    },
+  };
+}
+
+function buildLiveLineModelPrompt(summary, context = {}, legacy = {}, maxChars = COMMENTARY_MAX_CHARS) {
+  const powerups = compactPowerupNames(summary.powerups).join(", ") || "none";
+  const prior = summary.prior_best_score == null ? "none" : String(summary.prior_best_score);
+  const position = coordinatePhrase(summary.last_position);
+  const memory = (context.vector_memories || [])[0]?.content || "none";
+  const draft = legacy.inDbAgent?.commentary || legacy.commentary || legacy.formats?.live_line || "";
+  return [
+    "Write one in-world Save the Wildlife commentator line.",
+    `Facts: player=${summary.player_name || summary.player_id || "Player"}; score=${summary.score || 0}; trash=${summary.trash_collected || 0}; marine_hits=${summary.marine_hits || 0}; powerups=${powerups}; trail_crosses=${summary.trail_crosses || 0}; freezes=${summary.freezes || 0}; ${position}; prior_best=${prior}.`,
+    `Prior memory: ${memory}`,
+    draft ? `Draft: ${draft}` : "Draft: none",
+    `Rules: under ${Math.min(COMMENTARY_MAX_CHARS, maxChars)} chars; no profanity; no unrecorded events; no Oracle/database/SQL/model/AI/telemetry/evidence words.`,
+  ].join("\n");
+}
+
 function buildModelPrompt(summary, context = {}, legacy = {}, outputFormatValue = "live_line", maxChars = COMMENTARY_MAX_CHARS) {
   const requestedOutput = outputFormat(outputFormatValue);
+  if (requestedOutput === "live_line") {
+    return buildLiveLineModelPrompt(summary, context, legacy, maxChars);
+  }
   const baseMessage = buildCanvasMessage(summary, {
     inDbCommentary: legacy.inDbAgent?.commentary || legacy.commentary,
     context,
@@ -1123,8 +1173,12 @@ function evaluateModelOutputs(primary, candidate, summary, config, maxChars) {
 async function runModelRoute({ summary, context, legacy, outputFormatValue, maxChars }, options = {}) {
   const config = modelRouterConfig();
   const traceId = textValue(options.traceId || options.trace_id || options.traceID) || newTraceId(summary);
-  const evidence = buildModelEvidence(summary, context || {}, legacy || {});
-  const prompt = buildModelPrompt(summary, context || {}, legacy || {}, outputFormatValue, maxChars);
+  const requestedOutput = outputFormat(outputFormatValue);
+  const isLiveLine = requestedOutput === "live_line";
+  const evidence = isLiveLine
+    ? buildLiveLineModelEvidence(summary, context || {}, legacy || {})
+    : buildModelEvidence(summary, context || {}, legacy || {});
+  const prompt = buildModelPrompt(summary, context || {}, legacy || {}, requestedOutput, maxChars);
   const promptHash = compactHash(prompt);
   const evidenceHash = compactHash(stableJson(evidence));
   const routeContext = {
@@ -1141,7 +1195,7 @@ async function runModelRoute({ summary, context, legacy, outputFormatValue, maxC
     system: "Save the Wildlife PAF model router. Facts stay in Oracle AI Database memory; model weights shape stable response behavior.",
     prompt,
     evidence,
-    max_tokens: config.maxTokens,
+    max_tokens: isLiveLine ? Math.min(config.maxTokens, LIVE_LINE_MODEL_MAX_TOKENS) : config.maxTokens,
     max_chars: maxChars,
     temperature: config.temperature,
     route_context: routeContext,
