@@ -190,7 +190,7 @@ const TRASH_FOOTPRINT_HALF_WIDTH = 0.5;
 const TRASH_FOOTPRINT_HALF_DEPTH = 0.33;
 const TRASH_FOOTPRINT_RADIUS = 0.95;
 const POWERUP_FOOTPRINT_RADIUS = 1.05;
-const TURTLE_FOOTPRINT_RADIUS = 0.72;
+const TURTLE_FOOTPRINT_RADIUS = 1.35;
 const GAMEPLAY_PARTICLES_ENABLED = false;
 const ENGINE_WAKE_PARTICLES_ENABLED = false;
 const BOT_RENDER_MODE = "demo-visible";
@@ -638,7 +638,8 @@ function itemFootprintRadius(itemType, scale = 1) {
 
 function isGameplayPrimitiveOverlap(position, itemType, scale = 1) {
   if (!isMarineLife(itemType) && !isPowerUp(itemType)) {
-    return isWithinTrashBoxFootprint(position, scale);
+    return isWithinTrashBoxFootprint(position, scale)
+      || isWithinFootprintOverlap(position, itemFootprintRadius(itemType, scale));
   }
   return isWithinFootprintOverlap(position, itemFootprintRadius(itemType, scale));
 }
@@ -4003,6 +4004,7 @@ async function init() {
     itemMesh.scale.set(s, s, s);
     itemMesh.itemId = itemId;
     itemMesh.itemType = itemType;
+    itemMesh.gameplayScale = s;
     itemMesh.isTrash = !isMarineLife(itemType) && !isPowerUp(itemType);
     itemMesh.outOfBounds = false;
 
@@ -5489,7 +5491,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       if (mesh.outOfBounds) continue;
       if (pendingItemCollisions.has(key)) continue;
 
-      let collision = isGameplayPrimitiveOverlap(mesh.position, mesh.itemType);
+      const meshGameplayScale = Math.max(0.1, Number(mesh.gameplayScale) || Number(mesh.scale?.x) || 1);
+      let collision = isGameplayPrimitiveOverlap(mesh.position, mesh.itemType, meshGameplayScale);
       if (!collision && magnetActive && !isMarineLife(mesh.itemType)) {
         const dx = (player.position?.x || 0) - (mesh.position?.x || 0);
         const dz = (player.position?.z || 0) - (mesh.position?.z || 0);
