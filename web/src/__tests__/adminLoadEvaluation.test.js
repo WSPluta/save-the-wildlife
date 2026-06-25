@@ -52,24 +52,25 @@ describe("admin load evaluation view", () => {
     expect(styles).toMatch(/body\.admin-view:not\(\.ai-learning-view\) #admin-ai-learning/);
   });
 
-  it("adds the AI learning route evidence for base versus fine-tuned PAF", () => {
+  it("keeps the AI learning route focused on live commentary only", () => {
     expect(html).toContain('id="admin-ai-learning"');
     expect(html).toContain("Live Commentary");
     expect(html).toContain('id="admin-commentary-feed"');
     expect(html).toContain('id="admin-ai-commentary-count"');
     expect(html).toContain("Gameplay facts stay in Oracle AI Database");
-    expect(html).toContain("oci-base");
-    expect(html).toContain("oci-fine-tuned");
-    expect(html).toContain("health + generation probe");
-    expect(html).toContain("bounded generation check");
-    expect(html).toContain("LLM proof gate");
-    expect(html).toContain("202606132052-fastpath-full");
-    expect(html).toContain("25 live examples");
-    expect(html).toContain("Redacted behavior-only JSONL");
-    expect(html).toContain("Trainer dry-run");
-    expect(html).toContain("Strict upstream gate");
-    expect(html).toContain("Checking generation proof");
-    expect(html).toContain("facts stay in database");
+    const block = html.match(/<div id="admin-ai-learning"[\s\S]*?<\/div>\s*<\/section>/)?.[0] || "";
+    expect(block).toContain("Every finished run appears below by player");
+    expect(block).not.toContain("oci-base");
+    expect(block).not.toContain("oci-fine-tuned");
+    expect(block).not.toContain("health + generation probe");
+    expect(block).not.toContain("bounded generation check");
+    expect(block).not.toContain("LLM proof gate");
+    expect(block).not.toContain("202606132052-fastpath-full");
+    expect(block).not.toContain("25 live examples");
+    expect(block).not.toContain("Redacted behavior-only JSONL");
+    expect(block).not.toContain("Trainer dry-run");
+    expect(block).not.toContain("Strict upstream gate");
+    expect(block).not.toContain("Checking generation proof");
     expect(script).toMatch(/function isAiLearningAdminPath\(path\)/);
     expect(script).toMatch(/path === "\/admin\/ai-learning" \|\| path === "\/admin\/ai"/);
     expect(script).toMatch(/updateAiLearningHealth/);
@@ -128,12 +129,13 @@ describe("admin load evaluation view", () => {
     expect(summary.runtimeText).toBe("oci-base ready; oci-fine-tuned degraded");
   });
 
-  it("styles the compact AI learning receipt panels", () => {
+  it("styles the commentary-only AI learning screen", () => {
     expect(styles).toMatch(/\.admin-proof-receipts\s*{/);
     expect(styles).toMatch(/\.admin-learning-note\s*{/);
     expect(styles).toMatch(/body\.ai-learning-view #admin-load-evaluation/);
     expect(styles).toMatch(/\.admin-commentary-feed\s*{/);
-    expect(styles).toMatch(/\.admin-ai-route-metrics \.admin-metric strong/);
+    expect(styles).toMatch(/body\.ai-learning-view \.admin-commentary-panel/);
+    expect(styles).toMatch(/body\.ai-learning-view \.admin-commentary-feed/);
     expect(styles).toMatch(/body\.ai-learning-view \.admin-grid/);
     expect(styles).toMatch(/body\.ai-learning-view \.admin-roster/);
   });

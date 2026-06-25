@@ -428,7 +428,7 @@
 
           <div class="admin-learning-frame">
             <strong>Gameplay facts stay in Oracle AI Database. The model only shapes grounded language.</strong>
-            <span>Use this view while people play: every finished run appears below by player, with the route and source visible for the presenter.</span>
+            <span>Every finished run appears below by player as a short, grounded commentary line.</span>
           </div>
 
           <div class="admin-commentary-panel" aria-label="Live commentary by player">
@@ -448,66 +448,6 @@
             </div>
             <div id="admin-commentary-empty" class="admin-commentary-empty">Waiting for game-over commentary in this room.</div>
             <div id="admin-commentary-feed" class="admin-commentary-feed"></div>
-          </div>
-
-          <div class="admin-evidence-metrics admin-ai-route-metrics" aria-label="Model learning summary">
-            <div class="admin-metric">
-              <span>Route mode</span>
-              <strong>Shadow</strong>
-            </div>
-            <div class="admin-metric">
-              <span>Primary</span>
-              <strong>oci-base</strong>
-            </div>
-            <div class="admin-metric">
-              <span>Candidate</span>
-              <strong>oci-fine-tuned</strong>
-            </div>
-            <div class="admin-metric">
-              <span>Runtime</span>
-              <strong id="admin-ai-runtime">checking</strong>
-            </div>
-            <div class="admin-metric">
-              <span>Handoff</span>
-              <strong id="admin-ai-handoff">checking</strong>
-            </div>
-            <div class="admin-metric">
-              <span>LLM proof gate</span>
-              <strong id="admin-ai-proof-gate">Checking</strong>
-            </div>
-          </div>
-
-          <div class="admin-proof-receipts" aria-label="Latest model AI proof receipts">
-            <div>
-              <span>Adapter canary</span>
-              <strong>202606132052-fastpath-full</strong>
-              <em>Tier 1000 passed: 1000/1000 joins, score rows, and commentary with 0 duplicates.</em>
-            </div>
-            <div>
-              <span>Training export</span>
-              <strong>25 live examples</strong>
-              <em>Redacted behavior-only JSONL from STWL_MODEL_TRACES, STWL_MODEL_EVALS, and score evidence.</em>
-            </div>
-            <div>
-              <span>Trainer dry-run</span>
-              <strong>ok=true</strong>
-              <em>LoRA dataset conversion validated without moving durable facts into model weights.</em>
-            </div>
-            <div>
-              <span>Adapter handoff</span>
-              <strong>health + generation probe</strong>
-              <em>Model routes must answer a bounded generation check before the presenter view calls them ready.</em>
-            </div>
-            <div>
-              <span>Strict upstream gate</span>
-              <strong>facts stay in database</strong>
-              <em>Changing facts stay in Oracle AI Database context; the model route only shapes grounded language.</em>
-            </div>
-          </div>
-
-          <div class="admin-learning-note">
-            <strong id="admin-ai-note-title">Checking generation proof.</strong>
-            <span id="admin-ai-note-body">The router, traces, evals, and shadow metadata are stable through tier 1000. Runtime facts remain in Oracle AI Database memory, Select AI, and in-db agent context.</span>
           </div>
         </div>
       </section>

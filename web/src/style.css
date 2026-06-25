@@ -1166,10 +1166,18 @@ body.observability-view .admin-tab-observability {
   display: grid;
   gap: 10px;
   margin: 0 12px;
-  padding: 10px;
+  padding: 12px;
   border: 1px solid rgba(92, 201, 255, 0.18);
   border-radius: 10px;
   background: rgba(4, 16, 27, 0.42);
+}
+
+body.ai-learning-view .admin-ai-learning {
+  gap: 14px;
+}
+
+body.ai-learning-view .admin-commentary-panel {
+  min-height: min(58vh, 620px);
 }
 
 .admin-commentary-summary {
@@ -1214,8 +1222,13 @@ body.observability-view .admin-tab-observability {
 .admin-commentary-feed {
   display: grid;
   gap: 8px;
-  max-height: min(360px, 40vh);
+  align-content: start;
+  max-height: min(520px, 58vh);
   overflow-y: auto;
+}
+
+body.ai-learning-view .admin-commentary-feed {
+  max-height: min(620px, 62vh);
 }
 
 .admin-commentary-player {
