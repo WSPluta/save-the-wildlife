@@ -26,6 +26,10 @@ const LIVE_LINE_MODEL_MAX_TOKENS = Math.max(
   16,
   Math.min(96, Number(process.env.PAF_LIVE_LINE_MODEL_MAX_TOKENS || 40))
 );
+const TRACE_PERSIST_TIMEOUT_MS = Math.max(
+  250,
+  Math.min(5000, Number(process.env.PAF_TRACE_PERSIST_TIMEOUT_MS || 1500))
+);
 const ORACLE_QUERY_TIMEOUT_MS = Number(process.env.PAF_ORACLE_QUERY_TIMEOUT_MS || 2000);
 const INDB_AGENT_TIMEOUT_MS = Number(process.env.INDB_AGENT_TIMEOUT_MS || 2500);
 const INDB_AGENT_PACKAGE = safeIdentifier(process.env.INDB_AGENT_PACKAGE || "STWL_COMMENTARY_PKG");
@@ -924,11 +928,12 @@ function buildLiveLineModelPrompt(summary, context = {}, legacy = {}, maxChars =
   const memory = (context.vector_memories || [])[0]?.content || "none";
   const draft = legacy.inDbAgent?.commentary || legacy.commentary || legacy.formats?.live_line || "";
   return [
-    "Write one in-world Save the Wildlife commentator line.",
+    "Write exactly one in-world Save the Wildlife commentator line.",
     `Facts: player=${summary.player_name || summary.player_id || "Player"}; score=${summary.score || 0}; trash=${summary.trash_collected || 0}; marine_hits=${summary.marine_hits || 0}; powerups=${powerups}; trail_crosses=${summary.trail_crosses || 0}; freezes=${summary.freezes || 0}; ${position}; prior_best=${prior}.`,
     `Prior memory: ${memory}`,
     draft ? `Draft: ${draft}` : "Draft: none",
-    `Rules: under ${Math.min(COMMENTARY_MAX_CHARS, maxChars)} chars; no profanity; no unrecorded events; no Oracle/database/SQL/model/AI/telemetry/evidence words.`,
+    `Mandatory: include the player name and exact score number. Prefer one recorded detail: trash, powerup, trail, freeze, marine hit, or prior best.`,
+    `Rules: under ${Math.min(COMMENTARY_MAX_CHARS, maxChars)} chars; no profanity; no unrecorded events; no Oracle/database/SQL/model/AI/telemetry/evidence words; return the line only.`,
   ].join("\n");
 }
 
@@ -951,6 +956,28 @@ function buildModelPrompt(summary, context = {}, legacy = {}, outputFormatValue 
     "Include evidence-aware phrasing, avoid unsupported claims, and keep confidence proportional to the evidence.",
     `max_chars=${requestedOutput === "clip_title" ? Math.min(80, maxChars) : maxChars}`,
   ].join("\n");
+}
+
+async function persistModelLearningTraceBounded(route, summary, config, options = {}) {
+  try {
+    return await withTimeout(
+      persistModelLearningTrace(route, summary, config, options),
+      TRACE_PERSIST_TIMEOUT_MS,
+      "trace_persist"
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+function persistModelLearningTraceDeferred(route, summary, config, options = {}) {
+  persistModelLearningTrace(route, summary, config, options)
+    .then((persisted) => {
+      route.trace_persisted = Boolean(persisted);
+    })
+    .catch(() => {
+      route.trace_persisted = false;
+    });
 }
 
 function normalizeModelEndpointResponse(provider, response, elapsedMs, maxChars) {
@@ -1239,7 +1266,11 @@ async function runModelRoute({ summary, context, legacy, outputFormatValue, maxC
   };
 
   if (config.tracePersist) {
-    route.trace_persisted = await persistModelLearningTrace(route, summary, config, options);
+    if (isLiveLine && !boolEnv("PAF_LIVE_LINE_TRACE_PERSIST_BLOCKING", false)) {
+      persistModelLearningTraceDeferred(route, summary, config, options);
+    } else {
+      route.trace_persisted = await persistModelLearningTraceBounded(route, summary, config, options);
+    }
   }
   return route;
 }
@@ -1329,7 +1360,7 @@ async function persistSkippedModelRoute(route, summary, options = {}) {
   const config = modelRouterConfig();
   if (!config.tracePersist) return route;
   try {
-    route.trace_persisted = await persistModelLearningTrace(route, summary, config, options);
+    route.trace_persisted = await persistModelLearningTraceBounded(route, summary, config, options);
   } catch (_) {
     route.trace_persisted = false;
   }

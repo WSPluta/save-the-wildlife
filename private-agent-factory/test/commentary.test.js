@@ -615,11 +615,71 @@ test("routes base and fine-tuned OCI model endpoints in shadow mode", async () =
   });
 
   assert.equal(calls.length, 2);
-  assert.match(calls[0].body.prompt, /Write one in-world Save the Wildlife commentator line/);
+  assert.match(calls[0].body.prompt, /Write exactly one in-world Save the Wildlife commentator line/);
   assert.match(calls[0].body.prompt, /score=42/);
+  assert.match(calls[0].body.prompt, /include the player name and exact score number/);
   assert.equal(calls[0].body.max_tokens, 40);
   assert.equal(calls[0].body.evidence.summary.score, 42);
   assert.equal(calls[0].body.evidence.evidence.latest_event, null);
+});
+
+test("does not block live model commentary on slow trace persistence", async () => {
+  const oracleConnection = {
+    execute: () => new Promise(() => {}),
+  };
+  const modelRequestJson = async () => ({
+    status: 200,
+    headers: {},
+    elapsed_ms: 25,
+    payload: {
+      ok: true,
+      provider: "oci-base",
+      model_id: "stwl-base-fast",
+      text: "Ada finished with 42 points after one freeze.",
+      tokens: 9,
+      finish_reason: "stop",
+      runtime_mode: "upstream-llm",
+      upstream_configured: true,
+      facts_policy: "facts-in-memory-behavior-in-weights",
+    },
+  });
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "primary",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    OCI_MODEL_ENDPOINT_TIMEOUT_MS: "1000",
+    PAF_COMMENTARY_DEADLINE_MS: "1000",
+    PAF_TRACE_PERSIST: "true",
+  }, async () => {
+    const started = Date.now();
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-LIVE-PERSIST",
+          player_id: "P-LIVE-PERSIST",
+          player_name: "Ada",
+          score: 42,
+          freezes: 1,
+        },
+      },
+      {
+        skipOracleSummary: true,
+        oracleConnection,
+        traceId: "TRACE-LIVE-PERSIST",
+        modelRequestJson,
+      }
+    );
+
+    assert.equal(response.source, "oci-base");
+    assert.equal(response.commentary, "Ada finished with 42 points after one freeze.");
+    assert.equal(response.model_route.trace_persisted, false);
+    assert.ok(Date.now() - started < 500, "live route should not wait for trace persistence");
+  });
 });
 
 test("runs shadow primary and candidate model calls concurrently", async () => {
