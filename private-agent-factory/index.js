@@ -971,6 +971,34 @@ function buildLiveLineModelPrompt(summary, context = {}, legacy = {}, maxChars =
   ].join("\n");
 }
 
+function buildGroundedRepairPrompt(summary, context = {}, legacy = {}, maxChars = COMMENTARY_MAX_CHARS) {
+  const groundedDraft = liveLineGroundedDraft(summary, maxChars);
+  const playerName = summary.player_name || summary.player_id || "Player";
+  const score = String(summary.score || 0);
+  return [
+    "Constrained Save the Wildlife commentary repair.",
+    "You must choose from the allowed evidence line. Do not rewrite it.",
+    `Facts: player=${playerName}; score=${score}; trash=${summary.trash_collected || 0}; marine_hits=${summary.marine_hits || 0}; trail_crosses=${summary.trail_crosses || 0}; freezes=${summary.freezes || 0}.`,
+    `Allowed line A: ${groundedDraft}`,
+    `Return exactly Allowed line A unchanged if it is under ${Math.min(COMMENTARY_MAX_CHARS, maxChars)} chars and matches the facts.`,
+    "If the allowed line is unsafe, return UNSAFE. Return no explanation.",
+  ].join("\n");
+}
+
+function extractGroundedRepairText(rawText, groundedDraft) {
+  const text = textValue(rawText);
+  const draft = textValue(groundedDraft);
+  if (!text || !draft) return "";
+  if (text.includes(draft)) return draft;
+  const normalized = text
+    .replace(/["'`]/g, "")
+    .replace(/[.!:;]+$/g, "")
+    .trim()
+    .toLowerCase();
+  if (/^(a|line a|allowed line a|option a|1)$/.test(normalized)) return draft;
+  return "";
+}
+
 function buildModelPrompt(summary, context = {}, legacy = {}, outputFormatValue = "live_line", maxChars = COMMENTARY_MAX_CHARS) {
   const requestedOutput = outputFormat(outputFormatValue);
   if (requestedOutput === "live_line") {
@@ -1114,6 +1142,53 @@ async function callModelProvider(provider, requestPayload, config, options = {},
       latency_ms: Date.now() - started,
     };
   }
+}
+
+async function callGroundedRepairProvider(provider, { traceId, summary, context, legacy, outputFormatValue, maxChars }, config, options = {}) {
+  if (outputFormat(outputFormatValue) !== "live_line") {
+    return { ok: false, provider, skipped: true, error: "grounded_repair_live_line_only" };
+  }
+  const groundedDraft = liveLineGroundedDraft(summary, maxChars);
+  const prompt = buildGroundedRepairPrompt(summary, context || {}, legacy || {}, maxChars);
+  const evidence = buildLiveLineModelEvidence(summary, context || {}, legacy || {});
+  const repairPayload = {
+    trace_id: `${traceId}:repair`,
+    system: "Save the Wildlife PAF grounded repair router. Select only the supplied evidence line.",
+    prompt,
+    evidence,
+    max_tokens: Math.min(config.maxTokens, LIVE_LINE_MODEL_MAX_TOKENS),
+    max_chars: maxChars,
+    temperature: 0,
+    route_context: {
+      summary,
+      output_format: outputFormatValue,
+      max_chars: maxChars,
+      route_mode: config.routeMode,
+      primary_provider: provider,
+      grounded_repair: true,
+      allowed_line_hash: compactHash(groundedDraft),
+    },
+  };
+  const output = await callModelProvider(provider, repairPayload, config, options, legacy);
+  if (!output?.ok) return output;
+  const repairedText = extractGroundedRepairText(output.text, groundedDraft);
+  if (!repairedText) {
+    return {
+      ...output,
+      ok: false,
+      error: "grounded_repair_unselected",
+      raw_text: output.text || null,
+      text: null,
+      grounding_mode: "safe_draft_selection",
+    };
+  }
+  return {
+    ...output,
+    text: repairedText,
+    raw_text: output.text || null,
+    grounding_mode: "safe_draft_selection",
+    warnings: combineWarnings(output.warnings, "grounded_repair_selected_safe_draft"),
+  };
 }
 
 function scoreTextAgainstEvidence(text, summary = {}, maxChars = COMMENTARY_MAX_CHARS) {
@@ -1274,6 +1349,38 @@ async function runModelRoute({ summary, context, legacy, outputFormatValue, maxC
       ]);
     } else {
       primary = await primaryPromise;
+    }
+  }
+
+  if (isLiveLine && primary?.ok) {
+    const initialGate = modelOutputGate(primary, summary, maxChars);
+    if (!initialGate.ok) {
+      const repair = await callGroundedRepairProvider(
+        config.primaryProvider,
+        { traceId, summary, context, legacy, outputFormatValue, maxChars },
+        config,
+        options
+      );
+      if (repair?.ok) {
+        primary = {
+          ...repair,
+          first_attempt: primary,
+          repair_of_reason: initialGate.reason,
+          warnings: combineWarnings(
+            repair.warnings,
+            `${config.primaryProvider}:initial_model_output_rejected_${initialGate.reason}`
+          ),
+        };
+      } else {
+        primary = {
+          ...primary,
+          repair_attempt: repair || null,
+          warnings: combineWarnings(
+            primary.warnings,
+            `${config.primaryProvider}:grounded_repair_failed_${repair?.error || "unknown"}`
+          ),
+        };
+      }
     }
   }
 
@@ -2993,6 +3100,8 @@ function publicModelOutput(output) {
     runtime_mode: output.runtime_mode || null,
     upstream_configured: output.upstream_configured,
     facts_policy: output.facts_policy || null,
+    grounding_mode: output.grounding_mode || null,
+    repair_of_reason: output.repair_of_reason || null,
     error: output.error || null,
     skipped: Boolean(output.skipped),
   } : null;

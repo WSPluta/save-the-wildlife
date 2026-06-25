@@ -624,6 +624,74 @@ test("routes base and fine-tuned OCI model endpoints in shadow mode", async () =
   assert.equal(calls[0].body.evidence.evidence.latest_event, null);
 });
 
+test("repairs generic live model output through an OCI grounded safe-draft selection", async () => {
+  const calls = [];
+  const modelRequestJson = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    calls.push(body);
+    return {
+      status: 200,
+      elapsed_ms: 25,
+      payload: {
+        ok: true,
+        provider: "oci-base",
+        model_id: "stwl-base-v1",
+        text: calls.length === 1 ? "Saving wildlife for the next day." : "A",
+        tokens: 8,
+        finish_reason: "stop",
+        runtime_mode: "upstream-llm",
+        upstream_configured: true,
+        facts_policy: "facts-in-memory-behavior-in-weights",
+      },
+    };
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "primary",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    OCI_MODEL_ENDPOINT_AUTH_SECRET: "unit-secret",
+    PAF_TRACE_PERSIST: "false",
+    PAF_EVAL_ENABLED: "true",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-REPAIR",
+          room_id: "ROOM-REPAIR",
+          player_id: "P-REPAIR",
+          player_name: "Smoke Player",
+          score: 3,
+          trash_collected: 3,
+          trail_crosses: 0,
+          powerups: { powerup_speed: 1 },
+        },
+      },
+      {
+        skipOracleSummary: true,
+        traceId: "TRACE-REPAIR",
+        modelRequestJson,
+      }
+    );
+
+    assert.equal(response.source, "oci-base");
+    assert.equal(response.fallback_source, "request-summary");
+    assert.equal(response.commentary, "Smoke Player scored 3 after speed powerup.");
+    assert.equal(response.model_route.primary.grounding_mode, "safe_draft_selection");
+    assert.equal(response.model_route.primary.repair_of_reason, "not_evidence_anchored");
+    assert.match(response.model_route.primary.warnings.join("; "), /initial_model_output_rejected_not_evidence_anchored/);
+  });
+
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].prompt, /Allowed line A: Smoke Player scored 3 after speed powerup\./);
+  assert.equal(calls[1].temperature, 0);
+  assert.equal(calls[1].route_context.grounded_repair, true);
+});
+
 test("does not block live model commentary on slow trace persistence", async () => {
   const oracleConnection = {
     execute: () => new Promise(() => {}),
@@ -1125,7 +1193,7 @@ test("starts deferred model route before slow in-db fallback completes", async (
         ok: true,
         provider: isFineTuned ? "oci-fine-tuned" : "oci-base",
         model_id: isFineTuned ? "stwl-ft-deferred" : "stwl-base-deferred",
-        text: "Ada scored 42 with one freeze from recorded SQL evidence.",
+        text: "Ada scored 42 after one freeze.",
         runtime_mode: "upstream-llm",
         upstream_configured: true,
         facts_policy: "facts-in-memory-behavior-in-weights",
