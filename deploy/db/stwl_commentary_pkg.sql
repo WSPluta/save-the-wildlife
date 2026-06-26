@@ -178,13 +178,13 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
       RETURN JSON_OBJECT('ok' VALUE 0, 'source' VALUE 'oracle-ai-database', 'error' VALUE 'session_not_found');
     END IF;
 
-    v_text := agent_team_script(v_summary, p_agent_team_name, p_max_chars);
+    v_text := select_ai_script(v_summary, p_select_ai_profile, p_max_chars);
     IF v_text IS NOT NULL THEN
-      v_source := 'oracle-ai-database-agent';
+      v_source := 'select-ai';
     ELSE
-      v_text := select_ai_script(v_summary, p_select_ai_profile, p_max_chars);
+      v_text := agent_team_script(v_summary, p_agent_team_name, p_max_chars);
       IF v_text IS NOT NULL THEN
-        v_source := 'select-ai';
+        v_source := 'oracle-ai-database-agent';
       ELSE
         v_text := deterministic_script(v_summary, p_max_chars);
       END IF;

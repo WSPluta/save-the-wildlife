@@ -330,6 +330,10 @@ function modelFastPathReady(config = modelRouterConfig()) {
   return Boolean(providerEndpoint(config.primaryProvider, config));
 }
 
+function liveLineInDbFirst() {
+  return boolEnv("PAF_LIVE_LINE_INDB_FIRST", true);
+}
+
 function normalizeEndpointUrl(endpoint = "") {
   return textValue(endpoint).replace(/\/+$/, "");
 }
@@ -1917,13 +1921,13 @@ END STWL_COMMENTARY_PKG;`,
       RETURN JSON_OBJECT('ok' VALUE 0, 'source' VALUE 'oracle-ai-database', 'error' VALUE 'session_not_found');
     END IF;
 
-    v_text := agent_team_script(v_summary, p_agent_team_name, p_max_chars);
+    v_text := select_ai_script(v_summary, p_select_ai_profile, p_max_chars);
     IF v_text IS NOT NULL THEN
-      v_source := 'oracle-ai-database-agent';
+      v_source := 'select-ai';
     ELSE
-      v_text := select_ai_script(v_summary, p_select_ai_profile, p_max_chars);
+      v_text := agent_team_script(v_summary, p_agent_team_name, p_max_chars);
       IF v_text IS NOT NULL THEN
-        v_source := 'select-ai';
+        v_source := 'oracle-ai-database-agent';
       ELSE
         v_text := deterministic_script(v_summary, p_max_chars);
       END IF;
@@ -3224,13 +3228,43 @@ async function buildCommentary(body = {}, options = {}) {
   let diagnosticWarnings = [];
   let matchContext = null;
   const matchConfig = matchIntelligenceConfig();
+  const inDbFirstForLiveLine = requestedOutput === "live_line" && liveLineInDbFirst();
+  let inDbAgent = null;
+  let inDbAgentAttempted = false;
   const skipRoomLiveLineModelRoute = () => Boolean(
     requestedOutput === "live_line"
     && matchContext?.capabilities?.room_session_resolved
     && !boolEnv("PAF_ROOM_LIVE_LINE_MODEL_ROUTE_ENABLED", false)
   );
+  const tryInDbAgent = async () => {
+    if (inDbAgentAttempted || !summary.session_id || !summary.player_id) return inDbAgent;
+    inDbAgentAttempted = true;
+    try {
+      const candidate = await withTimeout(
+        callInDbAgent(summary, maxChars, options),
+        inDbAgentConfig().timeoutMs,
+        "indb_agent"
+      );
+      if (candidate?.summary) summary = candidate.summary;
+      if (candidate?.commentary) {
+        const inDbGate = evidenceFactGate(candidate.commentary, summary, maxChars);
+        if (!inDbGate.ok) {
+          diagnosticWarnings = combineWarnings(
+            diagnosticWarnings,
+            `${candidate.source || "oracle-ai-database-agent"}:in_db_output_rejected_${inDbGate.reason}`
+          );
+          return null;
+        }
+        inDbAgent = candidate;
+        return inDbAgent;
+      }
+    } catch (error) {
+      warning = [warning, error.message].filter(Boolean).join("; ");
+    }
+    return null;
+  };
 
-  if (!options.skipOracleSummary && bodySummary.session_id && bodySummary.player_id) {
+  if (!options.skipOracleSummary && bodySummary.session_id && bodySummary.player_id && !inDbFirstForLiveLine) {
     try {
       const oracleSummary = await withTimeout(
         getOracleSummary(bodySummary.session_id, bodySummary.player_id, options),
@@ -3267,6 +3301,41 @@ async function buildCommentary(body = {}, options = {}) {
       }
     } catch (error) {
       warning = [warning, error.message].filter(Boolean).join("; ");
+    }
+  }
+
+  if (inDbFirstForLiveLine && summary.session_id && summary.player_id) {
+    const earlyInDbAgent = await tryInDbAgent();
+    if (earlyInDbAgent?.commentary) {
+      const { formats, legacySource, legacy } = buildLegacyEnvelope(summary, matchContext || {}, {
+        source,
+        inDbAgent: earlyInDbAgent,
+        maxChars,
+      });
+      const modelRoute = skippedModelRoute(
+        summary,
+        matchContext || {},
+        legacy,
+        requestedOutput,
+        maxChars,
+        "live_line_select_ai_first",
+        options
+      );
+      return buildCommentaryResult({
+        selectedCommentary: earlyInDbAgent.commentary,
+        requestedOutput,
+        selectedSource: earlyInDbAgent.source,
+        fallbackSource: legacySource,
+        warning,
+        diagnosticWarnings,
+        modelRoute,
+        inDbAgent: earlyInDbAgent,
+        canvas: null,
+        summary,
+        formats,
+        matchContext,
+        maxChars,
+      });
     }
   }
 
@@ -3395,28 +3464,8 @@ async function buildCommentary(body = {}, options = {}) {
     }
   }
 
-  let inDbAgent = null;
   if (summary.session_id && summary.player_id) {
-    try {
-      inDbAgent = await withTimeout(
-        callInDbAgent(summary, maxChars, options),
-        inDbAgentConfig().timeoutMs,
-        "indb_agent"
-      );
-      if (inDbAgent?.summary) summary = inDbAgent.summary;
-      if (inDbAgent?.commentary) {
-        const inDbGate = evidenceFactGate(inDbAgent.commentary, summary, maxChars);
-        if (!inDbGate.ok) {
-          diagnosticWarnings = combineWarnings(
-            diagnosticWarnings,
-            `${inDbAgent.source || "oracle-ai-database-agent"}:in_db_output_rejected_${inDbGate.reason}`
-          );
-          inDbAgent = null;
-        }
-      }
-    } catch (error) {
-      warning = [warning, error.message].filter(Boolean).join("; ");
-    }
+    await tryInDbAgent();
   }
 
   let canvas = null;

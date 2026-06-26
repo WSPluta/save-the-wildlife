@@ -72,6 +72,8 @@ spec:
           value: "60000"
         - name: PAF_TRACE_PERSIST
           value: "false"
+        - name: PAF_LIVE_LINE_INDB_FIRST
+          value: "true"
         envFrom:
         - configMapRef:
             name: private-agent-factory-env

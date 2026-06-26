@@ -433,6 +433,7 @@ test("returns in-db commentary when Canvas exceeds the remaining commentary budg
     PAF_MODEL_ROUTE_MODE: "shadow",
     OCI_BASE_MODEL_ENDPOINT_URL: "",
     OCI_FT_MODEL_ENDPOINT_URL: "",
+    PAF_LIVE_LINE_INDB_FIRST: "false",
     PAF_TRACE_PERSIST: "false",
   }, async () => {
     const started = Date.now();
@@ -789,6 +790,7 @@ test("runs shadow primary and candidate model calls concurrently", async () => {
     PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
     OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
     OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
+    PAF_LIVE_LINE_INDB_FIRST: "false",
     PAF_TRACE_PERSIST: "false",
   }, async () => {
     const response = await buildCommentary(
@@ -857,6 +859,7 @@ test("keeps shadow candidate timeout as diagnostics when primary model returns c
     PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
     OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
     OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
+    PAF_LIVE_LINE_INDB_FIRST: "false",
     PAF_TRACE_PERSIST: "false",
   }, async () => {
     const response = await buildCommentary(
@@ -974,6 +977,7 @@ test("keeps primary model timeout as diagnostics when in-db agent returns commen
     PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
     OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
     OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
+    PAF_LIVE_LINE_INDB_FIRST: "false",
     PAF_TRACE_PERSIST: "false",
   }, async () => {
     const response = await buildCommentary(
@@ -1004,7 +1008,7 @@ test("keeps primary model timeout as diagnostics when in-db agent returns commen
   });
 });
 
-test("does not let slow model diagnostics block grounded in-db commentary", async () => {
+test("uses in-db Select AI before configured live model fast path", async () => {
   const oracleConnection = {
     async execute() {
       return {
@@ -1041,7 +1045,7 @@ test("does not let slow model diagnostics block grounded in-db commentary", asyn
     PAF_CANVAS_RUN_ENDPOINT_URL: "",
     PAF_ENDPOINT_URL: "",
     PAF_MATCH_INTELLIGENCE_ENABLED: "false",
-    PAF_MODEL_FAST_PATH_ENABLED: "false",
+    PAF_MODEL_FAST_PATH_ENABLED: "true",
     PAF_MODEL_ROUTE_MODE: "shadow",
     PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
     PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
@@ -1075,8 +1079,8 @@ test("does not let slow model diagnostics block grounded in-db commentary", asyn
     assert.equal(response.commentary, "Select AI kept the live line grounded in collected trash.");
     assert.equal(response.trace_id, "TRACE-BUDGETED-MODEL");
     assert.equal(response.model_route.primary.skipped, true);
-    assert.equal(response.model_route.primary.error, "model_route_budget_exhausted");
-    assert.match(response.diagnostics.warnings.join("; "), /model_route:model_route_budget_exhausted/);
+    assert.equal(response.model_route.primary.error, "live_line_select_ai_first");
+    assert.equal(response.in_db_agent.source, "select-ai");
   });
 
   assert.equal(modelCalls, 0);
@@ -1131,6 +1135,7 @@ test("persists skipped model route traces when live model diagnostics time out",
     OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
     OCI_MODEL_ENDPOINT_TIMEOUT_MS: "500",
     PAF_COMMENTARY_DEADLINE_MS: "700",
+    PAF_LIVE_LINE_INDB_FIRST: "false",
     PAF_TRACE_PERSIST: "true",
   }, async () => {
     const response = await buildCommentary(
@@ -1216,6 +1221,7 @@ test("starts deferred model route before slow in-db fallback completes", async (
     PAF_CANDIDATE_MODEL_PROVIDER: "oci-fine-tuned",
     OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
     OCI_FT_MODEL_ENDPOINT_URL: "http://fine-tuned.example.test/v1/chat/completions",
+    PAF_LIVE_LINE_INDB_FIRST: "false",
     PAF_TRACE_PERSIST: "false",
   }, async () => {
     const response = await buildCommentary(
@@ -2042,6 +2048,7 @@ test("falls back to deterministic SQL commentary when in-db agent and Canvas fai
     PAF_CANVAS_TIMEOUT_MS: "1000",
     PAF_CANVAS_VERIFY_TLS: "false",
     PAF_CANVAS_SESSION_COOKIE: "agent_factory_session=test",
+    PAF_LIVE_LINE_INDB_FIRST: "false",
   }, async () => {
     const response = await buildCommentary(
       {
@@ -2106,6 +2113,7 @@ test("passes the in-db agent draft into Canvas and reports fallback source", asy
     PAF_CANVAS_TIMEOUT_MS: "1000",
     PAF_CANVAS_VERIFY_TLS: "false",
     PAF_CANVAS_SESSION_COOKIE: "agent_factory_session=test",
+    PAF_LIVE_LINE_INDB_FIRST: "false",
   }, async () => {
     const response = await buildCommentary(
       {
@@ -2145,6 +2153,10 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(packageSql, /stwl_game_events/i);
   assert.match(packageSql, /DBMS_CLOUD_AI_AGENT\.RUN_TEAM/i);
   assert.match(packageSql, /DBMS_CLOUD_AI\.GENERATE/i);
+  assert.ok(
+    packageSql.indexOf("v_text := select_ai_script") < packageSql.indexOf("v_text := agent_team_script"),
+    "Select AI should be attempted before the agent team for fastest live commentary"
+  );
   assert.match(packageSql, /oracle-ai-database-deterministic/i);
   assert.match(packageSql, /\bhistory\s+AS\s*\(/i);
   assert.doesNotMatch(packageSql, /\bprior\s+AS\s*\(/i);
