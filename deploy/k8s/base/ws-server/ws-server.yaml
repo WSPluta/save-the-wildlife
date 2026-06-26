@@ -56,7 +56,7 @@ spec:
           - name: PAF_AGENT_BASE_URL
             value: "http://private-agent-factory:8080"
           - name: PAF_AGENT_TIMEOUT_MS
-            value: "65000"
+            value: "75000"
           volumeMounts:
           - name: config-volume
             mountPath: /usr/src/app/config

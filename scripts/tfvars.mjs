@@ -360,9 +360,9 @@ async function devopsTFvars() {
   const pafCanvasLlmConfigName = process.env.PAF_CANVAS_LLM_CONFIG_NAME || "llm_model_entry";
   const pafCanvasRequireLlmConfig = process.env.PAF_CANVAS_REQUIRE_LLM_CONFIG || "false";
   const pafCanvasRoomId = process.env.PAF_CANVAS_ROOM_ID || "";
-  const pafCanvasTimeoutMs = process.env.PAF_CANVAS_TIMEOUT_MS || "1000";
+  const pafCanvasTimeoutMs = process.env.PAF_CANVAS_TIMEOUT_MS || "750";
   const pafCommentaryDeadlineMs = process.env.PAF_COMMENTARY_DEADLINE_MS || "60000";
-  const pafCanvasReturnReserveMs = process.env.PAF_CANVAS_RETURN_RESERVE_MS || "750";
+  const pafCanvasReturnReserveMs = process.env.PAF_CANVAS_RETURN_RESERVE_MS || "250";
   const pafCanvasMinTimeoutMs = process.env.PAF_CANVAS_MIN_TIMEOUT_MS || "100";
   const pafCanvasVerifyTls = process.env.PAF_CANVAS_VERIFY_TLS || "false";
   const pafModelRouteMode = process.env.PAF_MODEL_ROUTE_MODE || "primary";
@@ -402,7 +402,7 @@ async function devopsTFvars() {
   const modelAiRequireUpstreamReady = process.env.MODEL_AI_REQUIRE_UPSTREAM_READY || (useTfOllamaUpstream ? "true" : "false");
   const modelAiRequirePrivateOllama = process.env.MODEL_AI_REQUIRE_PRIVATE_OLLAMA || (useTfOllamaUpstream ? "true" : "false");
   const ociModelEndpointAuthSecretId = process.env.OCI_MODEL_ENDPOINT_AUTH_SECRET_ID || modelEndpointAuthSecretId || "";
-  const ociModelEndpointTimeoutMs = process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "50000";
+  const ociModelEndpointTimeoutMs = process.env.OCI_MODEL_ENDPOINT_TIMEOUT_MS || "60000";
   const ociModelEndpointVerifyTls = process.env.OCI_MODEL_ENDPOINT_VERIFY_TLS || "true";
   const pafTracePersist = process.env.PAF_TRACE_PERSIST || "true";
   const pafEvalEnabled = process.env.PAF_EVAL_ENABLED || "true";

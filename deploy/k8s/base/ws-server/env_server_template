@@ -67,7 +67,7 @@ GAME_EVENTS_DB_CONNECT_STRING=TEMPLATE_ADB_SERVICE_high
 GAME_EVENTS_AUTO_INIT=true
 GAME_EVENTS_SERVICE_BASE_URL=http://score:8080
 PAF_AGENT_BASE_URL=http://private-agent-factory:8080
-PAF_AGENT_TIMEOUT_MS=65000
+PAF_AGENT_TIMEOUT_MS=75000
 
 # Disable local replay fallback (use Replay service via ClusterIP/Ingress)
 ENABLE_REPLAY_FALLBACK=false

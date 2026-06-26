@@ -222,7 +222,7 @@ describe("production collision configuration", () => {
     const template = readFileSync("../deploy/k8s/base/ws-server/env_server_template", "utf8");
     expect(template).toContain(`COLLISION_VALIDATE_RADIUS=${DEFAULT_COLLISION_VALIDATE_RADIUS}`);
     expect(template).toContain(`PICKUP_TOUCH_FORGIVENESS=${DEFAULT_PICKUP_TOUCH_FORGIVENESS}`);
-    expect(template).toContain("PAF_AGENT_TIMEOUT_MS=65000");
+    expect(template).toContain("PAF_AGENT_TIMEOUT_MS=75000");
   });
 });
 
