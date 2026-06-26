@@ -35,11 +35,11 @@ spec:
             - name: BOT_ROOM_ID
               value: ROOM-0001
             - name: BOT_TARGET_PLAYERS
-              value: "8"
+              value: "5"
             - name: BOT_MIN_BOTS
-              value: "4"
+              value: "2"
             - name: BOT_MAX_BOTS
-              value: "12"
+              value: "5"
             - name: BOT_GENERATE_GAME_EVENTS
               value: "true"
             - name: BOT_SYNTHETIC_MECHANICS_EVENTS
@@ -47,13 +47,13 @@ spec:
             - name: BOT_TRACE_RATE_MS
               value: "80"
             - name: BOT_THROTTLE
-              value: "0.58"
+              value: "0.42"
             - name: BOT_ACCELERATION
               value: "3.2"
             - name: BOT_MAX_SPEED
-              value: "1.85"
+              value: "1.25"
             - name: BOT_TURN_SPEED
-              value: "0.46"
+              value: "0.34"
             - name: BOT_WORLD_HALF_WIDTH
               value: "64"
             - name: BOT_WORLD_HALF_HEIGHT
