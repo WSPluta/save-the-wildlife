@@ -57,22 +57,24 @@ spec:
         - name: PAF_ADAPTER_HEALTH_TIMEOUT_MS
           value: "30000"
         - name: PAF_ORACLE_QUERY_TIMEOUT_MS
-          value: "1500"
+          value: "2000"
         - name: PAF_CONTEXT_TIMEOUT_MS
           value: "1500"
         - name: INDB_AGENT_TIMEOUT_MS
-          value: "1500"
+          value: "4500"
         - name: PAF_CANVAS_TIMEOUT_MS
           value: "750"
         - name: PAF_CANVAS_RETURN_RESERVE_MS
           value: "250"
         - name: PAF_COMMENTARY_DEADLINE_MS
-          value: "60000"
+          value: "8000"
         - name: OCI_MODEL_ENDPOINT_TIMEOUT_MS
-          value: "60000"
+          value: "5000"
         - name: PAF_TRACE_PERSIST
           value: "false"
         - name: PAF_LIVE_LINE_INDB_FIRST
+          value: "true"
+        - name: PAF_LIVE_LINE_FAST_RETURN
           value: "true"
         envFrom:
         - configMapRef:

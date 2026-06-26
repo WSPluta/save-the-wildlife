@@ -1331,6 +1331,65 @@ test("uses model fast path before slow Canvas enrichment when endpoints are conf
   assert.equal(canvasCalls, 0);
 });
 
+test("live-line fast return skips slow model route when in-db agent misses budget", async () => {
+  let modelCalls = 0;
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    INDB_AGENT_TIMEOUT_MS: "5",
+    PAF_LIVE_LINE_INDB_FIRST: "true",
+    PAF_LIVE_LINE_FAST_RETURN: "true",
+    PAF_MODEL_FAST_PATH_ENABLED: "true",
+    PAF_MODEL_ROUTE_MODE: "primary",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "http://canvas.example.test/run",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-FAST-RETURN",
+          room_id: "ROOM-FAST-RETURN",
+          player_id: "P-FAST-RETURN",
+          player_name: "Ada",
+          score: 18,
+          trash_collected: 2,
+          freezes: 1,
+          trail_crosses: 1,
+        },
+        output_format: "live_line",
+      },
+      {
+        skipOracleSummary: true,
+        traceId: "TRACE-FAST-RETURN",
+        oracleConnection: {
+          execute: async () => {
+            await sleep(30);
+            return {};
+          },
+        },
+        requestJson: async () => {
+          throw new Error("canvas_should_not_run_for_live_fast_return");
+        },
+        modelRequestJson: async () => {
+          modelCalls += 1;
+          throw new Error("model_should_not_run_for_live_fast_return");
+        },
+      }
+    );
+
+    assert.equal(response.ok, true);
+    assert.equal(response.source, "request-summary");
+    assert.equal(response.commentary, "Trail drama: frozen 1x after 1 crossing(s), finished 18.");
+    assert.equal(response.model_route.primary.skipped, true);
+    assert.equal(response.model_route.primary.error, "live_line_fast_oracle_context");
+    assert.equal(response.canvas, null);
+    assert.equal(response.in_db_agent, null);
+  });
+
+  assert.equal(modelCalls, 0);
+});
+
 test("model router config clamps invalid numeric environment values", async () => {
   await withEnv({
     PAF_MODEL_ROUTE_MODE: "unexpected",

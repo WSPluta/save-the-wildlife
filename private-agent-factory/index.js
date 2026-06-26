@@ -334,6 +334,10 @@ function liveLineInDbFirst() {
   return boolEnv("PAF_LIVE_LINE_INDB_FIRST", true);
 }
 
+function liveLineFastReturnEnabled() {
+  return boolEnv("PAF_LIVE_LINE_FAST_RETURN", false);
+}
+
 function normalizeEndpointUrl(endpoint = "") {
   return textValue(endpoint).replace(/\/+$/, "");
 }
@@ -3264,7 +3268,13 @@ async function buildCommentary(body = {}, options = {}) {
     return null;
   };
 
-  if (!options.skipOracleSummary && bodySummary.session_id && bodySummary.player_id && !inDbFirstForLiveLine) {
+  const liveLineFastReturn = requestedOutput === "live_line" && liveLineFastReturnEnabled();
+  const shouldFetchOracleSummary = !options.skipOracleSummary
+    && bodySummary.session_id
+    && bodySummary.player_id
+    && (!inDbFirstForLiveLine || liveLineFastReturn);
+
+  if (shouldFetchOracleSummary) {
     try {
       const oracleSummary = await withTimeout(
         getOracleSummary(bodySummary.session_id, bodySummary.player_id, options),
@@ -3337,6 +3347,40 @@ async function buildCommentary(body = {}, options = {}) {
         maxChars,
       });
     }
+  }
+
+  if (liveLineFastReturn) {
+    const { formats, baseCommentary, legacySource, legacy } = buildLegacyEnvelope(summary, matchContext || {}, {
+      source,
+      inDbAgent,
+      maxChars,
+    });
+    const modelRoute = skippedModelRoute(
+      summary,
+      matchContext || {},
+      legacy,
+      requestedOutput,
+      maxChars,
+      "live_line_fast_oracle_context",
+      options
+    );
+    const selectedSource = inDbAgent?.source
+      || (source === "oracle-sql" ? "oracle-ai-database-sql" : legacySource);
+    return buildCommentaryResult({
+      selectedCommentary: baseCommentary,
+      requestedOutput,
+      selectedSource,
+      fallbackSource: inDbAgent ? (source || legacySource) : null,
+      warning,
+      diagnosticWarnings,
+      modelRoute,
+      inDbAgent,
+      canvas: null,
+      summary,
+      formats,
+      matchContext,
+      maxChars,
+    });
   }
 
   if (["live_line", "post_match_recap"].includes(requestedOutput) && modelFastPathReady() && !skipRoomLiveLineModelRoute()) {
@@ -3609,6 +3653,7 @@ app.get("/healthz", async (req, res) => {
     select_ai_region: inDbConfig.selectAiRegion,
     select_ai_model: inDbConfig.selectAiModel,
     select_ai_agent_team_configured: Boolean(inDbConfig.agentTeamName),
+    live_line_fast_return: liveLineFastReturnEnabled(),
     match_intelligence_enabled: matchConfig.enabled,
     match_intelligence_auto_init: matchConfig.autoInit,
     graph_retrieval_enabled: matchConfig.graphEnabled,
