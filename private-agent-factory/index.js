@@ -3323,7 +3323,7 @@ async function buildCommentary(body = {}, options = {}) {
   const shouldFetchOracleSummary = !options.skipOracleSummary
     && bodySummary.session_id
     && bodySummary.player_id
-    && (!inDbFirstForLiveLine || liveLineFastReturn);
+    && !inDbFirstForLiveLine;
 
   if (shouldFetchOracleSummary) {
     try {

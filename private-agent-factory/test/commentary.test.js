@@ -1463,6 +1463,74 @@ test("live-line fast return can select guarded Select AI output", async () => {
   });
 });
 
+test("live-line Select AI path runs before generic Oracle summary fetch", async () => {
+  const calls = [];
+  const oracleConnection = {
+    async execute(sql) {
+      calls.push(String(sql));
+      assert.match(String(sql), /build_script_json/);
+      return {
+        outBinds: {
+          result: JSON.stringify({
+            ok: true,
+            source: "select-ai",
+            commentary: "Ada finished on 9 points from recorded telemetry.",
+            summary: {
+              session_id: "S-SELECT-AI-FIRST",
+              room_id: "ROOM-SELECT-AI-FIRST",
+              player_id: "P-SELECT-AI-FIRST",
+              player_name: "Ada",
+              score: 9,
+              trash_collected: 1,
+              marine_hits: 0,
+              trail_crosses: 0,
+              freezes: 0,
+              powerups: {},
+            },
+          }),
+        },
+      };
+    },
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    PAF_LIVE_LINE_INDB_FIRST: "true",
+    PAF_LIVE_LINE_FAST_RETURN: "true",
+    PAF_MODEL_FAST_PATH_ENABLED: "true",
+    PAF_MODEL_ROUTE_MODE: "primary",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-SELECT-AI-FIRST",
+          room_id: "ROOM-SELECT-AI-FIRST",
+          player_id: "P-SELECT-AI-FIRST",
+          player_name: "Ada",
+          score: 9,
+        },
+        output_format: "live_line",
+      },
+      {
+        traceId: "TRACE-SELECT-AI-FIRST",
+        oracleConnection,
+        oracledb: { BIND_OUT: 3003, STRING: 2001 },
+        modelRequestJson: async () => {
+          throw new Error("model_should_not_run_for_select_ai_first");
+        },
+      }
+    );
+
+    assert.equal(response.ok, true);
+    assert.equal(response.source, "select-ai");
+    assert.equal(response.commentary, "Ada finished on 9 points from recorded telemetry.");
+    assert.equal(calls.length, 1);
+  });
+});
+
 test("model router config clamps invalid numeric environment values", async () => {
   await withEnv({
     PAF_MODEL_ROUTE_MODE: "unexpected",
