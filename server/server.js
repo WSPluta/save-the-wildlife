@@ -1596,7 +1596,10 @@ function scheduleRoomRefill(room, delayMs = 0) {
     });
 
     socket.on("items.collision", async ({ itemId, playerId, playerName, clientPosition, clientItemPosition } = {}, ack) => {
+      let ackSent = false;
       const safeAck = (payload) => {
+        if (ackSent) return;
+        ackSent = true;
         try { if (typeof ack === "function") ack(payload); } catch (_) {}
       };
       try {
@@ -1717,6 +1720,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           }
           const accepted = acceptedPayload(1);
           io.to(room).emit("item.destroy", accepted);
+          safeAck(accepted);
           if (item) itemPool.returnObject(item);
           await postCurrentScore(playerId, playerName, "INCREMENT");
           await recordGameEvent({
@@ -1728,7 +1732,6 @@ function scheduleRoomRefill(room, delayMs = 0) {
             position: itemSnapshot?.position,
             metadata: { item_type: itemSnapshot?.type || "trash" },
           }, { roomId: room, sessionId: sessionIdForRoom(room) });
-          safeAck(accepted);
           await refillOnce(room);
         } else if (itemType === "turtle") {
           if (ENABLE_COHERENCE_BACKEND) {
@@ -1739,6 +1742,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           const shielded = !!(SERVER_AUTH_ENABLED && playersState.get(playerId)?.shield);
           const accepted = acceptedPayload(shielded ? 0 : -1);
           io.to(room).emit("item.destroy", accepted);
+          safeAck(accepted);
           if (item) itemPool.returnObject(item);
           // If shielded under authority, do not decrement
           if (!shielded) {
@@ -1753,7 +1757,6 @@ function scheduleRoomRefill(room, delayMs = 0) {
               metadata: { item_type: itemSnapshot?.type || "turtle" },
             }, { roomId: room, sessionId: sessionIdForRoom(room) });
           }
-          safeAck(accepted);
           await refillOnce(room);
         } else {
           // Power-ups
@@ -1764,6 +1767,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           }
           const accepted = acceptedPayload(0);
           io.to(room).emit("item.destroy", accepted);
+          safeAck(accepted);
           if (item) itemPool.returnObject(item);
 
           if (SERVER_AUTH_ENABLED) {
@@ -1805,7 +1809,6 @@ function scheduleRoomRefill(room, delayMs = 0) {
             powerupType: itemSnapshot?.type,
             metadata: { item_type: itemSnapshot?.type },
           }, { roomId: room, sessionId: sessionIdForRoom(room) });
-          safeAck(accepted);
         }
       } catch (e) {
         logger.error(`items.collision error: ${e && e.message ? e.message : e}`);
