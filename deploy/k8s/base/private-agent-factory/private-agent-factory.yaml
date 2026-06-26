@@ -53,6 +53,15 @@ spec:
           limits:
             cpu: 1000m
             memory: 1024Mi
+        env:
+        - name: PAF_ADAPTER_HEALTH_TIMEOUT_MS
+          value: "30000"
+        - name: PAF_COMMENTARY_DEADLINE_MS
+          value: "60000"
+        - name: OCI_MODEL_ENDPOINT_TIMEOUT_MS
+          value: "50000"
+        - name: PAF_TRACE_PERSIST
+          value: "false"
         envFrom:
         - configMapRef:
             name: private-agent-factory-env
