@@ -115,7 +115,7 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
 
   FUNCTION build_prompt(p_summary IN CLOB) RETURN CLOB IS
   BEGIN
-    RETURN 'Use only this Save the Wildlife SQL telemetry JSON. Return one profanity-free commentator line under 200 characters. Mention powerups, trail crossings, freezes, coordinates, or prior best only when present. ' || p_summary;
+    RETURN 'Use only this Save the Wildlife SQL telemetry JSON. Return exactly one short commentator sentence under 200 characters and no prefix. Never invent events. Do not use the words trail, crossing, freeze, frozen, powerup, shield, magnet, speed, boost, win, victory, policy, or trained unless the JSON has a non-zero matching count. If score and pickups are zero, say only the recorded score/pickup result or coordinates. JSON: ' || p_summary;
   END;
 
   FUNCTION select_ai_script(p_summary IN CLOB, p_profile IN VARCHAR2, p_max_chars IN NUMBER) RETURN VARCHAR2 IS

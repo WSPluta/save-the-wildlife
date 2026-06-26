@@ -1282,6 +1282,49 @@ function evidenceFactGate(text, summary = {}, maxChars = COMMENTARY_MAX_CHARS) {
   return { ok, reason, scores };
 }
 
+function splitCommentarySentences(text = "") {
+  return String(text || "")
+    .replace(/^commentator:\s*/i, "")
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function hasUnsupportedMechanicText(text = "", summary = {}) {
+  const normalized = String(text || "").toLowerCase();
+  const powerups = compactPowerupNames(summary.powerups);
+  const mentionsPowerup = /powerup|shield|magnet|boost/.test(normalized);
+  const mentionsFreeze = /frozen|freeze/.test(normalized);
+  const mentionsTrail = /trail|cross/.test(normalized);
+  const mentionsPolicy = /\b(policy|persona|trained|hunter|cleaner|ambusher|risk taker)\b/.test(normalized);
+  const mentionsWin = /\b(win|wins|won|victory|champion)\b/.test(normalized);
+  return Boolean(
+    (mentionsFreeze && !summary.freezes && !powerups.includes("freeze")) ||
+    (mentionsPowerup && powerups.length === 0 && !summary.freezes) ||
+    (mentionsTrail && !summary.trail_crosses) ||
+    (mentionsPolicy && !summary.bot_policy) ||
+    mentionsWin
+  );
+}
+
+function repairInDbCommentary(text, summary = {}, maxChars = COMMENTARY_MAX_CHARS) {
+  const original = enforceCommentary(text, maxChars).replace(/^commentator:\s*/i, "").trim();
+  if (!hasUnsupportedMechanicText(original, summary)) return { text: original, repaired: false };
+
+  const kept = splitCommentarySentences(original)
+    .filter((part) => !hasUnsupportedMechanicText(part, summary));
+  if (!kept.length) return null;
+
+  let repaired = kept.join(" ");
+  const score = Number.isFinite(Number(summary.score)) ? String(Number(summary.score)) : "";
+  if (score && !repaired.includes(score)) {
+    repaired = `Score ${score}. ${repaired}`;
+  }
+  repaired = enforceCommentary(repaired, maxChars);
+  const gate = evidenceFactGate(repaired, summary, maxChars);
+  return gate.ok ? { text: repaired, repaired: repaired !== original } : null;
+}
+
 function booleanScore(scores = {}) {
   return Object.entries(scores)
     .filter(([key]) => !key.endsWith("_count") && key !== "token_count")
@@ -1862,7 +1905,7 @@ END STWL_COMMENTARY_PKG;`,
 
   FUNCTION build_prompt(p_summary IN CLOB) RETURN CLOB IS
   BEGIN
-    RETURN 'Use only this Save the Wildlife SQL telemetry JSON. Return one profanity-free commentator line under 200 characters. Mention powerups, trail crossings, freezes, coordinates, or prior best only when present. ' || p_summary;
+    RETURN 'Use only this Save the Wildlife SQL telemetry JSON. Return exactly one short commentator sentence under 200 characters and no prefix. Never invent events. Do not use the words trail, crossing, freeze, frozen, powerup, shield, magnet, speed, boost, win, victory, policy, or trained unless the JSON has a non-zero matching count. If score and pickups are zero, say only the recorded score/pickup result or coordinates. JSON: ' || p_summary;
   END;
 
   FUNCTION select_ai_script(p_summary IN CLOB, p_profile IN VARCHAR2, p_max_chars IN NUMBER) RETURN VARCHAR2 IS
@@ -3251,7 +3294,15 @@ async function buildCommentary(body = {}, options = {}) {
       );
       if (candidate?.summary) summary = candidate.summary;
       if (candidate?.commentary) {
-        const inDbGate = evidenceFactGate(candidate.commentary, summary, maxChars);
+        const repairedCandidate = repairInDbCommentary(candidate.commentary, summary, maxChars);
+        if (repairedCandidate?.repaired) {
+          diagnosticWarnings = combineWarnings(
+            diagnosticWarnings,
+            `${candidate.source || "oracle-ai-database-agent"}:in_db_output_guarded`
+          );
+        }
+        const candidateCommentary = repairedCandidate?.text || candidate.commentary;
+        const inDbGate = evidenceFactGate(candidateCommentary, summary, maxChars);
         if (!inDbGate.ok) {
           diagnosticWarnings = combineWarnings(
             diagnosticWarnings,
@@ -3259,7 +3310,7 @@ async function buildCommentary(body = {}, options = {}) {
           );
           return null;
         }
-        inDbAgent = candidate;
+        inDbAgent = { ...candidate, commentary: candidateCommentary };
         return inDbAgent;
       }
     } catch (error) {

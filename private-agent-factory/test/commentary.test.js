@@ -1390,6 +1390,79 @@ test("live-line fast return skips slow model route when in-db agent misses budge
   assert.equal(modelCalls, 0);
 });
 
+test("live-line fast return can select guarded Select AI output", async () => {
+  const oracleConnection = {
+    async execute() {
+      return {
+        outBinds: {
+          result: JSON.stringify({
+            ok: true,
+            source: "select-ai",
+            commentary: "Ada is navigating the trail with precision. Keep an eye on those coordinates!",
+            summary: {
+              session_id: "S-SELECT-AI-GUARDED",
+              room_id: "ROOM-SELECT-AI-GUARDED",
+              player_id: "P-SELECT-AI-GUARDED",
+              player_name: "Ada",
+              score: 0,
+              trash_collected: 0,
+              marine_hits: 0,
+              trail_crosses: 0,
+              freezes: 0,
+              powerups: {},
+              last_position: { x: 1.25, y: 0, z: 10.5 },
+            },
+          }),
+        },
+      };
+    },
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    PAF_LIVE_LINE_INDB_FIRST: "true",
+    PAF_LIVE_LINE_FAST_RETURN: "true",
+    PAF_MODEL_FAST_PATH_ENABLED: "true",
+    PAF_MODEL_ROUTE_MODE: "primary",
+    PAF_PRIMARY_MODEL_PROVIDER: "oci-base",
+    OCI_BASE_MODEL_ENDPOINT_URL: "http://base.example.test/v1/chat/completions",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "http://canvas.example.test/run",
+  }, async () => {
+    const response = await buildCommentary(
+      {
+        summary: {
+          session_id: "S-SELECT-AI-GUARDED",
+          room_id: "ROOM-SELECT-AI-GUARDED",
+          player_id: "P-SELECT-AI-GUARDED",
+          player_name: "Ada",
+          score: 0,
+        },
+        output_format: "live_line",
+      },
+      {
+        skipOracleSummary: true,
+        traceId: "TRACE-SELECT-AI-GUARDED",
+        oracleConnection,
+        oracledb: { BIND_OUT: 3003, STRING: 2001 },
+        modelRequestJson: async () => {
+          throw new Error("model_should_not_run_for_guarded_select_ai");
+        },
+        requestJson: async () => {
+          throw new Error("canvas_should_not_run_for_guarded_select_ai");
+        },
+      }
+    );
+
+    assert.equal(response.ok, true);
+    assert.equal(response.source, "select-ai");
+    assert.equal(response.commentary, "Score 0. Keep an eye on those coordinates!");
+    assert.equal(response.in_db_agent.source, "select-ai");
+    assert.equal(response.model_route.primary.skipped, true);
+    assert.match(response.warnings.join("; "), /select-ai:in_db_output_guarded/);
+  });
+});
+
 test("model router config clamps invalid numeric environment values", async () => {
   await withEnv({
     PAF_MODEL_ROUTE_MODE: "unexpected",
