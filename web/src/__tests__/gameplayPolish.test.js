@@ -31,6 +31,14 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/if \(shouldStartGameplayTelemetry\) \{[\s\S]{0,180}resetGameplayTelemetry\(\);[\s\S]{0,120}emitGameplayEvent\("game_started"/);
   });
 
+  it("does not reset or re-register the local boat on duplicate game.on events", () => {
+    const start = script.indexOf('case "game.on":');
+    const end = script.indexOf('case "game.end":', start);
+    const gameOnBlock = script.slice(start, end);
+    expect(gameOnBlock).toMatch(/if \(clientGameStarted && shouldStartGameplayTelemetry\) \{/);
+    expect(gameOnBlock).not.toMatch(/type: "game\.start"/);
+  });
+
   it("uses the presenter start path for dev/test autostart", () => {
     expect(script).toMatch(/function requestAutoStartMatch\(\)/);
     expect(script).toMatch(/type: "admin\.presenter\.start"/);
@@ -187,12 +195,27 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const REMOTE_PLAYER_POSITION_SMOOTHING = 7\.5;/);
     expect(script).toMatch(/const REMOTE_PLAYER_ROTATION_SMOOTHING = 8\.5;/);
     expect(script).toMatch(/const REMOTE_PLAYER_FROZEN_SMOOTHING = 3\.5;/);
-    expect(script).toMatch(/const REMOTE_PLAYER_LOCAL_SUPPRESSION_RADIUS = 1\.45;/);
+    expect(script).toMatch(/const REMOTE_PLAYER_MAX_VISUAL_STEP = 0\.65;/);
+    expect(script).toMatch(/function remoteStateCoords\(state\)/);
+    expect(script).toMatch(/function seedRemotePlayerVisualFromState\(mesh, state, \{ force = false \} = \{\}\)/);
+    expect(script).toMatch(/function smoothRemotePlayerVisualToState\(mesh, state, lerpFactor\)/);
+    expect(script).toMatch(/group\.userData\.remotePositionInitialized = false;/);
+    expect(script).toMatch(/seedRemotePlayerVisualFromState\(otherPlayersMeshes\[key\], traceData\);/);
+    expect(script).toMatch(/smoothRemotePlayerVisualToState\(m, s, lerpFactor\);/);
+    expect(script).toMatch(/smoothRemotePlayerVisualToState\(playerMeshes\[id\], otherPlayers\[id\], lerpFactor\);/);
+    expect(script).toMatch(/const REMOTE_PLAYER_LOCAL_SUPPRESSION_RADIUS = 0\.95;/);
+    expect(script).toMatch(/const REMOTE_PLAYER_LABEL_SUPPRESSION_RADIUS = 4\.5;/);
+    expect(script).toMatch(/const NAME_TAG_MAX_GRAPHEMES = 12;/);
+    expect(script).toMatch(/function compactNameTagText\(text\)/);
     expect(script).toMatch(/function remoteDistanceToLocal2d\(x, z\)/);
     expect(script).toMatch(/function shouldSuppressRemoteNearLocal\(id, positionLike\)/);
     expect(script).toMatch(/function setRemoteLocalSuppression\(group, suppressed, distance = null\)/);
+    expect(script).toMatch(/group\.userData\.localLabelSuppressed = !!labelSuppressed;/);
+    expect(script).toMatch(/applyNameTagSuppression\(group\);/);
     expect(script).toMatch(/setRemoteLocalSuppression\(m, suppressNearLocal, suppressionDistance\);/);
     expect(script).toMatch(/if \(!suppressNearLocal\) addTrailPoint\(id, m\.position\);/);
+    expect(script).toMatch(/visualX: Number\(\(Number\(mesh\.position\?\.x\) \|\| 0\)\.toFixed\(3\)\),/);
+    expect(script).toMatch(/visualSource: hasVisualMesh \? "mesh" : null,/);
     expect(script).toMatch(/const CANONICAL_BOAT_ACCELERATION = 6;/);
     expect(script).toMatch(/const CANONICAL_BOAT_BRAKE = 1\.8;/);
     expect(script).toMatch(/const CANONICAL_BOAT_MAX_SPEED = 3;/);
@@ -211,6 +234,10 @@ describe("gameplay polish regressions", () => {
   it("resets the visible timer from the server duration when gameplay actually starts", () => {
     expect(script).toMatch(/case "game\.on":/);
     expect(script).toMatch(/if \(Number\.isFinite\(gameDuration\)\) \{[\s\S]{0,160}lastServerTimeSyncValue = Number\(gameDuration\);[\s\S]{0,120}lastServerTimeSyncAtMs = Date\.now\(\);[\s\S]{0,120}renderTimeValue\(gameDuration\);/);
+  });
+
+  it("waits for game.on before unlocking gameplay controls from RUNNING state", () => {
+    expect(script).toMatch(/if \(!clientGameStarted \|\| !currentSessionId\) \{[\s\S]{0,220}Wait for game\.on[\s\S]{0,220}gameState = "STARTING";[\s\S]{0,220}break;/);
   });
 
   it("surfaces frame-rate and frame-time diagnostics in the gameplay HUD", () => {
@@ -287,7 +314,10 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/const turtleWorldMeshes = Object\.values\(itemMeshes \|\| \{\}\)/);
     expect(script).toMatch(/const turtleCameraVisibleCount = turtleWorldMeshes/);
     expect(script).toMatch(/cameraVisible: mesh\.visible !== false,/);
-    expect(script).toMatch(/turtlesVisible: turtleWorldMeshes\.length,/);
+    expect(script).toMatch(/const turtleAuthoritativeItems = Object\.values\(items \|\| \{\}\)/);
+    expect(script).toMatch(/turtlesTotal: turtleAuthoritativeItems\.length,/);
+    expect(script).toMatch(/turtlesRendered: turtleWorldMeshes\.length,/);
+    expect(script).toMatch(/turtlesVisible: turtleCameraVisibleCount,/);
     expect(script).toMatch(/turtlesCameraVisible: turtleCameraVisibleCount,/);
     expect(script).toMatch(/waterColor: ARCADE_ENVIRONMENT\.waterColor,/);
   });
@@ -374,11 +404,13 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/statusBadge\.scale\.set\(layout\.statusScale, layout\.statusScale, 1\);/);
     expect(script).toMatch(/sprite\.userData\.text = text \|\| "";/);
     expect(script).toMatch(/const EMOJI_BADGE_TEXTURE_SIZE = 192;/);
-    expect(script).toMatch(/const EMOJI_BADGE_SAFE_WIDTH_RATIO = 0\.68;/);
+    expect(script).toMatch(/const EMOJI_BADGE_SAFE_WIDTH_RATIO = 0\.62;/);
+    expect(script).toMatch(/const EMOJI_BADGE_MIN_FONT_RATIO = 0\.1;/);
     expect(script).toMatch(/const EMOJI_BADGE_COMPACT_MIN_COUNT = 3;/);
     expect(script).toMatch(/canvas\.width = EMOJI_BADGE_TEXTURE_SIZE;/);
     expect(script).toMatch(/function splitBadgeGraphemes\(text\)/);
     expect(script).toMatch(/function compactBadgeText\(text, ctx, maxWidth, fontSize\)/);
+    expect(script).toContain("if (/[A-Za-z0-9]/.test(original)) return original;");
     expect(script).toMatch(/const compact = `\$\{first\}\+\$\{graphemes\.length - 1\}`;/);
     expect(script).toMatch(/const maxWidth = size \* EMOJI_BADGE_SAFE_WIDTH_RATIO;/);
     expect(script).toMatch(/while \(fontSize >= minFontSize\)/);
@@ -389,6 +421,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/sprite\.userData\.textWidthRatio = measuredWidth > 0 \? measuredWidth \/ size : 0;/);
     expect(script).toMatch(/function getBadgeDebug\(sprite\)/);
     expect(script).toMatch(/renderedText: String\(sprite\.userData\?\.renderedText \|\| ""\),/);
+    expect(script).toMatch(/compacted: !!sprite\.userData\?\.compacted,/);
     expect(script).toMatch(/textWidthRatio: Number\(\(sprite\.userData\?\.textWidthRatio \|\| 0\)\.toFixed\(3\)\),/);
     expect(script).toMatch(/function setVisualQaBadge\(sprite, text\)/);
     expect(script).toMatch(/function refreshVisualQaBadges\(\)/);

@@ -1650,3 +1650,25 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Lightweight cross-pod authority proof passed: `.codex_tmp/qa-20260627-goal-health-recheck/server-affinity/latest.md`; eight clients landed across four ws-server IDs and every post-`game.on` trash collision was accepted with `not_running=0`.
   - Compute usage for the combined HTTP + server-affinity check: `real=23.37s`, `user=1.28s`, `sys=0.67s`, max RSS `90374144`, peak memory `1474848`.
   - GitHub auth is still unavailable over HTTPS and SSH; local disk is down to about `1.7GiB` free, so avoid full local container builds until space is reclaimed.
+
+2026-06-27 remote boat smoothness guardrail:
+  - Re-ran current public motion checks against `http://130.162.174.167`.
+  - Public Chrome/WebKit desktop/mobile local-motion smoothness passed: `.codex_tmp/qa-20260627-local-motion-refresh-20260627224207/latest.md`; no large frame-to-frame local jumps, Chrome around `120 FPS`, WebKit/Safari-family around `60 FPS`. Compute: `real=117.71s`, max RSS `386400256`.
+  - Public four-client multiplayer sync passed: `.codex_tmp/qa-20260627-remote-sync-refresh-20260627224207/latest.md`; Chrome desktop, WebKit desktop, Chrome mobile, and WebKit mobile reached `RUNNING`, saw human remotes, and passed frame/browser-error checks. Compute: `real=34.38s`, max RSS `307937280`.
+  - Added stricter visual remote-motion guardrails:
+    - `render_game_to_text` now exposes remote mesh `visualX/visualY/visualZ/visualRotY` separately from auth/trace coordinates.
+    - Remote player visuals now seed from first known auth/trace coordinates instead of starting at origin from roster-only events.
+    - Remote visual movement is clamped to `REMOTE_PLAYER_MAX_VISUAL_STEP=0.65` per frame so stale/cold remote state cannot yank a boat across the screen.
+    - `scripts/multiplayer-cross-browser-sync-probe.mjs` now samples remote visual mesh motion frame-by-frame and checks visual telemetry, movement distance, sample count, and large jumps.
+  - Local strict visual probe exposed local dev-server parity gaps, not a public regression: the local stack did not consistently broadcast remote state/traces to all observers. Current public legacy sync remains green; the new strict visual probe should be rerun against the public URL after the next successful GitHub-backed build/deploy.
+  - Public compatibility rerun with the updated probe passed: `.codex_tmp/qa-20260627-remote-sync-refresh-compat-20260627225303/latest.md`; strict remote visual mode was off, all four clients saw human remotes, and the report correctly recorded `visual=false` for the currently deployed bundle. Compute: `real=34.19s`, max RSS `398278656`.
+  - Validation after code changes:
+    - `node --check web/src/script.js` passed.
+    - `node --check scripts/multiplayer-cross-browser-sync-probe.mjs` passed.
+    - `git diff --check -- web/src/script.js web/src/__tests__/gameplayPolish.test.js scripts/multiplayer-cross-browser-sync-probe.mjs` passed.
+    - `npm --prefix web run test:unit` passed: 10 files, 71 tests.
+    - `npm --prefix web run build` passed with existing asset-size warnings.
+  - Prepared the next deployable web image tag by bumping `web/package.json` and `web/package-lock.json` to `0.0.100`.
+  - Compute-wrapped web 0.0.100 gates passed: `.codex_tmp/qa-20260627-web-unit-build-0.0.100-20260627233854/latest.md`; unit `real=1.70s`, max RSS `197279744`; build `real=3.65s`, max RSS `1268383744`.
+  - Standard web-game client smoke ran against local `127.0.0.1:8080` and captured countdown/game state in `output/web-game/shot-0.png` through `shot-2.png`; screenshot looked visually sane.
+  - Local Chrome motion smoke reached `RUNNING` and moved without large frame-to-frame position jumps, but failed the local frame-budget threshold at about `30 FPS`: `.codex_tmp/qa-local-motion-web0100-20260627234006/latest.md`. Public Chrome/WebKit motion remains green at `120/60 FPS`, so do not tune production gameplay against this local/headless slowdown without stronger evidence.

@@ -124,13 +124,48 @@ function collectBrowserErrors(page) {
 async function installPerfObserver(page) {
   await page.addInitScript(() => {
     window.__stwlQaMultiplayerPerf = { frameDeltas: [], longTasks: [], lastFrameAt: 0 };
+    window.__stwlQaRemoteMotion = { active: false, driverName: null, samples: [] };
     const perf = window.__stwlQaMultiplayerPerf;
+    const remoteMotion = window.__stwlQaRemoteMotion;
     const frame = (ts) => {
       if (perf.lastFrameAt) {
         perf.frameDeltas.push(ts - perf.lastFrameAt);
         if (perf.frameDeltas.length > 2000) perf.frameDeltas.shift();
       }
       perf.lastFrameAt = ts;
+      if (remoteMotion.active && remoteMotion.driverName) {
+        try {
+          const raw = typeof window.render_game_to_text === "function" ? window.render_game_to_text() : null;
+          const state = raw ? JSON.parse(raw) : null;
+          const remotes = Array.isArray(state?.remotePlayerSamples) ? state.remotePlayerSamples : [];
+          const driver = remotes.find((sample) => String(sample?.name || sample?.id || "") === remoteMotion.driverName);
+          remoteMotion.samples.push({
+            ts,
+            mode: state?.mode || null,
+            timeRemaining: state?.timeRemaining ?? null,
+            driverName: remoteMotion.driverName,
+            found: !!driver,
+            visible: driver?.visible ?? null,
+            hasMesh: driver?.hasMesh ?? null,
+            source: driver?.source || null,
+            visualSource: driver?.visualSource || null,
+            x: Number(driver?.x),
+            z: Number(driver?.z),
+            rotY: Number(driver?.rotY),
+            visualX: Number(driver?.visualX),
+            visualZ: Number(driver?.visualZ),
+            visualRotY: Number(driver?.visualRotY),
+            distanceToLocal: Number(driver?.distanceToLocal),
+            frame: {
+              fps: Number(state?.frame?.fps),
+              frameMs: Number(state?.frame?.frameMs),
+              rawFrameMs: Number(state?.frame?.rawFrameMs),
+              authLagMs: Number(state?.frame?.authLagMs),
+            },
+          });
+          if (remoteMotion.samples.length > 3000) remoteMotion.samples.shift();
+        } catch (_) {}
+      }
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -143,6 +178,15 @@ async function installPerfObserver(page) {
       });
       obs.observe({ type: "longtask", buffered: true });
     } catch (_) {}
+    window.__stwlQaStartRemoteMotion = (driverName) => {
+      remoteMotion.driverName = String(driverName || "");
+      remoteMotion.samples = [];
+      remoteMotion.active = true;
+    };
+    window.__stwlQaStopRemoteMotion = () => {
+      remoteMotion.active = false;
+      return { driverName: remoteMotion.driverName, samples: remoteMotion.samples || [] };
+    };
   });
 }
 
@@ -251,6 +295,98 @@ function movementDelta(before, after) {
   };
 }
 
+function normalizeAngle(delta) {
+  let next = Number(delta) || 0;
+  while (next > Math.PI) next -= Math.PI * 2;
+  while (next < -Math.PI) next += Math.PI * 2;
+  return next;
+}
+
+function finiteRemoteSample(sample, useVisual) {
+  if (!sample || sample.mode !== "RUNNING" || sample.found !== true) return false;
+  const x = useVisual ? sample.visualX : sample.x;
+  const z = useVisual ? sample.visualZ : sample.z;
+  return Number.isFinite(Number(x)) && Number.isFinite(Number(z)) && Number.isFinite(Number(sample.ts));
+}
+
+function summarizeRemoteVisualMotion(samples) {
+  const all = Array.isArray(samples) ? samples : [];
+  const found = all.filter((sample) => sample?.mode === "RUNNING" && sample.found === true);
+  const visual = found.filter((sample) => finiteRemoteSample(sample, true));
+  const useVisual = visual.length > 0;
+  const motionSamples = (useVisual ? visual : found.filter((sample) => finiteRemoteSample(sample, false)))
+    .sort((a, b) => Number(a.ts) - Number(b.ts));
+  const steps = [];
+  const turnSteps = [];
+  for (let i = 1; i < motionSamples.length; i += 1) {
+    const previous = motionSamples[i - 1];
+    const current = motionSamples[i];
+    const dt = Number(current.ts) - Number(previous.ts);
+    if (!Number.isFinite(dt) || dt <= 1 || dt > 160) continue;
+    const prevX = useVisual ? previous.visualX : previous.x;
+    const prevZ = useVisual ? previous.visualZ : previous.z;
+    const curX = useVisual ? current.visualX : current.x;
+    const curZ = useVisual ? current.visualZ : current.z;
+    const prevRot = useVisual ? previous.visualRotY : previous.rotY;
+    const curRot = useVisual ? current.visualRotY : current.rotY;
+    const dx = Number(curX) - Number(prevX);
+    const dz = Number(curZ) - Number(prevZ);
+    const step = Math.hypot(dx, dz);
+    const speedPerSecond = step / (dt / 1000);
+    steps.push({ index: i, ts: current.ts, dt, step, speedPerSecond, from: previous, to: current });
+    if (Number.isFinite(Number(prevRot)) && Number.isFinite(Number(curRot))) {
+      turnSteps.push(Math.abs(normalizeAngle(Number(curRot) - Number(prevRot))));
+    }
+  }
+  const movingSteps = steps.filter((entry) => entry.step > 0.001);
+  const stepStats = summarizeNumbers(movingSteps.map((entry) => entry.step));
+  const speedStats = summarizeNumbers(movingSteps.map((entry) => entry.speedPerSecond));
+  const turnStats = summarizeNumbers(turnSteps);
+  const medianStep = Number(stepStats.median || 0);
+  const p95Step = Number(stepStats.p95 || 0);
+  const maxAllowedStep = Math.max(0.75, p95Step * 3, medianStep * 12);
+  const largeJumps = movingSteps
+    .filter((entry) => entry.step > maxAllowedStep)
+    .slice(0, 12)
+    .map((entry) => ({
+      index: entry.index,
+      dt: Number(entry.dt.toFixed(2)),
+      step: Number(entry.step.toFixed(4)),
+      speedPerSecond: Number(entry.speedPerSecond.toFixed(3)),
+      from: {
+        x: Number((useVisual ? entry.from.visualX : entry.from.x).toFixed(3)),
+        z: Number((useVisual ? entry.from.visualZ : entry.from.z).toFixed(3)),
+        rotY: Number(Number(useVisual ? entry.from.visualRotY : entry.from.rotY || 0).toFixed(3)),
+      },
+      to: {
+        x: Number((useVisual ? entry.to.visualX : entry.to.x).toFixed(3)),
+        z: Number((useVisual ? entry.to.visualZ : entry.to.z).toFixed(3)),
+        rotY: Number(Number(useVisual ? entry.to.visualRotY : entry.to.rotY || 0).toFixed(3)),
+      },
+    }));
+  const first = motionSamples[0] || null;
+  const last = motionSamples[motionSamples.length - 1] || null;
+  const firstX = first ? Number(useVisual ? first.visualX : first.x) : 0;
+  const firstZ = first ? Number(useVisual ? first.visualZ : first.z) : 0;
+  const lastX = last ? Number(useVisual ? last.visualX : last.x) : 0;
+  const lastZ = last ? Number(useVisual ? last.visualZ : last.z) : 0;
+  return {
+    sampleCount: all.length,
+    foundCount: found.length,
+    visualSampleCount: visual.length,
+    usedVisualMesh: useVisual,
+    motionSampleCount: motionSamples.length,
+    movingStepCount: movingSteps.length,
+    movementDistance: Number(Math.hypot(lastX - firstX, lastZ - firstZ).toFixed(3)),
+    stepStats,
+    speedStats,
+    turnStats,
+    maxAllowedStep: Number(maxAllowedStep.toFixed(4)),
+    largeJumpCount: largeJumps.length,
+    largeJumps,
+  };
+}
+
 function humanNamesSeenBy(state, ownName, allNames) {
   const expectedRemoteNames = allNames.filter((name) => name !== ownName);
   const samples = Array.isArray(state?.remotePlayerSamples) ? state.remotePlayerSamples : [];
@@ -340,6 +476,7 @@ async function main() {
   const driveMs = Number(argValue("drive-ms", "3500"));
   const room = argValue("room", `QA-MIX-${Date.now().toString().slice(-6)}`);
   const includeWebKitMobile = hasFlag("include-webkit-mobile");
+  const strictRemoteVisual = hasFlag("strict-remote-visual");
   const clientsSpec = parseClients(argValue("clients", ""), includeWebKitMobile).slice(0, 4);
   const startedAt = new Date().toISOString();
   const checks = [];
@@ -401,6 +538,13 @@ async function main() {
 
     const driver = clients[0];
     const driverDom = await readDom(driver.page).catch(() => ({}));
+    await Promise.all(clients
+      .filter((client) => client.name !== driver.name)
+      .map((client) => client.page.evaluate((driverName) => {
+        if (typeof window.__stwlQaStartRemoteMotion === "function") {
+          window.__stwlQaStartRemoteMotion(driverName);
+        }
+      }, driver.name).catch(() => {})));
     if (driver.scenario === "mobile") await driveMobile(driver.page, driverDom.joystick, driveMs);
     else await driveDesktop(driver.page, driveMs);
     await sleep(2500);
@@ -408,7 +552,16 @@ async function main() {
     const after = {};
     const dom = {};
     const perf = {};
+    const remoteMotion = {};
     for (const client of clients) {
+      if (client.name !== driver.name) {
+        remoteMotion[client.name] = await client.page.evaluate(() => {
+          if (typeof window.__stwlQaStopRemoteMotion === "function") {
+            return window.__stwlQaStopRemoteMotion();
+          }
+          return { samples: [] };
+        }).catch(() => ({ samples: [] }));
+      }
       after[client.name] = await readState(client.page).catch(() => null);
       dom[client.name] = await readDom(client.page).catch(() => ({}));
       perf[client.name] = await readPerf(client.page).catch(() => ({}));
@@ -436,11 +589,42 @@ async function main() {
       });
       if (client.name !== driver.name) {
         const driverRemote = remoteDriverSample(after[client.name], driver.name);
+        const remoteMotionSummary = summarizeRemoteVisualMotion(remoteMotion[client.name]?.samples || []);
+        const minimumMotionSteps = Math.max(30, Math.floor(driveMs / 80));
+        const requireRemoteVisualMotion = strictRemoteVisual || remoteMotionSummary.usedVisualMesh;
         checks.push({
-          name: `${client.name} renders moving driver`,
-          status: driverRemote ? "pass" : "fail",
+          name: `${client.name} has driver remote mesh`,
+          status: driverRemote && driverRemote.hasMesh === true ? "pass" : "fail",
           driver: driver.name,
           driverRemote,
+        });
+        checks.push({
+          name: `${client.name} exposes remote visual mesh telemetry`,
+          status: remoteMotionSummary.usedVisualMesh || !strictRemoteVisual ? "pass" : "fail",
+          strictRemoteVisual,
+          driver: driver.name,
+          remoteMotionSummary,
+        });
+        checks.push({
+          name: `${client.name} remote visual motion samples sufficient`,
+          status: !requireRemoteVisualMotion || remoteMotionSummary.motionSampleCount >= Math.max(120, Math.floor(driveMs / 30)) ? "pass" : "fail",
+          strictRemoteVisual,
+          driver: driver.name,
+          remoteMotionSummary,
+        });
+        checks.push({
+          name: `${client.name} remote visual driver moves`,
+          status: !requireRemoteVisualMotion || (remoteMotionSummary.movementDistance > 0.1 && remoteMotionSummary.movingStepCount >= minimumMotionSteps) ? "pass" : "fail",
+          strictRemoteVisual,
+          driver: driver.name,
+          remoteMotionSummary,
+        });
+        checks.push({
+          name: `${client.name} remote visual path has no large jumps`,
+          status: !requireRemoteVisualMotion || remoteMotionSummary.largeJumpCount === 0 ? "pass" : "fail",
+          strictRemoteVisual,
+          driver: driver.name,
+          remoteMotionSummary,
         });
       }
       if (client.scenario === "mobile") {
@@ -473,10 +657,19 @@ async function main() {
       baseUrl,
       room,
       clients: clientsSpec,
+      strictRemoteVisual,
       checks,
       before,
       after,
       dom,
+      remoteMotion: Object.fromEntries(Object.entries(remoteMotion).map(([name, value]) => [
+        name,
+        {
+          driverName: value?.driverName || driver.name,
+          summary: summarizeRemoteVisualMotion(value?.samples || []),
+          samplePreview: (value?.samples || []).slice(0, 3).concat((value?.samples || []).slice(-3)),
+        },
+      ])),
       perf: Object.fromEntries(Object.entries(perf).map(([name, value]) => [
         name,
         {
@@ -496,11 +689,14 @@ async function main() {
       `- Base URL: \`${baseUrl}\``,
       `- Room: \`${room}\``,
       `- Clients: ${clientsSpec.map((client) => `\`${client.name}:${client.engine}:${client.scenario}\``).join(", ")}`,
+      `- Strict remote visual: ${strictRemoteVisual ? "yes" : "no"}`,
       "",
       "## Checks",
       ...checks.map((check) => {
         const suffix = check.missingRemoteNames
           ? `; missing=${check.missingRemoteNames.join(",") || "none"}; nonBotRemoteCount=${check.nonBotRemoteCount}`
+          : check.remoteMotionSummary
+          ? `; visual=${check.remoteMotionSummary.usedVisualMesh}; movement=${check.remoteMotionSummary.movementDistance}; jumps=${check.remoteMotionSummary.largeJumpCount}; maxStep=${check.remoteMotionSummary.stepStats?.max ?? "-"}`
           : "";
         return `- ${statusIcon(check.status)} ${check.name}${suffix}`;
       }),

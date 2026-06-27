@@ -234,6 +234,7 @@ const NAME_TAG_SCALE = Object.freeze({ x: 1.22, y: 0.3, z: 1 });
 const NAME_TAG_POSITION_Y = 1.16;
 const BOT_NAME_TAG_SCALE = Object.freeze({ x: 0.32, y: 0.1, z: 1 });
 const BOT_NAME_TAG_POSITION_Y = 0.58;
+const NAME_TAG_MAX_GRAPHEMES = 12;
 const RENDER_PIXEL_RATIO_DESKTOP_MAX = 1.25;
 const RENDER_PIXEL_RATIO_MOBILE_MAX = 1;
 const WATER_REFLECTION_TEXTURE_SIZE = 256;
@@ -242,10 +243,12 @@ const LOCAL_AUTH_POSITION_SMOOTHING = 2.4;
 const LOCAL_AUTH_ROTATION_SMOOTHING = 3.2;
 const LOCAL_AUTH_SNAP_DISTANCE = 9.5;
 const LOCAL_AUTH_DEADZONE_DISTANCE = 0.08;
-const REMOTE_PLAYER_LOCAL_SUPPRESSION_RADIUS = 1.45;
+const REMOTE_PLAYER_LOCAL_SUPPRESSION_RADIUS = 0.95;
+const REMOTE_PLAYER_LABEL_SUPPRESSION_RADIUS = 4.5;
 const REMOTE_PLAYER_POSITION_SMOOTHING = 7.5;
 const REMOTE_PLAYER_ROTATION_SMOOTHING = 8.5;
 const REMOTE_PLAYER_FROZEN_SMOOTHING = 3.5;
+const REMOTE_PLAYER_MAX_VISUAL_STEP = 0.65;
 const CANONICAL_BOAT_ACCELERATION = 6;
 const CANONICAL_BOAT_BRAKE = 1.8;
 const CANONICAL_BOAT_MAX_SPEED = 3;
@@ -266,9 +269,9 @@ const BOAT_BADGE_LAYOUT = Object.freeze({
   },
 });
 const EMOJI_BADGE_TEXTURE_SIZE = 192;
-const EMOJI_BADGE_SAFE_WIDTH_RATIO = 0.68;
+const EMOJI_BADGE_SAFE_WIDTH_RATIO = 0.62;
 const EMOJI_BADGE_MAX_FONT_RATIO = 0.56;
-const EMOJI_BADGE_MIN_FONT_RATIO = 0.13;
+const EMOJI_BADGE_MIN_FONT_RATIO = 0.1;
 const EMOJI_BADGE_COMPACT_MIN_COUNT = 3;
 const trashTmpMatrix = new THREE.Matrix4();
 const trashTmpPos = new THREE.Vector3();
@@ -496,8 +499,15 @@ function shouldSuppressRemoteNearLocal(id, positionLike) {
 
 function setRemoteLocalSuppression(group, suppressed, distance = null) {
   if (!group || !group.userData) return;
+  const labelSuppressed = !!suppressed || (
+    !group.userData.isBot &&
+    Number.isFinite(distance) &&
+    distance <= REMOTE_PLAYER_LABEL_SUPPRESSION_RADIUS
+  );
   group.userData.localSuppressed = !!suppressed;
+  group.userData.localLabelSuppressed = !!labelSuppressed;
   group.userData.localSuppressionDistance = Number.isFinite(distance) ? distance : null;
+  applyNameTagSuppression(group);
   if (suppressed) group.visible = false;
 }
 
@@ -508,6 +518,54 @@ function keepBotRemoteBoatVisible(group) {
   group.traverse((object) => {
     if (object) object.frustumCulled = false;
   });
+}
+
+function remoteStateCoords(state) {
+  if (!state || typeof state !== "object") return null;
+  const x = Number(state.x);
+  const z = Number(state.z);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  const rotY = Number(state.rotY ?? state.r);
+  return {
+    x,
+    z,
+    rotY: Number.isFinite(rotY) ? rotY : null,
+  };
+}
+
+function seedRemotePlayerVisualFromState(mesh, state, { force = false } = {}) {
+  const coords = remoteStateCoords(state);
+  if (!mesh || !coords) return false;
+  mesh.userData = mesh.userData || {};
+  if (!force && mesh.userData.remotePositionInitialized) return false;
+  mesh.position.x = coords.x;
+  mesh.position.z = coords.z;
+  if (coords.rotY !== null) mesh.rotation.y = coords.rotY;
+  mesh.userData.remotePositionInitialized = true;
+  return true;
+}
+
+function smoothRemotePlayerVisualToState(mesh, state, lerpFactor) {
+  const coords = remoteStateCoords(state);
+  if (!mesh || !coords) return false;
+  mesh.userData = mesh.userData || {};
+  if (!mesh.userData.remotePositionInitialized) {
+    return seedRemotePlayerVisualFromState(mesh, state, { force: true });
+  }
+  const dx = coords.x - mesh.position.x;
+  const dz = coords.z - mesh.position.z;
+  const nextDx = dx * lerpFactor;
+  const nextDz = dz * lerpFactor;
+  const nextStep = Math.hypot(nextDx, nextDz);
+  if (nextStep > REMOTE_PLAYER_MAX_VISUAL_STEP) {
+    const scale = REMOTE_PLAYER_MAX_VISUAL_STEP / nextStep;
+    mesh.position.x += nextDx * scale;
+    mesh.position.z += nextDz * scale;
+  } else {
+    mesh.position.x += nextDx;
+    mesh.position.z += nextDz;
+  }
+  return true;
 }
 
 function removeRemotePlayerVisual(id) {
@@ -3381,10 +3439,10 @@ async function init() {
             ? startPositions[yourId]
             : (body && body.startPosition ? body.startPosition : null);
           startPosition = sp;
-          if (clientGameStarted) {
+          const shouldStartGameplayTelemetry = gameState !== "RUNNING" || !currentSessionId;
+          if (clientGameStarted && shouldStartGameplayTelemetry) {
             prepareExistingSceneForMatch(sp);
           }
-          const shouldStartGameplayTelemetry = gameState !== "RUNNING" || !currentSessionId;
           if (shouldStartGameplayTelemetry) {
             gameState = "RUNNING";
             setPhase("GAMEPLAY");
@@ -3402,15 +3460,6 @@ async function init() {
             startLocalTimeTicker();
             try { if (typeof updateControls === "function") updateControls(); } catch (_) {}
           }
-          postWorkerMessage({
-            type: "game.start",
-            body: {
-              playerId: yourId,
-              playerName: currentDisplayName(),
-              clientSessionId,
-              gameplaySessionId: currentSessionId || null,
-            },
-          });
           if (!clientGameStarted) {
             startGame(
               gameDuration,
@@ -3507,6 +3556,7 @@ async function init() {
           if (!otherPlayersMeshes[key]) {
             otherPlayersMeshes[key] = makePlayerMesh(boatModel, key);
           }
+          seedRemotePlayerVisualFromState(otherPlayersMeshes[key], traceData);
         }
         updatePlayersHud();
         break;
@@ -3595,8 +3645,8 @@ async function init() {
           if (typeof updateControls === "function") updateControls();
           break;
         }
-        gameState = incomingState;
         if (incomingState === "WAITING") {
+          gameState = incomingState;
           const statusEl = document.getElementById("lobby-status");
           if (statusEl) statusEl.textContent = "Waiting for game...";
           if (Number.isFinite(gameDuration)) {
@@ -3611,9 +3661,20 @@ async function init() {
           }
           setPhase("LOBBY");
         } else if (incomingState === "STARTING") {
+          gameState = incomingState;
           stopLocalTimeTicker();
           setPhase("STARTING");
         } else if (incomingState === "RUNNING") {
+          if (!clientGameStarted || !currentSessionId) {
+            // Wait for game.on so the authoritative start position is applied
+            // before controls and collision checks can move the local boat.
+            gameState = "STARTING";
+            stopLocalTimeTicker();
+            setPhase("STARTING");
+            if (typeof updateControls === "function") updateControls();
+            break;
+          }
+          gameState = incomingState;
           if (!Number.isFinite(lastServerTimeSyncValue) && Number.isFinite(gameDuration)) {
             lastServerTimeSyncValue = Number(gameDuration);
             lastServerTimeSyncAtMs = Date.now();
@@ -3621,6 +3682,7 @@ async function init() {
           startLocalTimeTicker();
           setPhase("GAMEPLAY");
         } else if (incomingState === "ENDED") {
+          gameState = incomingState;
           stopLocalTimeTicker();
           endGame();
           setPhase("POST_GAME");
@@ -4049,6 +4111,7 @@ async function init() {
   function makePlayerMesh(playerMesh, id) {
     const group = getBoatFromPool();
     group.userData.isBot = false;
+    group.userData.remotePositionInitialized = false;
     group.scale.setScalar(1);
     const mesh = cloneModelForRemotePlayer(playerMesh);
     mesh.position.set(0, 0, 0);
@@ -4094,40 +4157,15 @@ async function init() {
     if (!boatModel) return null;
     if (!otherPlayersMeshes[id]) {
       otherPlayersMeshes[id] = makePlayerMesh(boatModel, id);
-      if (state && Number.isFinite(Number(state.x)) && Number.isFinite(Number(state.z))) {
-        otherPlayersMeshes[id].position.x = Number(state.x);
-        otherPlayersMeshes[id].position.z = Number(state.z);
-        if (Number.isFinite(Number(state.rotY))) {
-          otherPlayersMeshes[id].rotation.y = Number(state.rotY);
-        }
-      }
+      seedRemotePlayerVisualFromState(otherPlayersMeshes[id], state, { force: true });
       refreshNameTagForPlayer(id);
       updatePlayersHud();
+    } else if (state) {
+      seedRemotePlayerVisualFromState(otherPlayersMeshes[id], state);
     }
     return otherPlayersMeshes[id] || null;
   }
   ensureRemotePlayerVisualForScene = ensureRemotePlayerVisual;
-
-  function remoteDistanceToLocal2d(x, z) {
-    if (!player) return null;
-    const dx = Number(x) - Number(player.position?.x || 0);
-    const dz = Number(z) - Number(player.position?.z || 0);
-    if (!Number.isFinite(dx) || !Number.isFinite(dz)) return null;
-    return Math.hypot(dx, dz);
-  }
-
-  function shouldSuppressRemoteNearLocal(id, positionLike) {
-    if (!id || id === yourId || isBotPlayerId(id) || !positionLike) return false;
-    const distance = remoteDistanceToLocal2d(positionLike.x, positionLike.z);
-    return Number.isFinite(distance) && distance <= REMOTE_PLAYER_LOCAL_SUPPRESSION_RADIUS;
-  }
-
-  function setRemoteLocalSuppression(group, suppressed, distance = null) {
-    if (!group || !group.userData) return;
-    group.userData.localSuppressed = !!suppressed;
-    group.userData.localSuppressionDistance = Number.isFinite(distance) ? distance : null;
-    if (suppressed) group.visible = false;
-  }
 
   function ensureBotRosterVisuals() {
     const debug = {
@@ -4387,13 +4425,43 @@ function createNameSprite(text) {
   return sprite;
 }
 
+function compactNameTagText(text) {
+  const value = String(text || "Player").replace(/\s+/g, " ").trim() || "Player";
+  const graphemes = Array.from(value);
+  if (graphemes.length <= NAME_TAG_MAX_GRAPHEMES) return value;
+  return `${graphemes.slice(0, Math.max(1, NAME_TAG_MAX_GRAPHEMES - 3)).join("")}...`;
+}
+
+function findNameTag(object3d) {
+  if (!object3d || !object3d.children) return null;
+  try {
+    for (const c of object3d.children) {
+      if (c && c.name === "nameTag") return c;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function applyNameTagSuppression(object3d) {
+  const tag = findNameTag(object3d);
+  if (!tag) return;
+  tag.visible = !(object3d && object3d.userData && object3d.userData.localLabelSuppressed);
+}
+
 function setNameSpriteText(sprite, text) {
   if (!sprite || !sprite.userData || !sprite.userData.canvas || !sprite.userData.ctx) return;
   const canvas = sprite.userData.canvas;
   const ctx = sprite.userData.ctx;
-  const fontSize = 48;
+  const displayText = compactNameTagText(text);
+  let fontSize = 42;
+  const minFontSize = 24;
+  const maxWidth = canvas.width * 0.82;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.font = `bold ${fontSize}px Arial`;
+  while (fontSize > minFontSize && ctx.measureText(displayText).width > maxWidth) {
+    fontSize -= 2;
+    ctx.font = `bold ${fontSize}px Arial`;
+  }
   ctx.fillStyle = "white";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -4401,8 +4469,12 @@ function setNameSpriteText(sprite, text) {
   ctx.shadowBlur = 6;
   ctx.lineWidth = 3;
   ctx.strokeStyle = "black";
-  ctx.strokeText(text, canvas.width / 2, canvas.height / 2);
-  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  ctx.strokeText(displayText, canvas.width / 2, canvas.height / 2);
+  ctx.fillText(displayText, canvas.width / 2, canvas.height / 2);
+  sprite.userData.text = String(text || "");
+  sprite.userData.renderedText = displayText;
+  sprite.userData.fontSize = fontSize;
+  sprite.userData.textWidthRatio = ctx.measureText(displayText).width / canvas.width;
   if (sprite.material && sprite.material.map) {
     sprite.material.map.needsUpdate = true;
   }
@@ -4447,19 +4519,12 @@ function addNameTag(object3d, name) {
   sprite.visible = true;
   try { disableReflectionForSprite(sprite); } catch (_) {}
   object3d.add(sprite);
+  applyNameTagSuppression(object3d);
   return sprite;
 }
 function updateNameTag(object3d, name) {
   if (!object3d) return;
-  let tag = null;
-  try {
-    for (const c of object3d.children) {
-      if (c && c.name === "nameTag") {
-        tag = c;
-        break;
-      }
-    }
-  } catch (_) {}
+  const tag = findNameTag(object3d);
   if (!tag) {
     addNameTag(object3d, name);
     return;
@@ -4467,6 +4532,7 @@ function updateNameTag(object3d, name) {
   configureNameTagForOwner(tag, object3d);
   setNameSpriteText(tag, name || "");
   tag.visible = true;
+  applyNameTagSuppression(object3d);
 }
 function refreshNameTagForPlayer(id) {
   if (!id) return;
@@ -4531,12 +4597,13 @@ function splitBadgeGraphemes(text) {
 
 function compactBadgeText(text, ctx, maxWidth, fontSize) {
   const original = String(text || "");
+  if (/[A-Za-z0-9]/.test(original)) return original;
   const graphemes = splitBadgeGraphemes(original);
   if (graphemes.length < EMOJI_BADGE_COMPACT_MIN_COUNT) return original;
   const first = graphemes[0] || "";
   const compact = `${first}+${graphemes.length - 1}`;
   ctx.font = `bold ${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`;
-  return ctx.measureText(compact).width <= maxWidth ? compact : original;
+  return compact || original;
 }
 
 function setSpriteText(sprite, text) {
@@ -4550,7 +4617,7 @@ function setSpriteText(sprite, text) {
     let fontSize = Math.round(size * EMOJI_BADGE_MAX_FONT_RATIO);
     const minFontSize = Math.round(size * EMOJI_BADGE_MIN_FONT_RATIO);
     let measuredWidth = 0;
-    let displayText = String(text || "");
+    let displayText = compactBadgeText(text, ctx, maxWidth, fontSize);
     while (fontSize >= minFontSize) {
       ctx.font = `bold ${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`;
       measuredWidth = ctx.measureText(displayText).width;
@@ -4567,9 +4634,11 @@ function setSpriteText(sprite, text) {
         fontSize -= 4;
       }
     }
+    fontSize = Math.max(fontSize, minFontSize);
     ctx.font = `bold ${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`;
     measuredWidth = ctx.measureText(displayText).width;
     sprite.userData.renderedText = displayText;
+    sprite.userData.compacted = displayText !== String(text || "");
     sprite.userData.fontSize = fontSize;
     sprite.userData.textWidthRatio = measuredWidth > 0 ? measuredWidth / size : 0;
     ctx.textAlign = "center";
@@ -4579,6 +4648,7 @@ function setSpriteText(sprite, text) {
     ctx.fillText(displayText, size / 2, size / 2 + Math.max(3, Math.round(fontSize * 0.075)));
   } else {
     sprite.userData.renderedText = "";
+    sprite.userData.compacted = false;
     sprite.userData.fontSize = 0;
     sprite.userData.textWidthRatio = 0;
   }
@@ -4591,6 +4661,7 @@ function getBadgeDebug(sprite) {
     visible: !!sprite.visible,
     text: String(sprite.userData?.text || ""),
     renderedText: String(sprite.userData?.renderedText || ""),
+    compacted: !!sprite.userData?.compacted,
     layout: String(sprite.userData?.layout || (isMobileGameViewport() ? "mobile" : "desktop")),
     y: Number((sprite.position?.y || 0).toFixed(3)),
     scale: Number((sprite.scale?.x || 0).toFixed(3)),
@@ -5971,9 +6042,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         }
         const m = playerMeshes[id];
         if (!m) return;
-        // Smoothly approach authoritative state
-        m.position.x = THREE.MathUtils.lerp(m.position.x, s.x, lerpFactor);
-        m.position.z = THREE.MathUtils.lerp(m.position.z, s.z, lerpFactor);
+        smoothRemotePlayerVisualToState(m, s, lerpFactor);
         const delta = ((s.rotY - m.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
         m.rotation.y += delta * rotLerpFactor;
         const suppressionDistance = remoteDistanceToLocal2d(m.position.x, m.position.z);
@@ -5996,8 +6065,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     // Fallback to legacy traces
     Object.keys(playerMeshes).forEach((id) => {
       if (otherPlayers[id]) {
-        playerMeshes[id].position.x = THREE.MathUtils.lerp(playerMeshes[id].position.x, otherPlayers[id].x, lerpFactor);
-        playerMeshes[id].position.z = THREE.MathUtils.lerp(playerMeshes[id].position.z, otherPlayers[id].z, lerpFactor);
+        smoothRemotePlayerVisualToState(playerMeshes[id], otherPlayers[id], lerpFactor);
         const delta = ((otherPlayers[id].rotY - playerMeshes[id].rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
         playerMeshes[id].rotation.y += delta * rotLerpFactor;
         const suppressionDistance = remoteDistanceToLocal2d(playerMeshes[id].position.x, playerMeshes[id].position.z);
@@ -6113,6 +6181,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           g.visible = false;
           return;
         }
+        applyNameTagSuppression(g);
         if (g.userData && g.userData.isBot) {
           g.visible = true;
           g.frustumCulled = false;
@@ -6254,6 +6323,8 @@ function hideMessages() {
 function renderGameToText() {
   try { ensureBotRosterVisualsForScene(); } catch (_) {}
   refreshVisualQaBadges();
+  const turtleAuthoritativeItems = Object.values(items || {})
+    .filter((item) => item && isMarineLife(item.type));
   const turtleWorldMeshes = Object.values(itemMeshes || {})
     .filter((mesh) => mesh && String(mesh.itemType || "") === "turtle");
   const turtleCameraVisibleCount = turtleWorldMeshes
@@ -6325,18 +6396,37 @@ function renderGameToText() {
   };
   const buildRemoteSample = ({ id, name, x, y = 0, z, rotY = 0, isBot = false, mesh = null, source }) => {
     const distanceToLocal = remoteDistanceForDebug(x, z);
+    const hasVisualMesh = !!(mesh && mesh.position);
+    const visual = hasVisualMesh
+      ? {
+          visualX: Number((Number(mesh.position?.x) || 0).toFixed(3)),
+          visualY: Number((Number(mesh.position?.y) || 0).toFixed(3)),
+          visualZ: Number((Number(mesh.position?.z) || 0).toFixed(3)),
+          visualRotY: Number((Number(mesh.rotation?.y) || 0).toFixed(3)),
+        }
+      : {};
     const visualSuppressed = !isBot && (
       !!(mesh && mesh.userData && mesh.userData.localSuppressed) ||
       (Number.isFinite(distanceToLocal) && distanceToLocal <= REMOTE_PLAYER_LOCAL_SUPPRESSION_RADIUS)
     );
+    const labelSuppressed = !isBot && (
+      visualSuppressed ||
+      !!(mesh && mesh.userData && mesh.userData.localLabelSuppressed) ||
+      (Number.isFinite(distanceToLocal) && distanceToLocal <= REMOTE_PLAYER_LABEL_SUPPRESSION_RADIUS)
+    );
     const base = {
       id,
       name,
+      label: compactNameTagText(name),
       isBot,
       hasMesh: !!mesh,
       visible: !!(mesh && mesh.visible !== false && !visualSuppressed),
+      labelVisible: !!(mesh && mesh.visible !== false && !labelSuppressed),
       source,
+      visualSource: hasVisualMesh ? "mesh" : null,
+      ...visual,
       visualSuppressed,
+      labelSuppressed,
       distanceToLocal: Number.isFinite(distanceToLocal) ? Number(distanceToLocal.toFixed(3)) : null,
     };
     if (visualSuppressed) return base;
@@ -6449,6 +6539,11 @@ function renderGameToText() {
     score: Number(localScore || 0),
     timeRemaining: Number(remainingTime || 0),
     playersVisible: remotePlayerEntries.length,
+    remotePlayerGuardrails: {
+      overlapSuppressionRadius: REMOTE_PLAYER_LOCAL_SUPPRESSION_RADIUS,
+      labelSuppressionRadius: REMOTE_PLAYER_LABEL_SUPPRESSION_RADIUS,
+      nameMaxGraphemes: NAME_TAG_MAX_GRAPHEMES,
+    },
     remotePlayerSamples,
     botsVisible: botSamples.length,
     botsKnown: Math.max(knownBotCount, botSamples.length),
@@ -6473,7 +6568,9 @@ function renderGameToText() {
     powerupInstances: powerupInstances && powerupInstances.map ? powerupInstances.map.size : 0,
     powerupSamples,
     environmentPropsVisible: environmentPropStats.total || 0,
-    turtlesVisible: turtleWorldMeshes.length,
+    turtlesTotal: turtleAuthoritativeItems.length,
+    turtlesRendered: turtleWorldMeshes.length,
+    turtlesVisible: turtleCameraVisibleCount,
     turtlesCameraVisible: turtleCameraVisibleCount,
     turtleSamples,
     camera: latestCameraCompositionDebug,
