@@ -3,13 +3,13 @@
 - QA pass: 2026-06-27
 - Tester role: senior beta tester, multiplayer web/mobile game hardening
 - Public URL: `http://130.162.174.167`
-- Local commit tested: `3cb6d0e7`
-- Local package versions: web `0.0.96`, ws-server `0.0.62`, private-agent-factory `0.0.28`
+- Local commit tested: `4a311bd1` plus the QA harness retargeting update in `scripts/browser-item-collision-matrix-probe.mjs`
+- Local package versions: web `0.0.99`, ws-server `0.0.66`, private-agent-factory `0.0.28`
 - Public bundle observed: `/bundle.7dc24fa8b182a728a302.js`
 - Public PAF observed: `0.0.28`
 - Public hotfix rollout: 2026-06-27 20:14-20:18 CEST, OKE images set directly to `web:0.0.96`, `server:0.0.62`, refreshed `private-agent-factory:0.0.28` after GitHub push auth blocked the normal GitHub-backed OCI DevOps build source. All three deployed images are running on OKE.
 - Local pre-deploy mechanic reachability check: `2026-06-27 20:03 CEST`, `server:0.0.62`, `.codex_tmp/qa-local-turn-all-item-mobile-after-seed-20260627/latest.md`; Chrome and WebKit mobile collected trash, hit turtle penalties, and picked up powerups with healthy frame budgets after opening powerup/turtle seeding.
-- Latest focused rerun: 2026-06-27 20:18-20:22 CEST, public `web:0.0.96` / `ws-server:0.0.62` / refreshed `private-agent-factory:0.0.28`.
+- Latest focused rerun: 2026-06-27 22:16-22:34 CEST, public `web:0.0.99` / `ws-server:0.0.66` / `private-agent-factory:0.0.28` / `replay:0.0.4`.
 
 ## Executive Summary
 
@@ -21,6 +21,14 @@
 
 ## Latest P0 Public Rerun
 
+- 2026-06-27 22:16-22:34 CEST against `http://130.162.174.167`; OKE reports `web:0.0.99`, `ws-server:0.0.66`, `private-agent-factory:0.0.28`, and `replay:0.0.4`.
+- Controls sign regression: PASS. Chrome/WebKit desktop `A/W` and `ArrowLeft/ArrowUp` moved left, `D/W` and `ArrowRight/ArrowUp` moved right; Chrome/WebKit mobile joystick up-left/up-right matched the same convention; all scenarios released/decelerated and stayed within frame budget. Compute: `real=265.31s`, max RSS `318242816`, peak memory `147966144`.
+- STWL-QA-010 item population over time: PASS. Four public clients across Chrome/WebKit desktop/mobile stayed in lobby until admin start, reached `RUNNING`, kept healthy item counts through a 70s sample window, and showed no lifecycle collision rejection. Minimum trash/powerups/turtles stayed at `22/1/1`. Compute: `real=80.79s`, max RSS `317079552`, peak memory `158158000`.
+- STWL-QA-010 all-item browser collision matrix: PASS. Chrome/WebKit desktop/mobile exercised trash collection, turtle penalty, and `powerup_speed` pickup with real keyboard/joystick input. All 12 scenarios returned a passing pickup/score/count signal, mobile joystick was visible, and frame budgets held. Compute: `real=297.76s`, max RSS `362266624`, peak memory `301592344`.
+- STWL-QA-001 cross-browser human multiplayer sync: PASS. Room `QA-MIX-232332`; Chrome desktop, WebKit desktop, Chrome mobile, and WebKit mobile waited in lobby, reached `RUNNING`, saw all three other human remotes, and rendered the moving driver. Compute: `real=33.16s`, max RSS `326844416`, peak memory `159238648`.
+- STWL-QA-007 lobby/admin/timer authority: PASS. Room `QA-TIMER-273085`; both clients joined, non-admin start was rejected, admin start accepted, duplicate start rejected, shared countdown delivered, both clients entered `RUNNING`, and canonical server timer remained 60s. Compute: `real=21.01s`, max RSS `73613312`, peak memory `35163736`.
+- STWL-QA-019 PAF/Select AI commentary: PASS. Room `QA-PAFCTX-301236`; Chrome/WebKit desktop/mobile reached post-game, received result-card commentary, emitted `commentary.ready` metadata, returned PAF context with browser session events, and direct PAF commentary returned bounded live `source=select-ai` lines without unsupported mechanics. Compute: `real=91.31s`, max RSS `359841792`, peak memory `186273328`.
+- STWL-QA-012 cross-pod server affinity/collision authority: PASS. Room `QA-AFFINITY-400034`; eight clients landed across all four ws-server IDs, all joined, all received `game.on`, and every post-start trash collision was accepted with `not_running=0`. Compute: `real=22.64s`, max RSS `81313792`, peak memory `39948080`.
 - 2026-06-27 20:18-20:22 CEST against `http://130.162.174.167`, public root serves `/bundle.7dc24fa8b182a728a302.js`; OKE reports `web:0.0.96`, `ws-server:0.0.62`, and refreshed `private-agent-factory:0.0.28`.
 - STWL-QA-012 server affinity/collision authority: PASS. Room `QA-AFFINITY-228842`; eight clients across four ws-server IDs joined, received `game.on`, and all eight valid trash collisions were accepted with `not_running=0`. Compute: `real=20.26s`, max RSS `79790080`.
 - STWL-QA-007 lobby/admin/timer authority: PASS. Room `QA-TIMER-228843`; room stayed waiting before start; non-admin rejected; admin start accepted; duplicate start rejected; both clients entered `RUNNING`; canonical 60-second timer; admin end accepted after timer sample. Compute: `real=19.70s`, max RSS `70762496`.
@@ -67,6 +75,13 @@
 
 ## Test Evidence Index
 
+- Public current controls sign after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260627-goal-rerun-controls/latest.md`
+- Public current long item-population health after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260627-goal-rerun-item-population/latest.md`
+- Public current all-item collision matrix after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260627-goal-rerun2-item-collision-matrix/latest.md`
+- Public current mixed Chrome/WebKit desktop/mobile multiplayer sync after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260627-goal-rerun2-multiplayer-sync/latest.md`
+- Public current lobby/admin/timer authority after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260627-goal-rerun2-lobby-timer/latest.md`
+- Public current PAF/Select AI browser context and commentary after `web:0.0.99` / `ws-server:0.0.66` / `private-agent-factory:0.0.28`: `.codex_tmp/qa-20260627-goal-rerun2-paf-context-commentary/latest.md`
+- Public current cross-pod server-affinity/collision authority after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260627-goal-rerun2-server-affinity/latest.md`
 - Public hotfix server-affinity/collision authority after `web:0.0.96` / `ws-server:0.0.62`: `.codex_tmp/qa-public-hotfix-server-affinity-20260627/latest.md`
 - Public hotfix lobby/admin/timer authority after `web:0.0.96` / `ws-server:0.0.62`: `.codex_tmp/qa-public-hotfix-lobby-timer-20260627/latest.md`
 - Public hotfix Chrome/WebKit/mobile multiplayer sync after `web:0.0.96` / `ws-server:0.0.62`: `.codex_tmp/qa-public-hotfix-multiplayer-cross-browser-20260627/latest.md`

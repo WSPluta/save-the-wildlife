@@ -370,11 +370,17 @@ async function driveToItem(page, { itemKind, isMobile, maxDriveMs }) {
     samples.push(final);
 
     collected = successForKind({ itemKind, initialScore, initialCount, final });
-    if (collected || !targetStillVisible(final, itemKind, targetId)) break;
+    if (collected) break;
 
-    target = samplesForKind(final, itemKind).find((sample) => sample.id === targetId) || nearestSample(final, itemKind);
+    // Mobile is first-person and touch steering is intentionally analog. Keep
+    // retargeting to the best current item so the probe tests real collection
+    // behavior instead of overfitting to one off-screen item after a turn.
+    target = isMobile
+      ? nearestSample(final, itemKind)
+      : samplesForKind(final, itemKind).find((sample) => sample.id === targetId) || nearestSample(final, itemKind);
     if (!target) break;
-    if (!targetId) targetId = target.id || null;
+    targetId = target.id || targetId || null;
+    if (!isMobile && !targetStillVisible(final, itemKind, targetId)) break;
 
     const player = final.player;
     const dx = Number(target.x || 0) - Number(player.x || 0);
