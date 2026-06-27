@@ -3,23 +3,33 @@
 - QA pass: 2026-06-27
 - Tester role: senior beta tester, multiplayer web/mobile game hardening
 - Public URL: `http://130.162.174.167`
-- Local commit tested: `3d2a7973`
-- Local package versions: web `0.0.95`, ws-server `0.0.61`, private-agent-factory `0.0.28`
-- Public bundle observed: `/bundle.22476a183c6f37025a0c.js`
+- Local commit tested: `3cb6d0e7`
+- Local package versions: web `0.0.96`, ws-server `0.0.62`, private-agent-factory `0.0.28`
+- Public bundle observed: `/bundle.7dc24fa8b182a728a302.js`
 - Public PAF observed: `0.0.28`
+- Public hotfix rollout: 2026-06-27 20:14-20:18 CEST, OKE images set directly to `web:0.0.96`, `server:0.0.62`, refreshed `private-agent-factory:0.0.28` after GitHub push auth blocked the normal GitHub-backed OCI DevOps build source. All three deployed images are running on OKE.
 - Local pre-deploy mechanic reachability check: `2026-06-27 20:03 CEST`, `server:0.0.62`, `.codex_tmp/qa-local-turn-all-item-mobile-after-seed-20260627/latest.md`; Chrome and WebKit mobile collected trash, hit turtle penalties, and picked up powerups with healthy frame budgets after opening powerup/turtle seeding.
-- Latest focused rerun: 2026-06-27 19:26-19:28 CEST, public `web:0.0.95` / `ws-server:0.0.61` with `PICKUP_TOUCH_FORGIVENESS=0.3` / `private-agent-factory:0.0.28`.
+- Latest focused rerun: 2026-06-27 20:18-20:22 CEST, public `web:0.0.96` / `ws-server:0.0.62` / refreshed `private-agent-factory:0.0.28`.
 
 ## Executive Summary
 
 - Total tickets opened: 19
-- P0 blockers: 0 open. P0 gameplay/multiplayer authority was verified on the public URL and re-confirmed at 19:26-19:28 CEST with `web:0.0.95`, `ws-server:0.0.61`, `PICKUP_TOUCH_FORGIVENESS=0.3`, and `private-agent-factory:0.0.28`.
+- P0 blockers: 0 open. P0 gameplay/multiplayer authority was verified on the public URL and re-confirmed at 20:18-20:22 CEST with `web:0.0.96`, `ws-server:0.0.62`, and refreshed `private-agent-factory:0.0.28`.
 - P1 blockers: 1
 - Demo readiness verdict: P0 gameplay/multiplayer authority is public-URL clean. PAF commentary context/session binding is also public-URL clean on the Select AI path. Presenter observability now reads canonical scoped data and stays stable. Remaining non-P0 demo caveats are PAF Canvas/GenAI/trace provenance and presenter proof polish.
 - Recommended hardening order: distributed room lifecycle authority, browser gameplay collision state, multiplayer human sync, room admin/timer consistency, observability canonical metrics, PAF/model provenance, commentary session/context binding, presenter proof UI, public autostart bypass, stale admin room cleanup, cross-room item isolation, public health route, mobile performance budget, local dev/prod parity and dev-server noise.
 
 ## Latest P0 Public Rerun
 
+- 2026-06-27 20:18-20:22 CEST against `http://130.162.174.167`, public root serves `/bundle.7dc24fa8b182a728a302.js`; OKE reports `web:0.0.96`, `ws-server:0.0.62`, and refreshed `private-agent-factory:0.0.28`.
+- STWL-QA-012 server affinity/collision authority: PASS. Room `QA-AFFINITY-228842`; eight clients across four ws-server IDs joined, received `game.on`, and all eight valid trash collisions were accepted with `not_running=0`. Compute: `real=20.26s`, max RSS `79790080`.
+- STWL-QA-007 lobby/admin/timer authority: PASS. Room `QA-TIMER-228843`; room stayed waiting before start; non-admin rejected; admin start accepted; duplicate start rejected; both clients entered `RUNNING`; canonical 60-second timer; admin end accepted after timer sample. Compute: `real=19.70s`, max RSS `70762496`.
+- STWL-QA-001 cross-browser human multiplayer sync: PASS. Room `QA-MIX-256818`; Chrome desktop, WebKit desktop, and Chrome mobile waited in lobby, reached `RUNNING`, saw all named human remotes, rendered the moving driver, and passed frame/browser-error checks. Compute: `real=33.37s`, max RSS `301744128`.
+- STWL-QA-010 user-visible collection/collision regression guard: PASS. Chrome desktop and WebKit desktop collected browser-driven trash with `lastResult.ok=true` and healthy frame budgets. Compute: `real=31.40s`, max RSS `284622848`.
+- STWL-QA-010 all-item mobile reachability: PASS. Chrome mobile collected trash, triggered turtle penalty, and picked up `powerup_speed`; joystick visible in every scenario, `lastResult.ok=true`, and FPS stayed near 120 with p95 frame around `8.4ms`. Compute: `real=58.19s`, max RSS `339476480`.
+- Controls sign regression: PASS. Chrome desktop `A/W` and `ArrowLeft/ArrowUp` moved left; `D/W` and `ArrowRight/ArrowUp` moved right; release decelerated; frame timing passed. Compute: `real=69.24s`, max RSS `296960000`.
+- PAF live commentary: PASS. Room `QA-ACM-228843`; three seeded players each received bounded, safe `source=select-ai` commentary, and `/admin/ai-learning` grouped all seeded players. Compute: `real=7.76s`, max RSS `247169024`.
+- Public health checks: PASS. `/healthz` returned `{"ok":true,"service":"web"}`; `/paf/healthz` returned `version=0.0.28`, `oracle_configured=true`, `canvas_configured=true`, `indb_agent_enabled=true`, `select_ai_auto_init=true`, and `mcp_enabled=true`.
 - 2026-06-27 19:26-19:28 CEST against `http://130.162.174.167`, public root still serves `/bundle.22476a183c6f37025a0c.js`.
 - STWL-QA-012 server affinity/collision authority: PASS. Room `QA-AFFINITY-237189`; 12 clients across four ws-server IDs; all joined, all received `game.on`, all 12 valid trash collisions were accepted, and `not_running=0`. Compute: `real=24.25s`, max RSS `88014848`.
 - STWL-QA-007 lobby/admin/timer authority: PASS. Room `QA-TIMER-237199`; room stayed waiting before start; non-admin rejected; admin start accepted; duplicate start rejected; both clients entered `RUNNING`; canonical 60-second timer; admin end accepted after timer sample. Compute: `real=20.46s`, max RSS `73138176`.
@@ -57,6 +67,13 @@
 
 ## Test Evidence Index
 
+- Public hotfix server-affinity/collision authority after `web:0.0.96` / `ws-server:0.0.62`: `.codex_tmp/qa-public-hotfix-server-affinity-20260627/latest.md`
+- Public hotfix lobby/admin/timer authority after `web:0.0.96` / `ws-server:0.0.62`: `.codex_tmp/qa-public-hotfix-lobby-timer-20260627/latest.md`
+- Public hotfix Chrome/WebKit/mobile multiplayer sync after `web:0.0.96` / `ws-server:0.0.62`: `.codex_tmp/qa-public-hotfix-multiplayer-cross-browser-20260627/latest.md`
+- Public hotfix browser trash collision after `web:0.0.96` / `ws-server:0.0.62`: `.codex_tmp/qa-public-hotfix-browser-collision-20260627/latest.md`
+- Public hotfix mobile all-item collision matrix after `web:0.0.96` / `ws-server:0.0.62`: `.codex_tmp/qa-public-hotfix-all-item-mobile-real-20260627/latest.md`
+- Public hotfix controls sign after `web:0.0.96` / `ws-server:0.0.62`: `.codex_tmp/qa-public-hotfix-controls-sign-20260627/latest.md`
+- Public hotfix admin multi-user Select AI commentary after refreshed `private-agent-factory:0.0.28`: `.codex_tmp/qa-public-hotfix-admin-commentary-20260627/latest.md`
 - Public HTTP root headers: `.codex_tmp/qa-public-root.headers`
 - Public PAF deep health: `.codex_tmp/qa-public-paf-health-deep.json`
 - Public transport lifecycle: `.codex_tmp/qa-conference-transport/latest.md`
