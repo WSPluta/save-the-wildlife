@@ -1642,3 +1642,11 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - OCI DevOps build pipeline is confirmed to use a `GITHUB` build source pinned to branch `main`, so a true build cannot see local commits until `git push origin main` succeeds.
   - Deploy-only OCI pipeline run is unsafe before pushing because `command_spec.yaml` clones `${github_repo_url}`, and `scripts/kustom.mjs` derives `web` and `ws-server` image tags from the cloned `package.json` files. Running deploy from stale GitHub source could roll the working public endpoint back from `web:0.0.99` / `server:0.0.66`.
   - Safe next sequence after interactive auth is: `gh auth login`, `git push origin main`, run OCI DevOps build pipeline, then run OCI DevOps deploy pipeline and rerun the current public P0 probes.
+
+2026-06-27 public endpoint lightweight health recheck:
+  - Rechecked public OKE images: `web:0.0.99`, `ws-server:0.0.66`, `private-agent-factory:0.0.28`, and `replay:0.0.4` are ready.
+  - `/healthz` returned `{"ok":true,"service":"web"}`.
+  - `/paf/healthz` returned `ok=true`, `oracle_configured=true`, `canvas_configured=true`, `indb_agent_enabled=true`, `select_ai_auto_init=true`, and `select_ai_model=cohere.command-r-08-2024`.
+  - Lightweight cross-pod authority proof passed: `.codex_tmp/qa-20260627-goal-health-recheck/server-affinity/latest.md`; eight clients landed across four ws-server IDs and every post-`game.on` trash collision was accepted with `not_running=0`.
+  - Compute usage for the combined HTTP + server-affinity check: `real=23.37s`, `user=1.28s`, `sys=0.67s`, max RSS `90374144`, peak memory `1474848`.
+  - GitHub auth is still unavailable over HTTPS and SSH; local disk is down to about `1.7GiB` free, so avoid full local container builds until space is reclaimed.
