@@ -1635,3 +1635,10 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Browser PAF context/commentary public probe passed: `.codex_tmp/qa-20260627-goal-rerun2-paf-context-commentary/latest.md`. Four browser sessions reached post-game, result cards received commentary, `/paf/api/context` returned SQL-backed session events, and direct commentary returned bounded live `source=select-ai` lines. Compute: `real=91.31s`, max RSS `359841792`.
   - Server-affinity public probe passed: `.codex_tmp/qa-20260627-goal-rerun2-server-affinity/latest.md`. Eight clients landed across all four ws-server IDs and every post-`game.on` trash collision was accepted with `not_running=0`. Compute: `real=22.64s`, max RSS `81313792`.
   - Updated `qa/hardening-tickets.md` with current deployed versions, latest P0 rerun, and artifact index. GitHub push remains blocked until `gh auth login`; local `main` is still ahead of `origin/main`, so OCI DevOps cannot build these commits from GitHub yet.
+
+2026-06-27 canonical push/build/deploy reconciliation check:
+  - HTTPS GitHub push remains blocked: `gh auth status` reports no logged-in GitHub hosts and `git push --dry-run origin main` fails with `could not read Username for 'https://github.com': Device not configured`.
+  - SSH fallback is also unavailable: `ssh -T git@github.com` and `git ls-remote git@github.com:WSPluta/save-the-wildlife.git HEAD` both fail with `Permission denied (publickey)`.
+  - OCI DevOps build pipeline is confirmed to use a `GITHUB` build source pinned to branch `main`, so a true build cannot see local commits until `git push origin main` succeeds.
+  - Deploy-only OCI pipeline run is unsafe before pushing because `command_spec.yaml` clones `${github_repo_url}`, and `scripts/kustom.mjs` derives `web` and `ws-server` image tags from the cloned `package.json` files. Running deploy from stale GitHub source could roll the working public endpoint back from `web:0.0.99` / `server:0.0.66`.
+  - Safe next sequence after interactive auth is: `gh auth login`, `git push origin main`, run OCI DevOps build pipeline, then run OCI DevOps deploy pipeline and rerun the current public P0 probes.
