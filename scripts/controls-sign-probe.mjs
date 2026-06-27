@@ -218,6 +218,16 @@ function signedDelta(after, before, key) {
   return numberValue(Number(after?.[key] || 0) - Number(before?.[key] || 0));
 }
 
+function playerDelta(a, b) {
+  const ap = playerSnapshot(a);
+  const bp = playerSnapshot(b);
+  return {
+    x: Math.abs(Number(ap.x || 0) - Number(bp.x || 0)),
+    z: Math.abs(Number(ap.z || 0) - Number(bp.z || 0)),
+    rotY: Math.abs(Number(ap.rotY || 0) - Number(bp.rotY || 0)),
+  };
+}
+
 function playerSnapshot(state) {
   const player = state?.player || {};
   return {
@@ -225,6 +235,60 @@ function playerSnapshot(state) {
     z: numberValue(player.z),
     rotY: numberValue(player.rotY),
     speed: numberValue(player.speed),
+  };
+}
+
+async function waitForStablePlayer(page, {
+  timeoutMs = 5000,
+  sampleMs = 180,
+  stableMs = 900,
+  maxPositionDelta = 0.04,
+  maxRotationDelta = 0.025,
+} = {}) {
+  const started = Date.now();
+  let latest = null;
+  let stableSince = 0;
+
+  // Let late game.on/start-position messages land before the first stability sample.
+  await sleep(500);
+
+  while (Date.now() - started < timeoutMs) {
+    const state = await readState(page).catch(() => null);
+    if (!state || state.mode !== "RUNNING" || !state.player) {
+      stableSince = 0;
+      latest = state;
+      await sleep(sampleMs);
+      continue;
+    }
+
+    if (latest && latest.player) {
+      const delta = playerDelta(state, latest);
+      const stable =
+        delta.x <= maxPositionDelta &&
+        delta.z <= maxPositionDelta &&
+        delta.rotY <= maxRotationDelta;
+      if (stable) {
+        if (!stableSince) stableSince = Date.now();
+        if (Date.now() - stableSince >= stableMs) {
+          return {
+            ok: true,
+            elapsedMs: Date.now() - started,
+            player: playerSnapshot(state),
+          };
+        }
+      } else {
+        stableSince = 0;
+      }
+    }
+
+    latest = state;
+    await sleep(sampleMs);
+  }
+
+  return {
+    ok: false,
+    elapsedMs: Date.now() - started,
+    player: playerSnapshot(latest),
   };
 }
 
@@ -252,6 +316,14 @@ function summarizeControl({ name, before, after, expectedXSign, expectedRotSign,
 }
 
 async function pressKeys(page, keys, holdMs) {
+  await page.evaluate(() => {
+    try {
+      window.focus();
+      document.body?.focus?.();
+    } catch (_) {}
+  }).catch(() => {});
+  await page.mouse.click(20, 20).catch(() => {});
+  await sleep(80);
   for (const key of keys) await page.keyboard.down(key);
   await sleep(holdMs);
   for (const key of [...keys].reverse()) await page.keyboard.up(key).catch(() => {});
@@ -398,6 +470,13 @@ async function runIsolatedTrial({ browser, scenario, baseUrl, scenarioDir, timeo
 
     const running = await waitForState(page, (state, dom) => state?.mode === "RUNNING" && dom.bodyClass.includes("phase-gameplay"), timeoutMs);
     checks.push({ name: "reaches running", status: running.ok ? "pass" : "fail", elapsedMs: running.elapsedMs, timeRemaining: running.state?.timeRemaining });
+    const stable = running.ok ? await waitForStablePlayer(page) : { ok: false };
+    checks.push({
+      name: "player transform stable before control",
+      status: stable.ok ? "pass" : "fail",
+      elapsedMs: stable.elapsedMs,
+      player: stable.player,
+    });
     await page.screenshot({ path: path.join(scenarioDir, `${trialSlug}-running.png`), fullPage: true }).catch(() => {});
 
     let controlResult = {
@@ -484,7 +563,7 @@ async function runScenario({ playwright, engineName, scenario, baseUrl, outputDi
     const controlResults = trials.map((trial) => trial.controlResult).filter(Boolean);
     const perfFailures = trialChecks.filter((check) => check.name === "frame timing during control" && check.status === "fail");
     const errorFailures = trialChecks.filter((check) => check.name === "browser console/network errors" && check.status === "fail");
-    const lifecycleFailures = trialChecks.filter((check) => ["lobby before presenter start", "presenter start accepted", "reaches running"].includes(check.name) && check.status === "fail");
+    const lifecycleFailures = trialChecks.filter((check) => ["lobby before presenter start", "presenter start accepted", "reaches running", "player transform stable before control"].includes(check.name) && check.status === "fail");
 
     checks.push({
       name: "all trials reach running",

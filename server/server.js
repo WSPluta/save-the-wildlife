@@ -759,6 +759,31 @@ const playerRooms = new Map();
 // Per-room admin: the first human in a room becomes admin unless reassigned
 const roomAdmin = new Map();
 
+function ensurePlayerAuthState(playerId, room, startPosition = null) {
+  if (!SERVER_AUTH_ENABLED || !playerId) return;
+  if (playersState.has(playerId)) {
+    if (!playersInput.has(playerId)) {
+      playersInput.set(playerId, { throttle: 0, steer: 0, brake: false, lastSeq: -1 });
+    }
+    return;
+  }
+  const startX = startPosition ? startPosition.x : randSpawnCoord(worldSizeX);
+  const startZ = startPosition ? startPosition.z : randSpawnCoord(worldSizeZ);
+  playersState.set(playerId, {
+    x: startX,
+    y: 0,
+    z: startZ,
+    rotY: 0,
+    vel: 0,
+    speedMul: 1,
+    shield: false,
+    effects: { speedUntil: 0, shieldUntil: 0, magnetUntil: 0, freezeUntil: 0 },
+    boatType: 'speed',
+  });
+  playersInput.set(playerId, { throttle: 0, steer: 0, brake: false, lastSeq: -1 });
+  try { playerRooms.set(playerId, room || GLOBAL_ROOM); } catch (_) {}
+}
+
 function sessionIdForRoom(room) {
   const wanted = room || GLOBAL_ROOM;
   const rs = roomTimers.get(wanted);
@@ -992,6 +1017,7 @@ export async function start(
         countdownMs: Math.max(0, rs.startingAt - Date.now()),
       });
     } else if (state === "RUNNING" && rs?.startTime) {
+      socket.emit("items.all", await getItemsForRoom(wanted));
       const startPosition = roomStartPositionForPlayer(rs, playerId);
       socket.emit("game.on", {
         startPosition,
@@ -1007,10 +1033,14 @@ export async function start(
   function getSocketRoom(sock) {
     try { return (sock && sock.data && sock.data.room) ? sock.data.room : GLOBAL_ROOM; } catch (_) { return GLOBAL_ROOM; }
   }
-  function listActiveRooms() {
+  function listActiveRooms(info = null) {
     const rooms = new Set();
     for (const [, room] of playerRooms.entries()) {
       rooms.add(room || GLOBAL_ROOM);
+    }
+    for (const profile of Object.values(info || {})) {
+      const profileRoom = profile && profile.room ? normalizeRoom(profile.room) : null;
+      if (profileRoom) rooms.add(profileRoom);
     }
     return Array.from(rooms.values());
   }
@@ -1021,9 +1051,11 @@ export async function start(
     const info = await getPlayersInfoObject();
     const ids = Object.keys(info || {});
     let humans = 0;
+    const want = room || GLOBAL_ROOM;
     for (const id of ids) {
-      const r = playerRooms.get(id) || GLOBAL_ROOM;
-      if (r !== (room || GLOBAL_ROOM)) continue;
+      const profileRoom = info[id] && info[id].room ? normalizeRoom(info[id].room) : null;
+      const r = profileRoom || playerRooms.get(id) || GLOBAL_ROOM;
+      if (r !== want) continue;
       if (!isBotProfile(info[id], id)) humans++;
     }
     return Math.max(0, humans);
@@ -1321,6 +1353,7 @@ async function broadcastRoomState(room, state, extra = {}) {
   if (!isLoadCanaryRoom(room)) scheduleRoomsUpdate(io);
   if (extra.startsAt) io.to(room).emit("startingGame", extra);
   if (extra.startPosition || extra.startPositions) {
+    io.to(room).emit("items.all", await getItemsForRoom(room));
     io.to(room).emit("game.on", {
       ...extra,
       startPosition: persisted.startPosition || extra.startPosition || null,
@@ -1400,7 +1433,11 @@ async function startRoomMatch(room) {
       clearRadius: SPAWN_PLAYER_CLEAR_RADIUS,
       attempts: 32,
     });
-    const players = await listPlayersInRoom(room, { includeBots: true }).catch(() => []);
+    const playersFromProfiles = await listPlayersInRoom(room, { includeBots: true }).catch(() => []);
+    const livePlayers = Array.from(playerRooms.entries())
+      .filter(([, playerRoom]) => (playerRoom || GLOBAL_ROOM) === room)
+      .map(([playerId]) => playerId);
+    const players = Array.from(new Set([...playersFromProfiles, ...livePlayers])).sort();
     const startPositions = buildSeparatedStartPositions(players, startPosition);
     if (SERVER_AUTH_ENABLED) {
       for (const playerId of players) {
@@ -1741,6 +1778,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       // Track the playerId bound to this socket for chat attribution/throttling
       if (!id) return;
       playerIdForSocket = id;
+      mapPlayerSockets[id] = socket;
       const requestedRoom = normalizeRoom(room);
       const currentRoom = resolveJoiningRoom({
         requestedRoom,
@@ -1766,6 +1804,15 @@ function scheduleRoomRefill(room, delayMs = 0) {
         teacher,
         botPolicy,
       });
+      try {
+        const canonicalRoomState = await readCanonicalRoomState(currentRoom);
+        const canonicalStart = canonicalRoomState?.state === "RUNNING"
+          ? roomStartPositionForPlayer(canonicalRoomState, id)
+          : null;
+        ensurePlayerAuthState(id, currentRoom, canonicalStart);
+      } catch (_) {
+        ensurePlayerAuthState(id, currentRoom);
+      }
       socket.emit("player.session", profile);
       // Seed chat history for this socket's current room
       if (!loadRoom) {
@@ -1916,27 +1963,11 @@ function scheduleRoomRefill(room, delayMs = 0) {
       // Initialize authoritative state as soon as the player enters the game flow.
       // Players often press Continue while the room is still waiting/counting down;
       // they still need to appear in authoritative multiplayer snapshots.
-      if (SERVER_AUTH_ENABLED) {
-        const canonicalRoomState = await readCanonicalRoomState(room);
-        const canonicalStart = canonicalRoomState?.state === "RUNNING"
-          ? roomStartPositionForPlayer(canonicalRoomState, playerId)
-          : null;
-        if (!canonicalStart && playersState.has(playerId)) return;
-        const startX = canonicalStart ? canonicalStart.x : randSpawnCoord(worldSizeX);
-        const startZ = canonicalStart ? canonicalStart.z : randSpawnCoord(worldSizeZ);
-        playersState.set(playerId, {
-          x: startX,
-          y: 0,
-          z: startZ,
-          rotY: 0,
-          vel: 0,
-          speedMul: 1,
-          shield: false,
-          effects: { speedUntil: 0, shieldUntil: 0, magnetUntil: 0, freezeUntil: 0 },
-          boatType: 'speed' // Default type; players can select later
-        });
-        playersInput.set(playerId, { throttle: 0, steer: 0, brake: false, lastSeq: -1 });
-      }
+      const canonicalRoomState = await readCanonicalRoomState(room);
+      const canonicalStart = canonicalRoomState?.state === "RUNNING"
+        ? roomStartPositionForPlayer(canonicalRoomState, playerId)
+        : null;
+      ensurePlayerAuthState(playerId, room, canonicalStart);
     });
 
     socket.on("player.boat.select", async ({ playerId, boatType }) => {
@@ -2820,7 +2851,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       });
     }
 
-    const rooms = (roomParam ? [roomParam] : listActiveRooms()).filter(shouldSyncVisualItems);
+    const rooms = (roomParam ? [roomParam] : listActiveRooms(info)).filter(shouldSyncVisualItems);
     for (const room of rooms) {
       const humans = await humansInRoom(room);
       const targets = computeEffectiveTargets(humans);
@@ -2871,7 +2902,8 @@ function scheduleRoomRefill(room, delayMs = 0) {
 
   // Spawn power-ups to per-room targets (refill smoothly)
   setAsyncInterval("powerup.refill", async () => {
-    const rooms = listActiveRooms().filter(shouldSyncVisualItems);
+    const info = await getPlayersInfoObject();
+    const rooms = listActiveRooms(info).filter(shouldSyncVisualItems);
     for (const room of rooms) {
       const humans = await humansInRoom(room);
       const targets = computeTargets(humans);

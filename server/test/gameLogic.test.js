@@ -175,6 +175,22 @@ describe("canonical room state helpers", () => {
     expect(roomStartPositionForPlayer(state, "missing")).toEqual({ x: 0, y: 0, z: 0 });
   });
 
+  it("keeps game.start idempotent so repeated registration cannot reset movement", () => {
+    const serverSource = readFileSync("server.js", "utf8");
+    expect(serverSource).toMatch(/mapPlayerSockets\[id\] = socket;/);
+    expect(serverSource).toMatch(/function ensurePlayerAuthState\(playerId, room, startPosition = null\)/);
+    expect(serverSource).toMatch(/if \(playersState\.has\(playerId\)\) \{[\s\S]{0,220}if \(!playersInput\.has\(playerId\)\)[\s\S]{0,180}return;/);
+    expect(serverSource).toMatch(/ensurePlayerAuthState\(playerId, room, canonicalStart\);/);
+    expect(serverSource).not.toMatch(/if \(!canonicalStart && playersState\.has\(playerId\)\) return;/);
+  });
+
+  it("uses live socket room membership as a backstop for match start auth state", () => {
+    const serverSource = readFileSync("server.js", "utf8");
+    expect(serverSource).toMatch(/const playersFromProfiles = await listPlayersInRoom\(room, \{ includeBots: true \}\)/);
+    expect(serverSource).toMatch(/const livePlayers = Array\.from\(playerRooms\.entries\(\)\)/);
+    expect(serverSource).toMatch(/const players = Array\.from\(new Set\(\[\.\.\.playersFromProfiles, \.\.\.livePlayers\]\)\)\.sort\(\);/);
+  });
+
   it("computes canonical remaining time from server start time", () => {
     expect(roomRemainingSeconds({ startTime: 10_000, durationSeconds: 60 }, { now: 10_100 })).toBe(60);
     expect(roomRemainingSeconds({ startTime: 10_000, durationSeconds: 60 }, { now: 15_200 })).toBe(55);
@@ -382,6 +398,13 @@ describe("authoritative multiplayer lifecycle", () => {
     expect(server).toMatch(/const rs = await readCanonicalRoomState\(room\);[\s\S]*error: "not_running"/);
     expect(server).toMatch(/if \(await readCanonicalRoomAdmin\(room\) !== playerIdForSocket\)/);
     expect(server).not.toMatch(/const rs = roomTimers\.get\(room\);[\s\S]{0,140}error: "not_running"/);
+    expect(server).toMatch(/socket\.emit\("items\.all", await getItemsForRoom\(wanted\)\);[\s\S]{0,180}socket\.emit\("game\.on"/);
+    expect(server).toMatch(/io\.to\(room\)\.emit\("items\.all", await getItemsForRoom\(room\)\);[\s\S]{0,180}io\.to\(room\)\.emit\("game\.on"/);
+    expect(server).toMatch(/function listActiveRooms\(info = null\)/);
+    expect(server).toMatch(/const profileRoom = profile && profile\.room \? normalizeRoom\(profile\.room\) : null;/);
+    expect(server).toMatch(/const profileRoom = info\[id\] && info\[id\]\.room \? normalizeRoom\(info\[id\]\.room\) : null;/);
+    expect(server).toMatch(/const rooms = \(roomParam \? \[roomParam\] : listActiveRooms\(info\)\)\.filter\(shouldSyncVisualItems\);/);
+    expect(server).toMatch(/const info = await getPlayersInfoObject\(\);\s*const rooms = listActiveRooms\(info\)\.filter\(shouldSyncVisualItems\);/);
   });
 
   it("builds separated player starts and sends them to clients", () => {

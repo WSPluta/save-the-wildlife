@@ -3,13 +3,13 @@
 - QA pass: 2026-06-27
 - Tester role: senior beta tester, multiplayer web/mobile game hardening
 - Public URL: `http://130.162.174.167`
-- Local commit tested: `4a311bd1` plus the QA harness retargeting update in `scripts/browser-item-collision-matrix-probe.mjs`
+- Local commit tested: current HEAD recovery commit plus prior public-deployed `web:0.0.99` / `ws-server:0.0.66` evidence; strict `web:0.0.100` visual telemetry still awaits GitHub-backed deployment.
 - Local package versions: web `0.0.99`, ws-server `0.0.66`, private-agent-factory `0.0.28`
 - Public bundle observed: `/bundle.7dc24fa8b182a728a302.js`
 - Public PAF observed: `0.0.28`
 - Public hotfix rollout: 2026-06-27 20:14-20:18 CEST, OKE images set directly to `web:0.0.96`, `server:0.0.62`, refreshed `private-agent-factory:0.0.28` after GitHub push auth blocked the normal GitHub-backed OCI DevOps build source. All three deployed images are running on OKE.
 - Local pre-deploy mechanic reachability check: `2026-06-27 20:03 CEST`, `server:0.0.62`, `.codex_tmp/qa-local-turn-all-item-mobile-after-seed-20260627/latest.md`; Chrome and WebKit mobile collected trash, hit turtle penalties, and picked up powerups with healthy frame budgets after opening powerup/turtle seeding.
-- Latest focused rerun: 2026-06-27 22:16-22:34 CEST, public `web:0.0.99` / `ws-server:0.0.66` / `private-agent-factory:0.0.28` / `replay:0.0.4`.
+- Latest focused rerun: 2026-06-27 23:44-23:51 CEST, public `web:0.0.99` / `ws-server:0.0.66` / `private-agent-factory:0.0.28` / `replay:0.0.4`.
 
 ## Executive Summary
 
@@ -22,6 +22,9 @@
 ## Latest P0 Public Rerun
 
 - 2026-06-27 22:16-22:34 CEST against `http://130.162.174.167`; OKE reports `web:0.0.99`, `ws-server:0.0.66`, `private-agent-factory:0.0.28`, and `replay:0.0.4`.
+- STWL-QA-001 refresh-rate-normalized local motion: PASS. Public Chrome/WebKit desktop/mobile motion probe `.codex_tmp/qa-20260628-motion-smoothness-refresh-normalized-20260627234822/latest.md` reached `RUNNING`, moved the player, and recorded `largeJumpCount=0` in all four scenarios. Chrome desktop/mobile presented at a steady automation-limited `30 FPS` and is now reported as a warning rather than a gameplay failure; WebKit desktop/mobile held about `61/60 FPS`. Compute: `real=102.07s`, max RSS `317079552`, peak memory `122141552`.
+- STWL-QA-001 remote boat visibility and refresh: PASS. Public four-client Chrome/WebKit desktop/mobile probe `.codex_tmp/qa-20260628-remote-sync-refresh-normalized-20260627235021/latest.md`, room `QA-MIX-021318`, showed all four clients reaching `RUNNING`, each client seeing all three other human remotes, and observers recording the Chrome driver moving about `8.03-8.05` world units with `largeJumpCount=0`. Chrome scenarios again reported steady `30 FPS` warnings; WebKit scenarios held about `60 FPS`. Compute: `real=31.95s`, max RSS `338575360`, peak memory `212675896`.
+- Server authority/idempotency local guard: PASS. `node --check server/server.js`, `node --check scripts/controls-sign-probe.mjs`, focused `server/test/gameLogic.test.js` (`48/48`), and full `npm --prefix server run test:unit` (`82/82`) passed with compute evidence. These checks cover repeated registration not resetting movement state and match-start auth-state backstops.
 - Controls sign regression: PASS. Chrome/WebKit desktop `A/W` and `ArrowLeft/ArrowUp` moved left, `D/W` and `ArrowRight/ArrowUp` moved right; Chrome/WebKit mobile joystick up-left/up-right matched the same convention; all scenarios released/decelerated and stayed within frame budget. Compute: `real=265.31s`, max RSS `318242816`, peak memory `147966144`.
 - STWL-QA-010 item population over time: PASS. Four public clients across Chrome/WebKit desktop/mobile stayed in lobby until admin start, reached `RUNNING`, kept healthy item counts through a 70s sample window, and showed no lifecycle collision rejection. Minimum trash/powerups/turtles stayed at `22/1/1`. Compute: `real=80.79s`, max RSS `317079552`, peak memory `158158000`.
 - STWL-QA-010 all-item browser collision matrix: PASS. Chrome/WebKit desktop/mobile exercised trash collection, turtle penalty, and `powerup_speed` pickup with real keyboard/joystick input. All 12 scenarios returned a passing pickup/score/count signal, mobile joystick was visible, and frame budgets held. Compute: `real=297.76s`, max RSS `362266624`, peak memory `301592344`.
@@ -82,6 +85,8 @@
 - Public current long item-population health after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260627-goal-rerun-item-population/latest.md`
 - Public current all-item collision matrix after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260627-goal-rerun2-item-collision-matrix/latest.md`
 - Public current mixed Chrome/WebKit desktop/mobile multiplayer sync after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260627-goal-rerun2-multiplayer-sync/latest.md`
+- Public refresh-rate-normalized local motion after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260628-motion-smoothness-refresh-normalized-20260627234822/latest.md`
+- Public refresh-rate-normalized remote boat sync after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260628-remote-sync-refresh-normalized-20260627235021/latest.md`
 - Public current lobby/admin/timer authority after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260627-goal-rerun2-lobby-timer/latest.md`
 - Public current PAF/Select AI browser context and commentary after `web:0.0.99` / `ws-server:0.0.66` / `private-agent-factory:0.0.28`: `.codex_tmp/qa-20260627-goal-rerun2-paf-context-commentary/latest.md`
 - Public current cross-pod server-affinity/collision authority after `web:0.0.99` / `ws-server:0.0.66`: `.codex_tmp/qa-20260627-goal-rerun2-server-affinity/latest.md`
