@@ -231,6 +231,10 @@ const BOAT_BADGE_LAYOUT = Object.freeze({
     statusY: 0.94,
   },
 });
+const EMOJI_BADGE_TEXTURE_SIZE = 192;
+const EMOJI_BADGE_SAFE_WIDTH_RATIO = 0.68;
+const EMOJI_BADGE_MAX_FONT_RATIO = 0.56;
+const EMOJI_BADGE_MIN_FONT_RATIO = 0.13;
 const trashTmpMatrix = new THREE.Matrix4();
 const trashTmpPos = new THREE.Vector3();
 const trashTmpScale = new THREE.Vector3();
@@ -3198,7 +3202,12 @@ async function init() {
             gameState = "WAITING";
             break;
           }
-          const sp = body && body.startPosition ? body.startPosition : null;
+          const startPositions = body && body.startPositions && typeof body.startPositions === "object"
+            ? body.startPositions
+            : null;
+          const sp = (startPositions && startPositions[yourId])
+            ? startPositions[yourId]
+            : (body && body.startPosition ? body.startPosition : null);
           startPosition = sp;
           if (clientGameStarted) {
             prepareExistingSceneForMatch(sp);
@@ -3454,6 +3463,12 @@ async function init() {
       case "player.state":
         if (body && body.states) {
           const receivedAt = performance.now();
+          if (body.players && typeof body.players === "object") {
+            otherPlayersInfo = {
+              ...(otherPlayersInfo || {}),
+              ...mergeRosterProfileEvidence(body.players || {}),
+            };
+          }
           authStates = authStates && typeof authStates === "object" ? authStates : {};
           authStateSeenAt = authStateSeenAt && typeof authStateSeenAt === "object" ? authStateSeenAt : {};
           Object.entries(body.states || {}).forEach(([id, state]) => {
@@ -4261,8 +4276,8 @@ function refreshNameTagForPlayer(id) {
 // Emoji power-up badge (sprite updated dynamically)
 function createEmojiSprite(text) {
   const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 128;
+  canvas.width = EMOJI_BADGE_TEXTURE_SIZE;
+  canvas.height = EMOJI_BADGE_TEXTURE_SIZE;
   const ctx = canvas.getContext("2d");
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
@@ -4301,10 +4316,11 @@ function setSpriteText(sprite, text) {
   sprite.userData.text = text || "";
   ctx.clearRect(0, 0, size, size);
   if (text && text.length) {
-    const maxWidth = size * 0.84;
-    let fontSize = 80;
+    const maxWidth = size * EMOJI_BADGE_SAFE_WIDTH_RATIO;
+    let fontSize = Math.round(size * EMOJI_BADGE_MAX_FONT_RATIO);
+    const minFontSize = Math.round(size * EMOJI_BADGE_MIN_FONT_RATIO);
     let measuredWidth = 0;
-    while (fontSize >= 24) {
+    while (fontSize >= minFontSize) {
       ctx.font = `bold ${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`;
       measuredWidth = ctx.measureText(text).width;
       if (measuredWidth <= maxWidth) break;
@@ -5283,7 +5299,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const spd = __effectiveSpeedForFrame();
     const ts = Date.now();
     const throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
-    const steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0) + Number(mobileInput.steer || 0)));
+    const steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) + Number(mobileInput.steer || 0)));
     return {
       ts,
       timeISO: new Date(ts).toISOString(),
@@ -5599,7 +5615,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const lagMs = serverAuthEnabled ? (nowMs - (authStatesTime || 0)) : 0;
     const movement = new THREE.Vector3(0, 0, 0);
     let throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
-    let steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0) + Number(mobileInput.steer || 0)));
+    let steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) + Number(mobileInput.steer || 0)));
     if (trailSlowActive) {
       throttle *= TRAIL_SLOW_SPEED_MULT;
       steer *= 0.75;
@@ -5768,7 +5784,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     if (compactFpsEl) compactFpsEl.innerText = `FPS: ${fps} / ${frame}ms / lag ${lag}ms`;
     if (hudDebugEl) {
       const th = (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0);
-      const st = (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0);
+      const st = (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0);
       const sp = Number.isFinite(latestEffectiveSpeed) ? latestEffectiveSpeed.toFixed(2) : "0.00";
       const px = player ? player.position.x.toFixed(2) : "0.00";
       const pz = player ? player.position.z.toFixed(2) : "0.00";
@@ -5788,7 +5804,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         speed: Number(__effectiveSpeedForFrame() || 0),
         input: {
           throttle: (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0),
-          steer: (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0) + Number(mobileInput.steer || 0),
+          steer: (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) + Number(mobileInput.steer || 0),
         },
       });
     }

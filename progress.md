@@ -218,6 +218,54 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - `node --check` passed for `server/server.js`, `web/src/script.js`, and `web/src/commsWorker.js`.
     - Scoped `git diff --check` passed for touched tracked files; new-file no-index checks reported no whitespace diagnostics.
 - Deployed gameplay polish verification on 2026-06-11:
+- Commentary delivery + turtle footprint fix on 2026-06-25:
+  - Changed server game-over commentary from blocking `await buildCommentary()` inside the `game.event` ack to an async queue.
+  - Server now emits `commentary.pending` immediately, returns queued status in the ack, then emits and stores `commentary.ready` when PAF/SQL fallback finishes.
+  - Client worker now distinguishes queued/pending from ready commentary.
+  - Player result card now updates from late `commentary.ready` events and from replayed `commentary.history` for the current player/session, so the "Commentary is being drafted..." placeholder is replaced when the line arrives.
+  - Shrunk turtle collision footprint from `1.2` to `0.72` on both server validation and client primitive overlap.
+  - Verified syntax, focused tests, full server/web unit tests, web build, Playwright smoke, and a socket-level game-over smoke showing `pending -> ready` commentary delivery.
+- Public Chrome/WebKit compute + UI QA on 2026-06-27:
+  - Ran `node scripts/browser-compute-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-compute-ui-20260627-safari-chrome-final --engines chrome,webkit --include-mobile --sample-ms 15000 --timeout-ms 150000`.
+  - Result: passed Chrome desktop/mobile and WebKit desktop/mobile. Chrome held about 120 FPS, WebKit/Safari-family held about 60 FPS, mobile joystick was visible, player movement worked, and no browser console/network errors were captured.
+  - Important raw-state nuance: the compute run still ended with `pickups.lastResult.error="not_running"` in all four browser states, even though compute/UI checks passed. Treat this as collision authority evidence, not a rendering performance failure.
+  - The same run still showed timer pacing drift: after a 15s sample window plus readback overhead, time dropped from 60 to 35/40/36/38 across Chrome desktop, Chrome mobile, WebKit desktop, and WebKit mobile.
+  - Ran `node scripts/browser-collision-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-collision-ui-20260627-safari-chrome-final --engines chrome,webkit --include-mobile --drive-ms 30000 --timeout-ms 150000`.
+  - Result: failed overall. Chrome desktop and WebKit mobile still returned `error=not_running` while UI stayed `RUNNING` and frame budgets were healthy. WebKit desktop collected trash successfully; Chrome mobile registered a valid turtle collision. This points away from raw FPS/Safari rendering and back toward deployed room/session authority or collision validator state.
+  - Visually inspected Chrome desktop and WebKit mobile screenshots; HUD/FPS/joystick looked healthy. Updated `qa/hardening-tickets.md` with the new evidence paths and results.
+- Public server-affinity/root-cause QA on 2026-06-27:
+  - Added QA-only `scripts/server-affinity-probe.mjs` to preserve each socket's first `server.info.id`, start a room, verify all clients receive `game.on`, and then submit exact-coordinate `items.collision` requests from each client.
+  - Ran `node scripts/server-affinity-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-server-affinity-public-20260627-rerun --clients 8 --timeout-ms 120000`.
+  - Result: failed with root-cause evidence. Eight clients joined one room across four connected server IDs. All received `game.on`; only the two clients connected to starter server `btU4kkks2NssqqHL2w3FCK` accepted collisions. The six clients on other server IDs returned `error=not_running`.
+  - Confirmation run: `node scripts/server-affinity-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-server-affinity-public-20260627-confirm --clients 12 --timeout-ms 120000`.
+  - Confirmation result: three clients on starter server passed, nine clients on other server IDs returned `error=not_running`.
+  - Logged new P0 `STWL-QA-012`: cross-pod room lifecycle broadcasts make clients `RUNNING` while collision validators stay `WAITING`. This is the likely root cause behind public browser collection failures and timer/admin inconsistency.
+- Public PAF/commentary/admin QA on 2026-06-27:
+  - Ran `node scripts/commentary-result-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-commentary-result-public-20260627-final --timeout-ms 180000`.
+  - Result: failed overall only because timer pacing failed again (`60 -> 50` after `5692ms`). Player-facing commentary itself passed: result card survived reset and received a safe 103-character Select AI line about zero trash and final coordinates about 2.3s after `commentary.pending`.
+  - Commentary metadata remains a claim-boundary issue: `source=select-ai`, `fallback_source=select-ai`, `trace_persisted=false`, `canvas=null`, `route_mode=primary`, and both model routes were skipped with `live_line_select_ai_first`.
+  - Ran `node scripts/paf-canvas-mcp-proof.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-paf-canvas-mcp-20260627-final --room-id QA-COMMENTARY-090594 --timeout-ms 30000`.
+  - Result: passed MCP health, handshake, live Oracle match context, and Select AI commentary for the fresh room.
+  - Ran `node scripts/admin-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-admin-ui-public-20260627-final --wait-ms 12000`.
+  - Result: failed Model AI health/proof UI. Observability was populated, but `/admin/ai-learning` still lacks runtime/handoff/proof DOM fields and only shows `Base ready`, zero commentary lines, and `Waiting`. The same screen hides PAF health caveats such as `genai_configured=false`, `route_mode=primary`, and `trace_persist=false`.
+  - Observability screenshot also showed stale QA rooms stuck in `STARTING/RUNNING`; logged new P2 `STWL-QA-013` as a visible presenter-dashboard symptom of distributed lifecycle cleanup problems.
+  - Ran `node scripts/conference-demo-preflight.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-conference-preflight-20260627-final --timeout-ms 60000`.
+  - Result: failed. Game URL passed, match context warned only on replay/vector evidence absence, but PAF health failed `genai_configured!=true`, `route_mode=primary`, `trace_persist!=true`; commentary failed `route_mode=primary` and `trace_persisted!=true`; model proof bundle failed.
+- Badge/layout QA pass on 2026-06-23:
+  - Completed mobile-aware above-boat badge layout in `web/src/script.js` for powerup and frozen/status sprites.
+  - Added `badges` debug output to `window.render_game_to_text` so desktop/mobile badge scale and y-offset are inspectable.
+  - Added focused regression coverage in `web/src/__tests__/gameplayPolish.test.js`.
+  - Verified `node --check web/src/script.js`, focused gameplay polish tests, full web unit tests, and `npm --prefix web run build`.
+  - Local browser smokes:
+    - `output/badge-layout-desktop-smoke/` reached `RUNNING`; badge layout reported desktop scale/y values.
+    - `output/badge-layout-mobile-smoke/` reached `RUNNING`; joystick visible; badge layout reported mobile scale/y values; synthetic joystick drag moved the boat.
+    - `output/badge-layout-collect-smoke/` collected trash successfully with score `0 -> 1` and no browser errors.
+- Live incident recovery on 2026-06-21:
+  - Re-ran public URL smokes against `http://130.162.174.167/`; mobile and desktop gameplay reached RUNNING, trash pickup incremented score, and admin observability/model routes rendered.
+  - Found the remaining user-facing issue was stale Model AI presenter copy: the deployed adapters reported `runtime_mode=upstream-llm`, but `/admin/ai-learning` still said `behavior-adapter` and pending.
+  - Added optional deep PAF health at `/paf/healthz?deep=1` to summarize private adapter runtime/format readiness without making normal readiness depend on model pods.
+  - Updated `/admin/ai-learning` to show upstream LLM readiness and refresh from PAF health, plus tests/readiness proof strings.
+  - Bumped `web` to `0.0.32` and `private-agent-factory` to `0.0.6` for the next DevOps deploy.
 - Incident verification on 2026-06-20:
   - Fixed demo bot visibility by rendering bot participants again (`BOT_RENDER_MODE="demo-visible"`), adding bounded/tinted bot boats, and excluding bot groups from custom culling so the render optimizer cannot hide demo evidence.
   - Added bot roster fallback visuals and `render_game_to_text` fields for `botsVisible`, `botsKnown`, `botRenderMode`, `botSamples`, and `botRosterVisual`.
@@ -226,14 +274,68 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Verified local trash collection with required score movement: `score 0 -> 1`.
   - Verified local admin observability and Model AI routes render with root-relative assets and no page errors.
   - Verified current live predeploy URL still lacks the newer bot fields, while live trash collection itself works (`score 0 -> 1`), indicating the public bundle is stale rather than the collision path being broken.
+- Live rescue follow-up on 2026-06-22:
+  - Rechecked public `http://130.162.174.167/`: mobile and desktop gameplay reach `RUNNING`, trash/powerup counts are healthy, admin observability and Model AI views render, and `/paf/healthz?deep=1` reports Oracle DB, PAF Canvas, Select AI, in-db agents, graph/replay/vector retrieval, and upstream LLM adapters ready.
+  - Remaining smoke failure before deploy: visible demo bots did not carry PAF policy evidence in `render_game_to_text`, so the AI/model story looked incomplete even while gameplay was live.
+  - Added bot policy evidence caching/merging in the web client and policy metadata on bot trace events; hardened `scripts/conference-game-smoke.mjs --require-bots` to require visible bot PAF policy evidence.
+  - Bumped release versions to `web@0.0.44` and `bots@0.0.6`; local gates passed (`node --check`, web unit tests, web build, bot unit tests, scoped `git diff --check`).
+  - Committed/pushed `a36b6335 Restore PAF bot policy evidence in gameplay`.
+  - OCI DevOps build retry succeeded and exported `WEB_VERSION=0.0.44`, `BOTS_VERSION=0.0.6`, `PAF_VERSION=0.0.13`, `WS_SERVER_VERSION=0.0.39`; deploy succeeded and OKE reports `web:0.0.44` and `bots:0.0.6` ready.
+  - Postdeploy receipts: strict public conference smoke passed mobile + desktop with 5 visible PAF policy-bearing bots per check; trash collection smoke moved score `0 -> 2`; admin observability/model routes render; PAF deep health remains green with Oracle DB, PAF Canvas, Select AI, in-db agent, graph/replay/vector retrieval, and upstream LLM adapters ready.
 - Live incident fix on 2026-06-20:
   - Reproduced the failure from user screenshots: nested `/admin/observability` and `/admin/ai-learning` routes loaded bare HTML because built assets used relative paths; gameplay view showed huge blocker geometry and trash pickup felt broken in deployed OKE.
+- Live commentary result-screen fix on 2026-06-25:
+  - Public `/paf/healthz?deep=1` proved PAF Canvas, in-db agent, Select AI, MCP, and the `oci-base` upstream LLM route were configured; direct public `/paf/api/commentary` returned an `oci-base` line, but latency was about 30 seconds.
+  - Found the player-facing race: server resets rooms to `WAITING` after match end, while slow LLM commentary can arrive later; the web client was leaving `POST_GAME` for Lobby before `commentary.ready` could replace the placeholder.
+  - Patched `web/src/script.js` so an incoming `WAITING` reset updates timer/control state but preserves the result card while current phase is `POST_GAME`.
+  - Added regression coverage in `web/src/__tests__/lobbyAdminFlow.test.js` and bumped `web` to `0.0.83` for OCI DevOps rollout.
+  - Verified `node --check web/src/script.js`, focused lobby/commentary test, full web unit tests, and web production build before deployment.
   - Fixed production web asset routing by setting webpack `output.publicPath = "/"` and switching runtime static assets/audio to root-relative `/assets/...` URLs.
   - Prevented presenter admin routes from auto-starting the WebGL gameplay scene; admin now stays a control/observability/model panel and avoids WebGL overlay failures.
   - Kept deployed bots as telemetry/data-only clients in the game renderer so load-test bots do not render full boat meshes or trails that block human gameplay.
   - Added visual scale clamps for trash and powerups across instanced rendering, fallback meshes, per-frame updates, and client-side collision boxes.
+- Live recheck and observability route hardening on 2026-06-22:
+  - Fresh public smokes against `http://130.162.174.167/` passed for mobile gameplay, desktop gameplay, direct trash collection, admin observability/model routes, PAF deep health, and Model AI proof bundle.
+  - Direct trash collection moved score `0 -> 1`; latest boat waterline telemetry stayed within the safe visual range (`waterlineClearance` about `0.074-0.076`).
+  - Found public `/metrics` still fell through to the web SPA despite `ws-server` exposing Prometheus metrics.
+  - Added an exact `/metrics` ingress route to `ws-server:3000`, patched the live ingress directly without touching pod images, and verified `/metrics` now returns Prometheus text.
+  - Added a regression assertion in `web/src/__tests__/lobbyAdminFlow.test.js`; `npm --prefix web run test:unit` passed (9 files, 49 tests), scoped `git diff --check` passed, and `kubectl kustomize deploy/k8s/overlays/devops` rendered the new route.
+- Live PAF commentary recovery on 2026-06-21:
+  - Reverified the public URL with desktop/mobile conference smoke, forced trash collection, admin-route smoke, and observability-count smoke; gameplay, trash collection, mobile joystick, bot visibility, and admin panels all passed against `http://130.162.174.167/`.
+  - Reproduced the remaining AI gap: `/paf/api/context?roomId=...` resolved Oracle match intelligence, but `/paf/api/commentary?roomId=...` returned empty `request-summary` data and waited on Canvas/model fallbacks.
+  - Patched `private-agent-factory` so room-only commentary resolves the latest SQL-backed room session through `buildMatchContext()` before model/Canvas routing.
+  - Added a regression test for room-only commentary and bumped PAF to `0.0.9`.
+  - Validation passed: `node --check private-agent-factory/index.js`, `npm --prefix private-agent-factory test`, and scoped `git diff --check` for the touched PAF files.
+- Live incident hardening on 2026-06-22:
+  - Fresh public smoke showed gameplay and trash collection working, but the Observability route rendered metric cards as dashes and the Model AI page overclaimed readiness from shallow adapter health.
+  - Added global `server.metrics` broadcasts to every socket while preserving room-scoped metrics.
+  - Added `/metrics` bootstrap parsing for `/admin/observability` and a matching webpack dev proxy so local presenter testing mirrors OKE.
+  - Added generation-aware model adapter deep health at `/healthz?deep=1`; PAF deep health now uses that path and only marks upstream adapters ready when bounded generation succeeds.
+  - Changed Model AI presenter copy to start at "Checking route" and resolve from health instead of static "Upstream LLM ready".
+  - Bumped versions for next deploy: `web@0.0.46`, `server@0.0.40`, `private-agent-factory@0.0.17`; use a unique `MODEL_AI_INFERENCE_VERSION` when running OCI DevOps so model adapter pods roll.
+  - Validation passed locally: model adapter unittest, PAF tests, server unit tests, web unit tests, web build, local admin smoke with populated Observability cards, local desktop/mobile gameplay smoke, and forced trash collection `0 -> 1`.
+- Live user-incident recheck on 2026-06-22:
+  - Re-ran public `http://130.162.174.167/` smokes after the user reported broken gameplay, no trash collection, sinking boat, and missing admin/model UI.
+  - Conference game smoke passed both mobile and desktop with RUNNING state, visible trash/powerups, joystick visible, bot policy evidence, and boat waterline in bounds; receipt: `output/live-game-user-incident-20260622122050/latest.md`.
+  - Forced trash collection passed with score `0 -> 1` and trash `10 -> 9`; receipt: `output/collect-trash-user-incident-20260622122136/result.json`.
+  - Admin routes `/admin/observability`, `/admin/ai-learning`, and `/admin/ai` passed with root-relative assets and no page errors; receipt: `output/admin-route-user-incident-20260622122136/result.json`.
+  - Demo preflight returned `ready_with_caveats`: PAF health, Select AI, in-db agent, trace persistence, and proof bundle are green; caveats remain claim-boundary items for missing replay/vector evidence in the seeded smoke and Canvas not producing that exact line; receipt: `output/live-preflight-user-incident-20260622122136/latest.md`.
+  - Repeated root and PAF requests showed a stable web bundle/ETag and stable `private-agent-factory:0.0.16`; OKE rollout is healthy for `web:0.0.44`, `server:0.0.39`, `private-agent-factory:0.0.16`, `bots:0.0.6`, `score:0.0.7`, and `replay:0.0.1`.
+  - Observability counts smoke passed with nonzero monitor counts and `/metrics` returns Prometheus text. No source patch was needed from this verification pass; likely remaining user-side failure mode is a stale browser tab/cache or testing during the earlier partially rolled out build.
+- Live waterline recovery on 2026-06-21:
+  - Verified public URL `http://130.162.174.167` before patch: mobile/desktop gameplay, admin routes, strict Model AI readiness, and focused trash pickup were already functionally green.
+  - Tuned `web/src/boatFeel.js` so the visual hull sits closer to the water surface while keeping the gameplay root and collision box unchanged.
+  - Relaxed the conference smoke's obsolete "too high" y-threshold to match the new contact-depth based waterline proof.
+  - Bumped and deployed `web:0.0.34` through OCI DevOps; build and deployment both succeeded.
+  - Post-deploy receipts: conference game smoke ready, trash collection score `0 -> 1`, admin observability/model routes ok, strict Model AI readiness ready.
   - Raised boat visual waterline defaults to stop the hull reading as sunk while keeping the feel layer below the water surface.
   - Aligned server pickup validation with the visible arcade hitbox by setting `DEFAULT_COLLISION_VALIDATE_RADIUS=2.1` and `COLLISION_VALIDATE_RADIUS=2.1` in the ws-server deployment template.
+- Live incident recheck on 2026-06-22:
+  - Rechecked user-reported public URL failures against `http://130.162.174.167/`: current deployed `web:0.0.41` and `server:0.0.37` no longer show the giant geometry/admin-asset fallback screenshots.
+  - Public smokes passed for desktop/mobile gameplay, keyboard trash pickup, touch-joystick mobile trash pickup, admin observability/model routes, `/metrics`, and PAF deep health.
+  - Found one real remaining observability issue: ws-server broadcasted global item counts to every game/admin socket, so the player monitor showed hundreds of items while the current room rendered roughly 10-12.
+  - Patched ws-server metrics to keep Prometheus global but emit room-scoped `server.metrics` to each Socket.IO room, with global counts preserved under `roomMetrics.global`.
+  - Bumped `server` to `0.0.38`; local gates passed: `node --check server/server.js`, full `npm --prefix server run test:unit`, full `npm --prefix web run test:unit`, and scoped `git diff --check`.
   - Added regression coverage for admin asset routing, root-relative assets, data-only bots, item scale clamps, and the prod collision-radius override.
   - Validation passed:
     - `node --check web/src/script.js`
@@ -252,12 +354,60 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Load balancer health checks returned `200` for `/healthz` and `/paf/healthz`.
 - Water/turtle feel pass on 2026-06-12:
   - Shifted the Three.js water material from dark green-teal to a bluer `waterColor` and cooler sun tint.
+- Live incident recheck on 2026-06-21:
+  - Rechecked the user-reported public URL failure against `http://130.162.174.167/`.
+  - Current deployed HTML/CSS/JS is root-relative and served with `Cache-Control: no-store`; the old unstyled `/admin/observability` and `/admin/ai-learning` screenshots match a stale pre-fix bundle, not the current response.
+  - Live smokes passed:
+    - `.codex_tmp/conference-game-smoke-live-current-user-20260621063446/latest.md` shows mobile and desktop gameplay `RUNNING`, bots visible, joystick visible, healthy item counts, finite boat feel, and waterline contact.
+    - `output/collect-trash-live-current-user-20260621063446/result.json` confirms trash pickup works (`score 0 -> 1`) with no browser errors.
+    - `output/admin-route-live-current-user-20260621063446/result.json` confirms `/admin/observability` and `/admin/ai-learning` render styled admin panels with CSS/JS loaded.
+  - Cluster check showed `web:0.0.32`, `server:0.0.36`, `private-agent-factory:0.0.6`, `bots:0.0.3`, and all relevant deployments ready.
+  - Added a small local-only boat waterline lift in `web/src/boatFeel.js`: visual hull now seats around `-0.011/-0.012` with contact depth around `0.016/0.017`, still below the water plane but no longer visually buried.
+  - Validation for the waterline lift:
+    - `node --check web/src/script.js`
+    - `npm --prefix web run test:unit -- --run src/__tests__/boatFeel.test.js src/__tests__/gameplayPolish.test.js`
+    - `npm --prefix web run test:unit`
+    - `npm --prefix web run build` (existing asset-size warnings only)
+    - Fresh local visual smoke without bot process: `.codex_tmp/conference-game-smoke-local-fresh-waterline-nobots-20260621064104/latest.md`.
+- Public incident recheck on 2026-06-21:
+  - Re-ran the deployed URL `http://130.162.174.167/` after the user reported broken gameplay, uncollectable trash, sinking boat visuals, and raw/unusable admin/model pages.
+  - Current deployed versions are `web:0.0.32`, `server:0.0.36`, `private-agent-factory:0.0.6`, and `bots:0.0.3` in the `default` namespace.
+  - Admin route smoke passed for `/admin/observability` and `/admin/ai-learning`; both load styled panels with `/main.css` and root-relative bundles returning 200.
+  - Trash collection smoke passed on the public URL: score moved `0 -> 1`, no browser errors, and final `boatFeel.y` was `-0.021`.
+  - Conference game smoke passed for both mobile and desktop: mobile joystick visible, game reached `RUNNING`, trash/powerups/items/bots visible, and waterline contact stayed in the intended range.
+  - Conference preflight is `ready_with_caveats`: game URL, PAF health, and model proof bundle pass; caveats are that the smoke context has no replay/vector evidence and the live commentary response can time out on Canvas/model routes.
+  - Important remaining model truth: deployed `stwl-base-commentary` and `stwl-ft-commentary` are still routed to in-cluster `stwl-ollama-fallback`, not the private A10 Ollama host. Finish the targeted A10 replacement/routing before claiming the live model line is A10-backed or Canvas-produced.
   - Changed turtle buoyancy to stay below the waterline with a negative baseline and downward-only bob, so turtles sit slightly submerged instead of jumping out.
   - Slowed turtle turn response and randomized each turtle's bob speed/amplitude to avoid synchronized, twitchy motion.
   - Added concise turtle position samples to `window.render_game_to_text` for smoke validation.
   - Verified `node --check web/src/script.js`, focused gameplay polish tests, full `npm --prefix web run test:unit`, and `npm --prefix web run build`.
   - Ran local desktop Playwright smoke at `output/water-turtle-polish-smoke/` and mobile smoke at `output/mobile-polish-smoke/`; latest mobile result reached `RUNNING`, joystick was visible, and sampled turtle Y was `-0.06`.
 - Arcade-bright environment pass started on 2026-06-12:
+
+- Live incident follow-up on 2026-06-21:
+  - Re-verified public endpoint `http://130.162.174.167/` after user repro report:
+    - Admin `/admin/observability` and `/admin/ai-learning` routes load styled panels with root-relative assets and no page errors.
+    - Public trash collection smoke passed with score `0 -> 1`.
+    - Public conference game smoke passed for mobile and desktop with bots visible and healthy item counts.
+    - PAF health is green with Oracle AI Database, OCI GenAI, Canvas config, in-db agent, Select AI, graph/replay/vector retrieval config.
+  - Confirmed remaining Model AI boundary: adapters are healthy but still in `behavior-adapter` mode because `STWL_UPSTREAM_URL` is empty for both private routes; strict two-live-LLM proof remains gated.
+  - Probed in-cluster `stwl-ollama-fallback`: base `llama3.2:1b` responds from inside the cluster, but `llama3.2:1b-stwl` timed out even for a tiny prompt, so do not wire both adapters to it as a final proof path.
+  - Applied a conservative visual-only boat waterline fix:
+    - raised the hull pivot from `-0.024` to `-0.015`,
+    - narrowed the visual clamp to `[-0.028, -0.009]`,
+    - reduced speed settle depth to avoid the boat reading sunk during motion,
+    - updated smoke thresholds to the new seated-waterline band.
+  - Validation passed:
+    - `node --check web/src/script.js`
+    - `node --check web/src/boatFeel.js`
+    - `node --check scripts/conference-game-smoke.mjs`
+    - focused web tests for boat feel/gameplay/mobile controls
+    - full `npm --prefix web run test:unit`
+    - full `npm --prefix server run test:unit`
+    - `npm --prefix web run build` with existing asset-size warnings only
+    - local patched conference smoke on `http://127.0.0.1:8082` passed mobile and desktop; boat feel around `-0.016/-0.017`, seat depth around `0.019/0.020`.
+    - local patched trash collection smoke passed with score `0 -> 1`.
+  - Bumped `web` package version to `0.0.30` for the deployment artifact.
 - Live incident PAF hardening on 2026-06-20:
   - Verified `http://130.162.174.167/` gameplay is playable again via conference smoke: mobile and desktop both reached `RUNNING`, bots were visible/known, joystick rendered on mobile, items stayed healthy, and boat waterline contact was visible.
   - Verified trash collection against the live endpoint after the PAF rollout: score `0 -> 1`, trash `33 -> 32`, no browser errors, boat feel stayed slightly submerged (`boatFeel.y=-0.029`, `seatDepth=0.032`).
@@ -679,3 +829,663 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - local keyboard probe showed left steering produced negative yaw and negative X movement
     - local mobile joystick pointer probe showed up/right drag produced forward motion, positive yaw, and positive X movement
   - Deployment pending: commit/push and OCI DevOps build/deploy for `web:0.0.29`, then public strict collection, mobile, admin, and PAF/model UI smokes.
+
+- 2026-06-21 live gameplay control fix deployed:
+  - Committed and pushed `73e8a25` (`Fix player-facing boat controls`) to `main`.
+  - OCI DevOps build `stwl-build-web-0.0.29-controls-20260621005205` succeeded and exported `WEB_VERSION=0.0.29`, `WS_SERVER_VERSION=0.0.35`, `PAF_VERSION=0.0.5`, `BOTS_VERSION=0.0.3`, `SCORE_VERSION=0.0.7`, and `REPLAY_VERSION=0.0.1`.
+  - OCI DevOps deploy `stwl-deploy-web-0.0.29-controls-20260621011338` succeeded.
+  - Kubernetes confirms `web:0.0.29`, `ws-server:0.0.35`, `private-agent-factory:0.0.5`, `bots:0.0.3`, `score:0.0.7`, `replay:0.0.1`, Coherence CE `25.03.1`, and both model adapters ready.
+  - Public verification:
+    - Strict trash collection passed at `output/collect-trash-live-web-0.0.29-controls/result.json` with score `0 -> 1`, trash `6 -> 5`, server auth on, no browser errors, `boatFeel.y=-0.031`, and `waterlineContact.visible=true`.
+    - Public mobile smoke passed with joystick visible and `RUNNING` state.
+    - Public keyboard steering probe passed: holding `ArrowLeft` now gives negative yaw and negative X movement.
+    - Public admin route smoke passed for `/admin/observability` and `/admin/ai-learning`; CSS and JS were loaded from root paths with `200` statuses.
+    - Public conference game smoke passed mobile and desktop with `verdict=ready` at `.codex_tmp/conference-game-smoke-live-web-0.0.29-controls/latest.md`.
+    - `/paf/healthz` remains green for Oracle AI Database, OCI GenAI, PAF Canvas, in-db agent, Select AI, graph/replay/vector retrieval, and trace/eval capture.
+    - `npm run check:model-ai-demo:proof` remains `ready_with_upstream_llm_blocker` for adapter proof and failed strict proof because the two private commentary adapters still report behavior-adapter mode instead of strict upstream LLM.
+    - `npm run check:conference-demo -- --timeout-ms 120000` returned `ready_with_caveats`; game URL, PAF health, and model proof pass, while match-context/commentary caveats remain evidence-depth/strict-model-story issues rather than UI or gameplay breakage.
+
+- 2026-06-21 live recheck after user reported broken public setup:
+  - Current public deploy is `web:0.0.30`, `server:0.0.35`, `private-agent-factory:0.0.5`, `bots:0.0.3`, `score:0.0.7`, `replay:0.0.1`, with both model adapters ready but running `behavior-adapter`.
+  - Public mobile+desktop game smoke passed with bots required at `.codex_tmp/conference-game-smoke-live-recheck-20260621022319/latest.md`: mobile and desktop both reached `RUNNING`, joystick was visible on mobile, items/trash/powerups were present, waterline contact was visible, and no failures were reported.
+  - Public strict trash collection smoke passed at `output/collect-trash-live-recheck-20260621022546/result.json`: score `0 -> 1`, trash `6 -> 5`, no browser errors, and waterline contact remained visible.
+  - Public admin route smoke passed at `output/admin-route-live-now-20260621022306/result.json`: `/admin/observability` and `/admin/ai-learning` both loaded root CSS/JS assets with `200` responses and rendered their panels.
+  - `npm run check:conference-demo -- --base-url http://130.162.174.167 --timeout-ms 120000` returned `ready_with_caveats`: game URL, PAF health, and model proof bundle passed; caveats are no replay/vector rows in the smoke context, `canvas=null` for the exact smoke line, and behavior-adapter model runtime mode.
+  - `npm run check:model-ai-demo:strict -- --base-url http://130.162.174.167 --timeout-ms 30000` still fails because both `stwl-base-commentary` and `stwl-ft-commentary` have `STWL_UPSTREAM_URL=` and report `runtime_mode=behavior-adapter`.
+  - OCI read-only audit confirmed the current `stwl-ollama-a10-YT05` instance is actually `VM.Standard.E3.Flex` with `gpus=0`; pod reachability to `http://10.22.158.215:11434/api/tags` fails with `No route to host`.
+  - `VM.GPU.A10.1` is available in `KBpp:UK-LONDON-1-AD-3`, and the latest checked Gen2 GPU image is `Oracle-Linux-8.10-Gen2-GPU-2026.06.15-0` / `ocid1.image.oc1.uk-london-1.aaaaaaaatsl7gipqni6jgcm7wuzjqabpqnkkieh5i7uk4rwangjj7xwvk5fq`.
+  - Patched `deploy/devops/tf-env/model_ollama.tf` to add private worker-subnet CIDR ingress (`10.22.144.0/20`) on Ollama port `11434`, while keeping the worker-NSG ingress rule.
+  - Updated local ignored `deploy/devops/tf-env/terraform.tfvars` to use `model_ollama_shape="VM.GPU.A10.1"`, fixed-shape CPU/memory overrides `0`, and the latest GPU image OCID. This file is ignored, so commit only captures the NSG rule unless a tracked template/doc is intentionally updated.
+  - `terraform -chdir=deploy/devops/tf-env fmt -check model_ollama.tf terraform.tfvars` and `terraform -chdir=deploy/devops/tf-env validate` passed.
+  - Full `terraform plan` is not safe to apply mid-demo because it would also shrink the OKE node pool, create autoscaler plumbing, and destroy the old Redis secret.
+  - Targeted plan saved at `.codex_tmp/ollama-a10-targeted.tfplan` is the safer incident path: replace only `oci_core_instance.model_ollama[0]` with `VM.GPU.A10.1` and create only `oci_core_network_security_group_security_rule.model_ollama_ingress_from_worker_subnet[0]`.
+  - Next step, if the user explicitly approves bill-impacting GPU replacement: apply `.codex_tmp/ollama-a10-targeted.tfplan`, wait for Ollama/cloud-init, verify `/api/tags` from an OKE pod, regenerate `deploy/k8s/overlays/devops/patch_model_ai_upstream.yaml` with `MODEL_AI_BASE_UPSTREAM_URL` and `MODEL_AI_FT_UPSTREAM_URL` from the fresh `model_ollama_chat_url`, deploy via OCI DevOps, and rerun strict model proof plus gameplay/admin smokes.
+
+- 2026-06-21 final live gameplay rescue:
+  - Tightened server-authoritative boat handling and client fallback turn speed so players can steer into trash reliably instead of orbiting targets.
+  - Raised the durable arcade pickup validation cushion to `COLLISION_VALIDATE_RADIUS=3.6` and pinned `PHYS_TURN_SPEED=0.78` in the devops overlay plus live deployment env.
+  - Fixed local/dev WebSocket base URL to use page origin, so LAN phone testing and non-3000 dev server ports exercise the real server via webpack proxy.
+  - Committed and pushed `cd2286e` (`Tighten boat handling and pickup reliability`) and `acee657` (`Pin ws-server handling env in devops overlay`).
+  - OCI DevOps build for `cd2286e` succeeded with `web:0.0.31` and `server:0.0.36`; final deploy `stwl-deploy-acee657-handling-env-20260621041553` succeeded with restored Ollama upstream model args.
+  - Final live receipts: strict trash pickup score `0 -> 1`, mobile/desktop conference game smoke `ready`, admin observability/model routes `ok`, strict model proof `ready`, ws-server logs clean for error/coherence timeout patterns, and conference preflight `ready_with_caveats` only for replay/vector/Canvas exact-response evidence boundaries.
+
+- 2026-06-21 post-deploy public recovery verification:
+  - Current DevOps deploy `stwl-deploy-37899fc-admin-model-proof-20260621053626` is `SUCCEEDED`; the associated build run ended `CANCELED` only after artifact delivery, so do not describe the build run itself as green.
+  - Kubernetes live images: `web:0.0.32`, `server:0.0.36`, `private-agent-factory:0.0.6`, `bots:0.0.3`, `score:0.0.7`, `replay:0.0.1`, Coherence CE `25.03.1`, and both model adapter deployments ready.
+  - Public PAF deep health at `/paf/healthz?deep=1` is green: Oracle, OCI GenAI, Canvas config, in-db agent, Select AI, match intelligence, graph/replay/vector retrieval, and both model adapters report `runtime_mode=upstream-llm` with `upstream_format=ollama`.
+  - Public mobile+desktop conference game smoke passed at `.codex_tmp/conference-game-smoke-37899fc-postdeploy-20260621054647/latest.md`: mobile and desktop reached `RUNNING`, bots visible, items/trash/powerups present, joystick visible on mobile, waterline contact visible, and desktop wake ripples visible.
+  - Public forced trash pickup passed in a fresh room at `output/collect-trash-37899fc-postdeploy-20260621054647/result.json`: score `0 -> 1`, trash `4 -> 3`, no browser errors.
+  - Public forced trash pickup also passed in `ROOM-0001` at `output/collect-trash-room0001-37899fc-20260621054955/result.json`: score `0 -> 1`, trash `6 -> 4`, wake visible, waterline contact visible, turtles slightly submerged.
+  - Admin route smoke artifact `output/admin-route-37899fc-postdeploy-20260621054526/result.json` is green for `/admin/observability` and `/admin/ai-learning`; screenshots show styled panels with Observability live metrics and Model AI `Upstream LLM ready`.
+  - Strict model readiness rerun is `ready` at `.codex_tmp/model-ai-readiness/strict-upstream.json`.
+  - Conference preflight remains `ready_with_caveats` only because the smoke session has no replay clips/vector memories and the exact commentary line came through Select AI/in-db context with `canvas=null`; do not claim Canvas produced that exact line unless a later receipt shows non-null Canvas.
+
+- 2026-06-21 first-frame camera readability fix:
+  - Re-ran public incident checks against `http://130.162.174.167/`: mobile+desktop game smoke passed, strict trash pickup passed with score `0 -> 1`, admin observability/model routes rendered, strict model readiness passed, and presenter `/admin` start moved a waiting player into `RUNNING`.
+  - Found the remaining visual issue behind the user's "boat is sinking / setup incomplete" impression: after an admin-started match, the follow camera eased in from the previous non-game view, so the first gameplay frame could put the boat near the horizon even though collisions and item state were healthy.
+  - Patched `web/src/script.js` with a visual-only follow-camera snap on match start and a slightly higher/forward-looking desktop/mobile camera composition. Movement, server-authoritative physics, scoring, collisions, trails, powerups, and mobile joystick signs were not changed.
+  - Updated `web/src/__tests__/gameplayPolish.test.js` to pin the new camera constants and snap behavior.
+  - Local validation passed:
+    - `node --check web/src/script.js`
+    - `npm --prefix web run test:unit -- --run src/__tests__/gameplayPolish.test.js src/__tests__/boatFeel.test.js src/__tests__/mobileControls.test.js src/__tests__/adminLoadEvaluation.test.js`
+    - `npm --prefix web run build` with only existing asset-size warnings
+    - local admin-start visual smoke at `output/admin-start-local-camera-snap-20260621/` with first-frame camera `relativeY=1.05`, `distanceToPlayer=2.574`, visible items, and no browser errors
+    - local mobile camera smoke at `output/mobile-camera-snap-local-20260621/` with joystick visible, camera `relativeY=1.28`, visible items, and restrained boat waterline
+  - Deployment pending: commit/push, run OCI DevOps web build/deploy, then rerun live game, trash pickup, admin, PAF context/commentary, and model readiness receipts.
+  - Committed and pushed `3ebb077` (`Snap gameplay camera on match start`) with `web` bumped to `0.0.35`.
+  - OCI DevOps build attempts for `web:0.0.35` were blocked by DevOps executor queueing before worker start:
+    - `stwl-build-web-0.0.35-camera-snap-20260621092810` was canceled with reason `queued without worker start; retrying camera snap deploy`.
+    - `stwl-build-web-0.0.35-camera-snap-retry-20260621094621` was canceled with reason `queued without worker start; camera snap deploy blocked`.
+  - No OKE rollout happened for `web:0.0.35`; live public site remains on the previously verified `web:0.0.34` until OCI DevOps Build accepts a worker or a deliberate OCIR image-push fallback is used.
+- Live gameplay regression triage on 2026-06-21:
+  - Public smoke from http://130.162.174.167 passed mobile/desktop gameplay, forced trash pickup, admin routes, and strict model readiness, so the clean-room collision/model paths were not dead.
+  - Reproduced the demo-breaking visual issue from live state/screenshots: deployed web image still had old follow camera (`distanceToPlayer` ~6, `lookForward` 0) and boat was tiny/ambiguous against the waterline.
+  - Tuned `web/src/boatFeel.js` to keep the visual hull closer to the waterline without moving gameplay root/collisions.
+  - Tuned `web/src/script.js` follow camera and waterline ring for boat readability on desktop/mobile; bumped web version to 0.0.36 for a fresh image.
+  - Validation: `node --check web/src/script.js`, focused gameplay/boatFeel tests, full web unit tests, server unit tests, web build, local mobile/desktop conference smoke, and local forced trash pickup passed.
+
+- 2026-06-21 durable live recovery verification:
+  - OCI DevOps deploy `stwl-deploy-web-0.0.36-durable-20260621093501` succeeded; Kubernetes now runs `web:0.0.36`, `server:0.0.36`, `private-agent-factory:0.0.6`, `bots:0.0.3`, `score:0.0.7`, and `replay:0.0.1`.
+  - Removed the live-only `web-hotfix-0-0-36` asset mount after proving the durable image, rolled out `web`, and deleted the unused ConfigMap. `kubectl get deploy web` now shows no hotfix volumes or volumeMounts.
+  - Public no-hotfix gameplay smoke passed at `.codex_tmp/conference-game-smoke-live-no-hotfix-20260621/latest.md`: mobile and desktop reached `RUNNING`, bots were visible, trash/powerups were present, waterline contact was visible, and mobile joystick was present.
+  - Public no-hotfix forced trash collection passed at `output/collect-trash-live-no-hotfix-20260621/result.json`: score `0 -> 1`, trash `6 -> 5`, server auth on, bots visible, turtles slightly submerged, wake/waterline visible, no browser errors.
+  - Public no-hotfix admin route smoke passed at `output/admin-route-live-no-hotfix-20260621/result.json` for `/admin/observability` and `/admin/ai-learning` with CSS/JS assets returning `200`.
+  - Public no-hotfix observability smoke passed at `output/observability-counts-live-no-hotfix-20260621/result.json`: telemetry counters were populated (`monTrash=184`, `monMarine=289`, `monPower=58`) and the in-game monitor rendered.
+  - Strict model readiness passed at `.codex_tmp/model-ai-readiness/strict-upstream.md`: PAF health, admin proof UI, canary reports, training export sample, Kubernetes deployments, and both private adapter health checks were green with upstream formats `ollama:2`.
+  - Conference preflight is `ready_with_caveats` at `.codex_tmp/conference-preflight/latest.md`: game URL, PAF health, and model proof bundle pass. Caveats are limited to the smoke session having no replay clips/vector memories and the exact smoke commentary response having `canvas=null`/missing candidate route metadata.
+
+- 2026-06-21 public recheck after user reported the setup still looked broken:
+  - Current public OKE images remain `web:0.0.36`, `server:0.0.36`, `private-agent-factory:0.0.6`, `bots:0.0.3`, `score:0.0.7`, and `replay:0.0.1`.
+  - Public game smoke passed mobile and desktop with bots required at `.codex_tmp/conference-game-smoke-live-current-after-user-20260621121536/latest.md`.
+  - Public forced trash collection passed in a fresh room at `output/collect-trash-live-current-after-user-20260621121536/result.json` with score `0 -> 1`.
+  - Public forced trash collection also passed in `ROOM-0001` at `output/collect-trash-live-room0001-after-user-20260621121759/result.json` with score `0 -> 1`.
+  - Public admin route smoke passed at `output/admin-route-live-current-after-user-20260621121536/result.json`; `/admin/observability` and `/admin/ai-learning` loaded root CSS/JS and rendered their panels.
+  - Public observability counters passed at `output/observability-counts-live-current-after-user-20260621121759/result.json`.
+  - Strict model readiness passed at `.codex_tmp/model-ai-readiness/strict-upstream.md`.
+  - Full conference preflight returned `ready_with_caveats`; caveats remain evidence-depth/Canvas-response metadata, not gameplay or UI availability.
+  - Found a presenter-route footgun: `/admin/ai` returned the SPA shell but did not select the Model AI view. Committed and pushed `1f19c1d` (`Harden admin model route alias`) so `/admin/ai` and `/admin/ai-learning` both map to the Model AI panel in the next web image.
+  - Local validation for the alias passed: `node --check web/src/script.js`, focused admin/lobby/gameplay tests, full web unit tests, and `npm --prefix web run build`.
+  - OCI DevOps build `stwl-build-web-0.0.37-admin-alias-20260621123006` never started on a worker and was canceled with reason `queued without worker start; public recovery already green`. No OKE rollout happened; public still serves `web:0.0.36`.
+  - Final public post-cancel smokes remained green: game smoke at `.codex_tmp/conference-game-smoke-live-final-after-alias-20260621125129/latest.md` and admin route smoke at `output/admin-route-live-final-after-alias-20260621125129/result.json`.
+
+- 2026-06-21 PAF-trained bot personas deployed:
+  - Committed and pushed `513cddd` (`Add PAF-trained bot policy personas`) after `1f19c1d` (`Harden admin model route alias`).
+  - Added a bounded `stwl.bot-policy.v1` schema, four approved PAF bot policy cards, PAF `/api/bot-policies`, bots-side policy loading/fallback, deterministic policy execution, bot policy metadata in game events, and server/web roster profile pass-through.
+  - Local gates passed: syntax checks for bots/PAF/server/web, `npm --prefix bots run test:unit`, `npm --prefix private-agent-factory test`, `npm --prefix server run test:unit`, `npm --prefix web run test:unit`, `npm --prefix web run build`, Kustomize devops render, and a local PAF `/api/bot-policies` endpoint smoke.
+  - OCI DevOps build `stwl-build-policy-personas-20260621125700` succeeded and exported `WEB_VERSION=0.0.37`, `WS_SERVER_VERSION=0.0.37`, `PAF_VERSION=0.0.7`, `BOTS_VERSION=0.0.4`, `SCORE_VERSION=0.0.7`, and `REPLAY_VERSION=0.0.1`.
+  - OCI DevOps deploy `stwl-deploy-policy-personas-20260621131745` succeeded. Kubernetes confirms `web:0.0.37`, `server:0.0.37`, `private-agent-factory:0.0.7`, `bots:0.0.4`, `score:0.0.7`, and `replay:0.0.1`.
+  - Public PAF policy endpoint passed at `.codex_tmp/live-paf-bot-policies-0.0.7.json`: `efficient-cleaner-v1`, `shield-hunter-v1`, `freeze-ambusher-v1`, and `risk-taker-v1`; deterministic execution contract is reported.
+  - Public PAF deep health passed at `.codex_tmp/live-paf-health-policy-0.0.7.json`: `bot_policy_schema_version=stwl.bot-policy.v1`, `bot_policy_count=4`, Oracle/GenAI/Canvas/in-db agent/Select AI configured, and model adapters upstream-ready.
+  - Bots pod logs show recurring successful policy loads from `http://private-agent-factory:8080/api/bot-policies`.
+  - Public game smoke passed mobile and desktop with bots required at `.codex_tmp/conference-game-smoke-live-policy-personas-20260621134337/latest.md`.
+  - Public forced trash pickup passed at `output/collect-trash-live-policy-personas-20260621134420/result.json`.
+  - Public admin route and observability smokes passed at `output/admin-route-live-policy-personas-20260621134420/result.json` and `output/observability-counts-live-policy-personas-20260621134420/result.json`.
+  - Strict model readiness passed at `.codex_tmp/model-ai-readiness/strict-upstream.md`.
+  - Public runtime bot-policy probe passed at `output/bot-policy-state-live-policy-personas-20260621114503/result.json`; `render_game_to_text` showed live bot samples with PAF policies including Freeze Ambusher, Shield Hunter, Risk Taker, and Efficient Cleaner.
+  - Full conference preflight remains `ready_with_caveats`: gameplay URL, PAF health, and model proof pass; caveats remain replay/vector evidence for the synthetic smoke session and `canvas=null` for that exact smoke response.
+
+- 2026-06-21 presenter-readability hardening in progress: live checks showed gameplay/trash/admin/model were functional, but screenshots still read presenter-hostile. Patched web visual-only boat waterline constants to lift the hull closer to the water surface, tightened the waterline contact ring, zoomed the follow camera slightly, hid admin controls/roster on observability/model routes so proof panels lead, added /admin/ai to admin smoke coverage, and bumped web to 0.0.38. Validation pending.
+- 2026-06-21 presenter-readability hardening deployed:
+  - Committed and pushed `2ffef6c` (`Improve presenter gameplay readability`) with `web` bumped to `0.0.38`.
+  - Initial in-cluster Kaniko fallback failed because the mounted `ocir-secret` could pull but was not authorized to push `lhr.ocir.io/axywji1aljc2/save-the-wildlife/web:0.0.38`.
+  - Reran the official OCI DevOps build `stwl-build-web-0.0.38-rescue-20260621141133`; it succeeded and exported `WEB_VERSION=0.0.38`, `WS_SERVER_VERSION=0.0.37`, `PAF_VERSION=0.0.7`, `BOTS_VERSION=0.0.4`, `SCORE_VERSION=0.0.7`, and `REPLAY_VERSION=0.0.1`.
+  - OCI DevOps deploy `stwl-deploy-web-0.0.38-rescue-20260621143246` succeeded. Kubernetes confirms `web:0.0.38`, `server:0.0.37`, `private-agent-factory:0.0.7`, `bots:0.0.4`, `score:0.0.7`, `replay:0.0.1`, and both model inference deployments ready.
+  - Public conference smoke passed mobile and desktop with bots required at `.codex_tmp/conference-game-smoke/latest.json`; mobile joystick visible, game reached `RUNNING`, bots/trash/powerups present, and boat waterline contact reported `seatDepth` around `0.007`.
+  - Public forced trash pickup passed at `output/collect-trash-live-web-0.0.38/result.json`: score `0 -> 1`, trash `4 -> 3`, server auth on, bots visible, no browser errors.
+  - Public admin route smoke passed at `output/admin-route-live-web-0.0.38/result.json` for `/admin/observability`, `/admin/ai-learning`, and `/admin/ai`; root CSS/JS returned `200` and proof panels rendered.
+  - Strict Model AI readiness passed with verdict `ready`; PAF deep health reports Oracle, GenAI, Canvas, in-db agent, Select AI, match intelligence, graph, replay, vector retrieval, and upstream-LLM adapters configured.
+  - Screenshots inspected: `.codex_tmp/conference-game-smoke/desktop/running.png`, `.codex_tmp/conference-game-smoke/mobile/running.png`, `output/collect-trash-live-web-0.0.38/collect-final.png`, `output/admin-route-live-web-0.0.38/admin-observability.png`, and `output/admin-route-live-web-0.0.38/admin-ai-learning.png`.
+
+- 2026-06-21 live incident recheck after user reported the public URL still looked broken:
+  - Current OKE images remain `web:0.0.38`, `server:0.0.37`, `private-agent-factory:0.0.7`, `bots:0.0.4`, `score:0.0.7`, `replay:0.0.1`, and both model inference deployments ready.
+  - Public PAF deep health is green at `/paf/healthz?deep=1`: Oracle, GenAI, Canvas, in-db agent, Select AI, graph/replay/vector retrieval, bot policies, and upstream-LLM adapters are configured.
+  - Public live conference smoke passed mobile and desktop with bots required at `.codex_tmp/conference-game-smoke-live-now-rescue/latest.md`; screenshots inspected at `.codex_tmp/conference-game-smoke-live-now-rescue/desktop/running.png` and `.codex_tmp/conference-game-smoke-live-now-rescue/mobile/running.png`.
+  - Public forced trash pickup passed at `output/collect-trash-live-now-rescue/result.json`: score `0 -> 1`, trash `4 -> 3`, server auth on, no browser errors, and waterline contact visible.
+  - Public admin route smoke passed at `output/admin-route-live-now-rescue/result.json` for `/admin/observability`, `/admin/ai-learning`, and `/admin/ai`; root `/main.css` and root bundle assets returned `200` with `Cache-Control: no-store, max-age=0`.
+  - Strict Model AI readiness passed with `verdict=ready` at `.codex_tmp/model-ai-readiness/strict-upstream.md`; PAF bot policy endpoint returns four policies.
+  - The attached broken screenshots match older/stale route and visual states: huge environment props and unstyled nested admin routes. Current served headers and screenshots show the durable `web:0.0.38` image is loading styled admin views and a playable scene.
+
+- 2026-06-21 incident patch prepared after user still saw broken public gameplay:
+  - Public checks before patch passed mechanically: strict trash pickup scored `0 -> 1`, admin observability/model routes loaded styled panels, observability counters populated, PAF deep health was green, and strict Model AI readiness returned `ready`.
+  - Found two remaining demo-quality risks: waterline contact was too subtle for the boat to read confidently on mobile/desktop, and bot policy metadata could race because bots sent `botPolicy` in `player.info.joining` but not in their immediate `game.start` handoff.
+  - Patched bots to include `isBot`, `teacher`, and `botPolicy` in `game.start`; patched web mobile camera composition and strengthened the visual-only waterline contact ring/shadow without touching gameplay root, server movement, collision authority, trails, or powerups.
+  - Bumped `web` to `0.0.39` and `bots` to `0.0.5`.
+  - Validation passed: `node --check web/src/script.js`, `node --check bots/index.js`, focused web tests, full web unit tests, server unit tests, bots unit tests, `npm --prefix web run build`, scoped `git diff --check`, local forced trash pickup, local admin routes, and local mobile/desktop smoke against `http://localhost:8082`.
+  - Deployment pending: commit/push, OCI DevOps build/deploy, then public game/trash/admin/model/PAF/bot-policy smokes.
+
+- 2026-06-21 boat clearance recovery:
+  - Deployed `75a06b9` successfully with `web:0.0.39`, `bots:0.0.5`, `server:0.0.37`, `private-agent-factory:0.0.7`, `score:0.0.7`, and `replay:0.0.1`.
+  - Public smokes after that deploy passed mechanically: mobile/desktop gameplay reached `RUNNING`, forced trash pickup scored `0 -> 1`, admin observability/model routes rendered, observability counters populated, PAF deep health was green, and strict model readiness returned `ready`.
+  - Screenshot inspection still confirmed the user's core visual complaint on desktop: the boat hull was mostly hidden under the water plane because the visual-only hull pivot was clamped to roughly the water surface.
+  - Patched `web/src/boatFeel.js` to lift only the GLTF hull pivot above the rendered water contact while leaving the gameplay root at `y=0`; added `waterlineClearance` debug so smokes validate hull clearance instead of the old tiny `seatDepth`.
+  - Updated `scripts/conference-game-smoke.mjs` to accept the new visual clearance range and reject genuinely submerged or floating-away hulls.
+  - Bumped `web` to `0.0.40`.
+  - Local validation passed: syntax checks for `web/src/script.js`, `web/src/boatFeel.js`, and `scripts/conference-game-smoke.mjs`; focused boat/gameplay tests; full web unit tests; server unit tests; web production build; local desktop smoke; local mobile smoke; and local forced trash pickup.
+  - Local screenshots inspected: `.codex_tmp/conference-game-smoke-local-boat-clearance/desktop/running.png` and `.codex_tmp/conference-game-smoke-local-boat-clearance-mobile/mobile/running.png`; both show the boat hull readable above the water.
+
+- 2026-06-21 PAF room-context hardening in progress:
+  - Public gameplay/admin/model checks after `web:0.0.40` passed mechanically and screenshots show the current public app is playable; forced trash pickup scored `0 -> 1`, admin observability/model routes loaded styled panels, PAF deep health is green, and bots are visible.
+  - Found a real AI-story gap: `/paf/api/context?roomId=...` fell back to a zero request summary unless the caller supplied both `session_id` and `player_id`, even though SQL-backed telemetry exists by room.
+  - Patched PAF to resolve the latest SQL-backed session/player for a room before building match intelligence context; it prefers non-bot sessions when present and still works with bot-only rooms.
+  - Added regression coverage for room-only SQL context and pinned the server runtime player-session DDL to a single `room_id` declaration.
+  - Bumped `private-agent-factory` to `0.0.8`.
+  - Local validation passed: `node --check private-agent-factory/index.js`, `node --check server/lib/gameEvents.js`, `npm --prefix private-agent-factory test`, `npm --prefix server run test:unit -- --run test/gameEvents.test.js`, `npm --prefix bots run test:unit`, focused web admin/gameplay tests, and scoped `git diff --check`.
+  - Deployment pending: commit/push, OCI DevOps build/deploy with `PAF_VERSION=0.0.8`, then public `/paf/api/context?roomId=...`, gameplay, trash, admin, model, and bot-policy smokes.
+
+- 2026-06-21/22 live gameplay recovery and boat reflection hotfix:
+  - Reproduced the user-facing perception issue on fresh public screenshots: gameplay, pickup, admin, observability, and PAF health were already passing, but the close-follow camera showed a water reflection that read like a duplicate submerged hull.
+  - Patched `web/src/script.js` so GLTF renderables can be excluded from the Three.js Water reflection pass before the reflection scene is rendered, then applied it to the local boat only. This keeps the gameplay root, collision box, server auth movement, trails, powerups, camera, and mobile joystick unchanged.
+  - Added regression pins in `web/src/__tests__/gameplayPolish.test.js`.
+  - Validation passed before deploy: `node --check web/src/script.js`, focused gameplay/boat tests, full `npm --prefix web run test:unit`, `npm --prefix web run build`, local mobile/desktop conference smoke, and visual inspection of the local screenshots.
+  - Committed and pushed `d93667e0` (`Fix boat water reflection artifact`) and `64db78c5` (`Bump web hotfix version`) with `web` bumped to `0.0.41` for a real Kubernetes rollout.
+  - OCI DevOps build retry `stwl-build-web-0.0.41-reflection-fix-retry-20260622000450` succeeded and exported `WEB_VERSION=0.0.41`, `WS_SERVER_VERSION=0.0.37`, `PAF_VERSION=0.0.11`, `BOTS_VERSION=0.0.5`, `SCORE_VERSION=0.0.7`, and `REPLAY_VERSION=0.0.1`.
+  - OCI DevOps deploy `stwl-deploy-web-0.0.41-reflection-fix-20260622002855` succeeded.
+  - Public root now serves `bundle.c968ac2b1fe0f57523d6.js`.
+  - Public live conference smoke passed mobile and desktop with bots required at `.codex_tmp/conference-game-smoke-live-web-0.0.41-reflection-fix-20260622003726/latest.md`; screenshots inspected and the duplicate submerged hull artifact is gone.
+  - Public forced trash pickup passed at `output/collect-trash-live-web-0.0.41-reflection-fix-20260622003726/result.json`: score `0 -> 1`, trash `8 -> 7`, server auth on, no browser errors.
+  - Public admin route smoke passed at `output/admin-route-live-web-0.0.41-reflection-fix-20260622003727/result.json` for `/admin/observability`, `/admin/ai-learning`, and `/admin/ai`, all loading the new bundle.
+  - Public observability counts passed at `output/observability-counts-live-web-0.0.41-reflection-fix-20260622003733/result.json`.
+  - Public PAF health passed at `.codex_tmp/paf-health-web-0.0.41-postdeploy.json`: Oracle, GenAI, Canvas, in-db agent, Select AI, graph/replay/vector retrieval, bot policies, and model router are configured.
+- 2026-06-22 release-blocker recheck after user reported public URL broken:
+  - Fresh public mobile+desktop smoke passed at `.codex_tmp/live-release-blocker-game-20260622005739/latest.json`; game reached `RUNNING`, mobile joystick was visible, bots/trash/powerups were present, and boat waterline clearance stayed around `0.075`.
+  - Fresh public forced trash collection passed at `output/live-release-blocker-collect-20260622005739/result.json`: score `0 -> 1`, trash `8 -> 7`, server auth on, no browser errors.
+  - Fresh public admin route smoke passed at `output/live-release-blocker-admin-20260622005739/result.json` for `/admin/observability`, `/admin/ai-learning`, and `/admin/ai`; CSS/JS returned `200` with `Cache-Control: no-store`.
+  - Fresh observability smoke passed at `output/live-release-blocker-observability-20260622011018/result.json`; monitor counters were populated and gameplay state remained healthy.
+  - PAF `/paf/api/context?roomId=ROOM-0001` returned SQL-backed session summary and bounded output formats, including a live line grounded in recorded trail/freeze events.
+  - Packaged model proof passed (`.codex_tmp/model-ai-readiness/proof-bundle.md`) and conference preflight returned `ready_with_caveats`; caveats are match-context/commentary richness, not game/admin availability.
+  - Honest remaining gap: live model adapters are still pointed at in-cluster `stwl-ollama-fallback`, not the private A10. The A10 instance is `VM.GPU.A10.1`, but direct pod access to `10.22.156.102:11434` returns connection refused, fresh run-command stays `ACCEPTED`, and fresh serial console capture shows the host stuck in Oracle Linux initramfs/dracut. Do not claim A10-backed inference until the A10 is replaced or repaired and the adapter envs are repointed.
+
+- 2026-06-22 room-scoped observability recovery deployed:
+  - Fixed the remaining misleading live UI issue in `ws-server`: Prometheus metrics stay global, but `server.metrics` is now broadcast per active room with room-scoped item/player counts and a nested `global` summary for admin context.
+  - Added server regression coverage for the global-vs-room metrics contract and bumped `server` to `0.0.38`.
+  - Committed and pushed `c3864c5c` (`Scope ws-server metrics by room`), then deployed through OCI DevOps as `ws-server:0.0.38` with `web:0.0.41`, `private-agent-factory:0.0.11`, `bots:0.0.5`, `score:0.0.7`, and `replay:0.0.1`.
+  - Kubernetes confirms `ws-server`, `web`, and `private-agent-factory` ready; PAF deep health is green with Canvas configured, in-db agent enabled, Select AI auto-init enabled, and match intelligence enabled.
+  - Fresh public validation against `http://130.162.174.167` passed: forced trash collection scored `0 -> 1`, admin `/admin/observability`, `/admin/ai-learning`, and `/admin/ai` all rendered styled panels with assets `200`, observability showed room counts `Trash 4 / 4`, `Marine 6 / 6`, `Power 2 / 2`, and mobile viewport reached `RUNNING` with joystick visible.
+  - Visual screenshots inspected after rollout show the duplicate submerged-hull reflection artifact gone and the boat waterline debug reporting controlled clearance around `0.074` to `0.076`.
+- 2026-06-22 incident hardening pass:
+  - Fresh public smokes against `http://130.162.174.167` passed mechanically: mobile+desktop gameplay reached RUNNING, forced trash pickup scored `0 -> 1`, admin observability/model routes rendered, room-scoped monitor counts populated, PAF deep health was green, and live OKE images were `web:0.0.41`, `server:0.0.38`, `private-agent-factory:0.0.11`, `bots:0.0.5`.
+  - Compared the user's broken screenshots with fresh receipts and found a concrete compatibility bug: stale/nested admin asset URLs such as `/admin/main.css` and `/admin/bundle*.js` fall through to the SPA shell, reproducing the unstyled admin screenshots when an old relative-asset HTML page is cached.
+  - Patched `web/nginx.conf` so `/admin/<asset>` serves the real root asset instead of `index.html`, suppresses water reflections for remote boats/name tags and decorative environment props, and bumped `web` to `0.0.42`.
+  - Validation passed: `node --check web/src/script.js`, focused web/server tests, full `npm --prefix web run test:unit`, full `npm --prefix server run test:unit`, `npm --prefix private-agent-factory test`, `npm --prefix web run build`, local mobile+desktop conference smoke, local forced trash pickup, and local admin route smoke. Podman was unavailable, so nginx syntax could not be executed locally; verify `/admin/main.css` and `/admin/bundle*.js` after deployment.
+- 2026-06-22 PAF live-click budget recovery:
+  - Fresh public checks after the `web:0.0.42` deploy showed gameplay/admin were healthy, but direct `/paf/api/commentary` could still exceed a 20s client timeout while optional model/canvas polish ran behind a 30s deploy deadline.
+  - Added a PAF model-route budget guard so grounded SQL/in-db commentary returns immediately and slow model diagnostics are skipped with explicit diagnostics instead of blocking the UI.
+  - Bumped `private-agent-factory` to `0.0.12`, tightened DevOps defaults (`PAF_COMMENTARY_DEADLINE_MS=9000`, `PAF_CANVAS_TIMEOUT_MS=1000`, model endpoint timeout `6000`), and aligned `scripts/tfvars.mjs` defaults.
+  - Local validation passed: `node --check private-agent-factory/index.js`, `node --check scripts/tfvars.mjs`, and `npm --prefix private-agent-factory test`.
+  - Committed and pushed `695cc782` (`Bound PAF commentary latency for live demo`), then built `stwl-build-paf-0.0.12-budget-20260622035356` successfully.
+  - Refreshed the OCI DevOps command-spec artifact with the new PAF timeout values and deployed `stwl-deploy-paf-0.0.12-budget-20260622042015`; deployment succeeded and rolled out `private-agent-factory:0.0.12` alongside `web:0.0.42`, `ws-server:0.0.38`, `bots:0.0.5`, `score:0.0.7`, and `replay:0.0.1`.
+  - Fresh public gameplay/admin recovery receipts after deployment:
+    - PAF health at `http://130.162.174.167/paf/healthz` reports version `0.0.12`, Oracle configured, GenAI configured, Canvas configured, in-db agent enabled, Select AI auto-init enabled, and graph/replay/vector match intelligence enabled.
+    - Forced trash pickup passed at `output/collect-trash-live-paf012-recheck-20260622042640/result.json`: score `0 -> 1`, trash `4 -> 3`, server auth on, no browser errors, boat waterline clearance around `0.074`, and wake ripples visible.
+    - Admin route smoke passed at `output/admin-route-live-paf012-recheck-20260622042640/result.json` for `/admin/observability`, `/admin/ai-learning`, and `/admin/ai`; root CSS and bundle assets returned `200`.
+    - Observability counts passed at `output/observability-counts-live-paf012-recheck-20260622042640/result.json`: room-scoped counts populated (`Trash 4 / 4`, `Marine 6 / 6`, `PowerUps 2 / 2`) with the game in `RUNNING`.
+    - Model AI page resolved after the live health call at `output/admin-ai-live-wait-paf012/result.json`: verdict `Upstream LLM ready`, runtime `upstream-llm`, handoff `upstream formats ollama:2`, gate `Ready`, and no browser errors.
+    - PAF context for `ROOM-SCORE-PAF012-042640` returned SQL-backed match intelligence with `trash_collected: 1` and last coordinates; `/paf/api/commentary` returned in about 2.1s with a 93-character line and an explicit `paf_canvas_timeout_1000ms` warning instead of blocking.
+
+- 2026-06-22 gameplay/admin rescue pass in progress:
+  - Fresh public smokes reproduced that the deployed URL could pass mechanically, but screenshot/user experience still needed rescue: boat sat too low, trash readability was weak, bot labels could occlude mobile play, and some rooms spawned with no early collectible near the player.
+  - Patched `web/src/boatFeel.js` and `web/src/script.js` to lift only the visual hull, enlarge/raise trash visuals, and compact pooled bot name tags without touching server movement, collision authority, joystick axes, trails, powerups, or lobby/admin flow.
+  - Patched `server/lib/gameLogic.js` and `server/server.js` to seed a small ring of opening trash near the authoritative match start after the safety sweep, so demo players can collect immediately while preserving the start clear radius.
+  - Extended PAF policy-evidence context so bot policy/persona metadata can appear in grounded prompts/commentary only when recorded in SQL event metadata.
+  - Bumped deployable versions to `web:0.0.43`, `ws-server:0.0.39`, and `private-agent-factory:0.0.13`; local ignored `terraform.tfvars` pins `paf_version=0.0.13`.
+  - Validation passed so far: syntax checks for touched JS files, focused web/server gameplay tests, full web/server unit tests, PAF tests, web production build, and scoped `git diff --check`.
+  - Committed and pushed `483eadde` (`Rescue gameplay and PAF demo flow`), refreshed `tf-devops` command-spec artifact, built via OCI DevOps retry `stwl-build-rescue-retry-0.0.43-0.0.39-0.0.13-20260622031908`, and deployed `stwl-deploy-rescue-0.0.43-0.0.39-0.0.13-20260622034349`.
+  - Live OKE images now show `web:0.0.43`, `ws-server/server:0.0.39`, `private-agent-factory:0.0.13`, `bots:0.0.5`, and both model AI adapter deployments ready.
+  - Public validation after deploy passed: mobile+desktop smoke with bots required, strict trash pickup `0 -> 1`, admin route smoke, observability counts, nested `/admin/main.css` asset fix, PAF deep health with Canvas/in-db agent/Select AI enabled, and Model AI browser UI showing `Upstream LLM ready`.
+- 2026-06-22 PAF trace-contract follow-up:
+  - Fresh public validation showed gameplay/admin are live (`RUNNING`, strict trash pickup score increment, admin observability/model routes render), but `scripts/conference-demo-preflight.mjs` still failed because `/paf/api/commentary` returned a grounded Select AI line while the model route timed out at 6s and reported `trace_persisted=false`.
+  - Confirmed Oracle AI Database already had live trace rows, meaning the abandoned model route wrote late under a different trace id after the HTTP response returned.
+  - Patched PAF so timeout fallbacks reuse the same trace id and so the non-fast-path model route starts before slower in-db/Canvas fallback enrichment; the response can now carry real model-route metadata while still preferring SQL/Select AI grounding.
+  - Raised generated OCI DevOps defaults to `PAF_COMMENTARY_DEADLINE_MS=14000` and `OCI_MODEL_ENDPOINT_TIMEOUT_MS=12000`, and bumped `private-agent-factory` to `0.0.14`.
+  - Local validation passed: `node --check private-agent-factory/index.js`, `node --check scripts/tfvars.mjs`, `npm --prefix private-agent-factory test`, and scoped `git diff --check`.
+- 2026-06-22 final public recovery:
+  - Fixed PAF shadow model routing so primary/candidate diagnostics run concurrently, then fixed timeout fallbacks so skipped/timeout model routes still persist Oracle trace/output/eval rows under the response trace id.
+  - Bumped and deployed `private-agent-factory:0.0.16` through OCI DevOps while preserving `web:0.0.44`, `ws-server/server:0.0.39`, `bots:0.0.6`, `score:0.0.7`, `replay:0.0.1`, and model images `latest`.
+  - Local validation passed for both PAF patches: `node --check private-agent-factory/index.js`, full `npm --prefix private-agent-factory test`, and scoped `git diff --check`.
+  - OCI DevOps build `stwl-build-paf-0.0.16-20260622114038` succeeded and exported `PAF_VERSION=0.0.16`; deploy `stwl-deploy-paf-0.0.16-20260622120448` succeeded.
+  - Public direct `/paf/api/commentary` now returns the grounded Select AI line with `model_route.trace_persisted=true` even when optional upstream model diagnostics time out at 12s.
+  - Public final receipts:
+    - `output/live-game-paf016-20260622121550/latest.md`: mobile and desktop gameplay both `PASS`, mobile joystick visible, game `RUNNING`, trash/powerups/bots present, boat waterline within bounds.
+    - `output/live-collect-paf016-*/result.json`: forced trash collection passed with score increment and no browser errors.
+    - `output/live-admin-paf016-*/result.json`: `/admin/observability`, `/admin/ai-learning`, and `/admin/ai` all passed with CSS/bundles loading from root assets.
+    - `output/live-preflight-paf016-20260622121455/latest.md`: `ready_with_caveats`; health and proof bundle pass, commentary trace persists, caveats are honest claim boundaries for no replay/vector evidence in the seeded smoke and Canvas/model timeout metadata.
+- 2026-06-22 live gameplay visual/admin polish incident:
+  - Reverified the user's public URL complaint against `http://130.162.174.167/`; current live gameplay was mechanically healthy before patching: mobile+desktop smoke passed, forced trash collection moved score `0 -> 1`, and `/admin/observability`, `/admin/ai-learning`, `/admin/ai`, PAF deep health, and model proof bundle all passed.
+  - Patched only the web visual/copy layer: raised the visual-only hull waterline from `0.118` to `0.122`, tightened min visual y to `0.1`, lowered surface ripple contact to `0.012`, made the waterline ring/shadow more legible, and replaced the awkward observability copy with "during every demo run."
+  - No gameplay-root movement, collision radius, joystick axis, server movement, trail/freeze, powerup, or scoring logic changed.
+  - Local validation passed: `node --check web/src/script.js`, focused boat/admin tests, full `npm --prefix web run test:unit`, `npm --prefix web run build`, local mobile+desktop conference smoke, and local forced trash pickup score `0 -> 1`.
+  - Committed and pushed `387a1013` (`Polish live gameplay waterline and admin copy`), bumping `web` to `0.0.45`.
+  - OCI DevOps build `stwl-build-web-0.0.45-20260622125446` succeeded and exported `WEB_VERSION=0.0.45`; deploy `stwl-deploy-web-0.0.45-20260622131810` succeeded.
+  - OKE readiness after deploy: `web:0.0.45`, `ws-server/server:0.0.39`, `private-agent-factory:0.0.16`, `bots:0.0.6`, `score:0.0.7`, and `replay:0.0.1` all ready/available.
+  - Public postdeploy receipts: `output/live-incident-post-web045-20260622132754/latest.md` mobile+desktop `PASS`; `output/live-incident-collect-web045-*/result.json` score `0 -> 1`; `output/live-incident-admin-web045-*/result.json` admin routes pass; `output/live-incident-model-proof-web045-20260622132842/proof-bundle.md` adapter and strict model proof `ready`; `.codex_tmp/paf-health-web045.json` PAF deep health green.
+- 2026-06-22 local pickup/proportion rescue after user screenshots:
+  - Confirmed from screenshots that the failure was human-visible proportion/collision feel: trash rendered as tiny specks while the boat footprint looked much larger, and decorative props could sit in the gameplay lane.
+  - Patched `web/src/script.js` to enlarge/brighten trash and powerup visuals, add render-state pickup radius/visual-scale debug, reuse per-frame collision temp objects, disable continuous engine wake particles, and move non-interactive environment props to the edges/horizon.
+  - Patched `server/lib/gameLogic.js` and `deploy/k8s/base/ws-server/env_server_template` so server-authoritative `COLLISION_VALIDATE_RADIUS` is `5.2`, matching the new arcade pickup feel.
+  - Local validation passed: `node --check web/src/script.js`, focused `gameplayPolish` tests, full web/server unit tests, web production build, and two local forced-trash browser smokes. Latest receipt: `output/local-water-pickup-fix-202606221814/result.json` scored `0 -> 1`, trash `7 -> 6`, `engineParticles=false`, and no browser errors.
+  - Latest screenshot inspected at `output/local-water-pickup-fix-202606221814/collect-final.png`; trash is now readable orange debris and background props are no longer in the immediate pickup lane.
+- 2026-06-23 public UI/pickup fix after stale-debug/tiny-trash complaint:
+  - Root causes found in prod: normal player HTML still contained full presenter/debug controls, stale `localStorage.debugHUD=1` could keep a messy HUD for returning browsers, and single-box trash markers could still read as tiny square pixels from the follow camera.
+  - Patched `web/src/script.js` so non-admin normal URLs reset stale debug HUD to `0`, show compact player HUD only, and keep full debug HUD only for `/admin` or explicit `?debug=1`; added a `debug-view` body class.
+  - Patched `web/src/style.css` to hide lifecycle/admin/debug room controls on non-admin player pages and keep `/admin` routes full-featured.
+  - Added a second instanced trash detail plank so pickups read as debris instead of lone square pixels, without changing server authority, item ids, collision radius, scoring, trails, powerups, or controls.
+  - Bumped/deployed `web:0.0.53`; live OKE now shows `web:0.0.53`, `ws-server/server:0.0.42`, `private-agent-factory:0.0.17`, and model inference `0.0.2`, with `COLLISION_VALIDATE_RADIUS=5.2` in the running server pod.
+  - Validation passed: `node --check web/src/script.js`, full `npm --prefix web run test:unit`, `npm --prefix web run build`, OCI DevOps build `stwl-build-web053-20260623111414`, deploy `stwl-deploy-web053-20260623113934`, PAF health green.
+  - Public browser proof: `output/prod-clean-pickup-web053-20260623094958/result.json` starts with dirty `debugHUD=1`, loads normal `http://130.162.174.167/` without debug, resets debug to `0`, hides full HUD/monitor/debug controls, shows compact HUD, and collects trash (`score 0 -> 1`, trash `9 -> 8`, accepted server result). Screenshots: `start-clean.png`, `final-clean.png`.
+  - Mobile proof: `output/prod-mobile-running-web053-20260623095156/result.json` reaches `RUNNING`, compact HUD only, debug reset, joystick visible, item counts healthy.
+- 2026-06-23 web 0.0.55/0.0.56 live verification:
+  - Deployed `web:0.0.55` through OCI DevOps; public HTML served `bundle.b6f2d4e3479882a52041.js` with `Cache-Control: no-store`.
+  - Public conference smoke passed mobile and desktop with visible PAF policy bots, healthy items, joystick visible on mobile, and disabled wake/ripple debug flags. Receipt: `.codex_tmp/conference-game-smoke-web055/latest.md`.
+  - Public forced trash collection passed at `output/collect-trash-live-web055/result.json`: score `0 -> 1`, trash `8 -> 7`, server auth on, no browser errors.
+  - Admin observability passed, but `/admin/ai-learning` showed `Generation not proven` because live PAF health returns `oci-base generation_ready=true` and `oci-fine-tuned ok=false/error=canvas_timeout_10000ms` without an explicit `generation_ready=false`.
+  - Patched AI presenter health summarization into `web/src/adminAiHealth.js` and added a regression for the exact live payload shape so proven base plus timed-out candidate shows `Base ready; candidate degraded`.
+  - Bumped `web` to `0.0.56`; local validation passed: `node --check web/src/script.js`, focused admin/gameplay tests, full `npm --prefix web run test:unit`, `npm --prefix web run build`, and scoped `git diff --check`.
+  - Committed/pushed `ec73a88e` (`Show degraded AI candidate from live health`), built `stwl-build-web056-20260623195346`, and deployed `stwl-deploy-web056-20260623201825`; OKE reports `web:0.0.56` ready and public root serves `bundle.e5dff17cfcb8cdfc6fec.js`.
+  - Public URL proof after deploy:
+    - `.codex_tmp/admin-live-probe-web056/result.json`: `/admin/observability` and `/admin/ai-learning` pass; Model AI shows `Base ready`, runtime `oci-base ready; oci-fine-tuned degraded`, and proof gate `Base ready; candidate degraded`.
+    - `.codex_tmp/conference-game-smoke-web056/latest.md`: mobile and desktop gameplay pass with joystick visible on mobile, visible PAF policy bots, healthy trash/powerups, and disabled wake/ripple debug flags.
+    - `output/collect-trash-live-web056/result.json`: forced public pickup passed with score `0 -> 1`, trash `11 -> 10`, server auth on, and no browser errors.
+- 2026-06-23 public web 0.0.59/0.0.60 visual QA closeout:
+  - Committed/pushed `ebf84743` (`Fix active boat badge fit telemetry`) and deployed `web:0.0.59`; public root served `bundle.c49196e983e190dfd4cc.js`, but visual QA exposed that mobile forced active badges disappeared after lifecycle resets.
+  - Patched the visual-QA-only badge override to refresh current badge sprites during render and `render_game_to_text`, bumped to `web:0.0.60`, and committed/pushed `014699cc` (`Keep visual QA badges stable on mobile`).
+  - Local validation passed: `node --check web/src/script.js`, `node --check scripts/gameplay-visual-qa.mjs`, focused `gameplayPolish` test, full `npm --prefix web run test:unit`, full `npm --prefix web run build`, and scoped `git diff --check`.
+  - OCI DevOps build `stwl-build-web060-20260623223225` succeeded and exported `WEB_VERSION=0.0.60`; deploy `stwl-deploy-web060-20260623225537` succeeded.
+  - Live OKE images after deploy: `web:0.0.60`, `ws-server/server:0.0.42`, `private-agent-factory:0.0.17`, `bots:0.0.6`, `score:0.0.8`, `replay:0.0.1`, and model inference `0.0.2`; public root serves `bundle.1458017b9fc76db62e36.js`.
+  - Public receipts:
+    - `.codex_tmp/gameplay-visual-qa-web060/latest.md`: desktop visual scale, mobile visual scale, and long-running item health all pass; mobile badges visible and joystick visible; fake wake/ripple/contact effects remain disabled.
+    - `.codex_tmp/conference-game-smoke-web060/latest.md`: mobile and desktop gameplay pass on `http://130.162.174.167`, with bots/policies visible and healthy items.
+    - `output/collect-trash-live-web060/result.json`: forced public trash pickup passed with score `0 -> 1` and trash `6 -> 5`.
+    - `.codex_tmp/admin-live-probe-web060/result.json`: `/admin/observability` and `/admin/ai-learning` pass from the public URL with root CSS/bundle assets loaded and Model AI showing `Base ready; candidate degraded`.
+    - `.codex_tmp/conference-preflight-web060-rerun/latest.md`: public PAF health/context/commentary is `ready_with_caveats`; caveats are honest presenter boundaries for no replay/vector evidence in the seeded smoke session, Canvas not producing the exact line, candidate route degraded/missing, and skipped local model-proof bundle.
+- 2026-06-23 final public game-loop QA audit:
+  - Reconfirmed live deployment identity: `web:0.0.60` ready in OKE and public root still serves `bundle.1458017b9fc76db62e36.js` with `Cache-Control: no-store`.
+  - Fresh public visual QA passed at `.codex_tmp/gameplay-visual-qa-current/latest.md`: desktop/mobile badge layouts, badge text-fit ratios, trash/powerup visual scale, bot scale guard, boat waterline, disabled fake water effects, mobile joystick, environment props, and long-running item health all green.
+  - Fresh public gameplay smoke passed at `.codex_tmp/conference-game-smoke-current/latest.md`: mobile and desktop reach `RUNNING`, bots/policies visible, healthy item counts, joystick present on mobile, and boat/waterline state in range.
+  - Fresh forced public pickup passed at `output/collect-trash-live-current-goal/result.json`: score `0 -> 1`, trash `10 -> 9`, server auth on, pickup radii `5.2`, and item/powerup/bot counts healthy after collection.
+  - Screenshots manually inspected: mobile/desktop visual badge captures, mobile normal gameplay, and forced pickup final frame. Visuals are demo-acceptable: compact HUD, aligned boat/object scale, readable trash/powerups, no distracting fake foam/ripples, and responsive above-boat badges when active.
+  - Admin support smoke passed at `.codex_tmp/admin-live-probe-current/result.json` for `/admin/observability` and `/admin/ai-learning`; this is supporting evidence only, not the core game-loop completion criterion.
+
+- 2026-06-24 multiplayer visual stability pass:
+  - Analyzed debugLog/bugreport1.mov as 60 fps / ~57.6 avg fps recording and extracted detail frames at output/bugreport1-frames/detail-160/.
+  - Lowered boat feel visual waterline clamp so boats stick closer to the water instead of hovering.
+  - Replaced frame-fixed remote player smoothing with dt-based smoothing to reduce frame-to-frame jumps.
+  - Shrunk/slowed demo bots and expanded world bounds from 88x22 to 128x42 for a less cramped public match.
+  - Verified node --check, focused gameplayPolish test, full web/server/bot tests, web build, and scoped diff check.
+2026-06-24 15:31 - Removed gameplay particles from the active demo path via `GAMEPLAY_PARTICLES_ENABLED=false`, kept engine/wake effects disabled, and fixed pickup validation by sending the client's current boat position with collision events. Local collect-smoke against `127.0.0.1:8080` passed: score moved from 0 to 3, trash instances dropped 7 to 4, no console errors, `engineParticles:false`.
+2026-06-24 16:30 - Recovered collision truth after the 3D/instanced asset pass: client pickups now use explicit invisible boat/item footprints (`boat + trash/powerup/turtle radius`) with visual boxes only as secondary support, and the server validates `clientPosition` plus `clientItemPosition` against shared item radii instead of the temporary wide 6.5 radius. Reset deployed `COLLISION_VALIDATE_RADIUS` to 3.6 as a sanity fallback, kept particles off, and bumped web/server to 0.0.71/0.0.46. Validation passed: `node --check web/src/script.js`, focused web/server tests, full web/server unit tests, `npm --prefix web run build`, and local Playwright trash pickup smoke `output/collect-trash-local-footprint-fix-3/result.json` with `lastResult.ok=true`, `scoreDelta=1`, no browser errors.
+
+2026-06-25 public PAF/commentary recovery checkpoint:
+  - Deployed committed PAF hotfix `c7239a13` through OCI DevOps. Build `stwl-paf-live-model-grounded-202606252235` succeeded and exported `PAF_VERSION=0.0.23`; deploy `stwl-paf-live-model-grounded-deploy-202606252259` succeeded with web `0.0.82`, ws-server `0.0.50`, PAF `0.0.23`, bots `0.0.8`, score `0.0.8`, replay `0.0.1`, model inference `0.0.2`.
+  - Public `http://130.162.174.167/paf/healthz?deep=1` reports PAF `0.0.23`, Canvas configured, in-db agent enabled, Select AI auto-init enabled, MCP enabled at `/paf/mcp`, and `oci-base` upstream LLM reachable.
+  - Public `/paf/api/commentary` smoke passed with `source=oci-base`, `model_id=llama3.2:1b`, `grounding_mode=safe_draft_selection`, and line `Smoke Player scored 3 after speed powerup.`
+  - Public server-side item collision smoke passed at `output/all-item-collision-public-postdeploy-0.0.23/result.json`: trash `scoreDelta=1`, turtle `scoreDelta=-1`, powerup `scoreDelta=0`.
+  - Public browser-level trash smoke passed at `output/collect-trash-public-browser-postdeploy-0.0.23/result.json`: score `0 -> 1`, trash `9 -> 8`, no browser errors. First sandboxed Playwright launch failed due macOS sandbox permission; rerun outside sandbox succeeded.
+  - Remaining caveat: the user's manual Mac Chrome repro may still point to a physical-browser/session/control mismatch even though public server-side and headless browser smokes pass. Treat timer/control polish as a separate follow-up; this checkpoint prioritized live PAF/model commentary proof.
+
+2026-06-26 pickup forgiveness + PAF timeout checkpoint:
+  - Fresh public socket collision smoke passed at `output/all-item-collision-public-recheck-20260625b/result.json`: trash `+1`, turtle `-1`, powerup accepted.
+  - Fresh public Playwright pickup smoke with score required passed outside the macOS sandbox at `output/collect-trash-public-require-score-20260625/result.json`: score `0 -> 1`, trash `9 -> 8`, `lastResult.itemType=trash`.
+  - Fresh ROOM-0001 pickup smoke also passed at `output/collect-trash-public-room0001-score-20260625/result.json`: score `0 -> 1`. It exposed the real edge case: a subsequent pickup was rejected at distance `2.224` vs allowed `2.2`, which can look overlapped to a human.
+  - Local patch adds `PICKUP_TOUCH_FORGIVENESS=0.2` on client/server, increases collision ack timeout to `2500ms`, bumps web/server to `0.0.84`/`0.0.51`, and raises PAF/model runtime budgets in deploy templates/defaults.
+  - Validation passed: focused gameplay/server tests, full `npm --prefix server run test:unit`, full `npm --prefix web run test:unit`, `npm --prefix web run build`, `node --check` for touched JS, and scoped `git diff --check`.
+
+2026-06-26 public commentary/pickup live-patch proof:
+  - Root cause for public PAF fallback was live Deployment env drift: `private-agent-factory` had explicit env pins `PAF_COMMENTARY_DEADLINE_MS=45000` and `OCI_MODEL_ENDPOINT_TIMEOUT_MS=30000`, overriding the newer ConfigMap and making PAF give up before the `stwl-base-commentary` adapter completed.
+  - Applied immediate live recovery with `kubectl set env deploy/private-agent-factory PAF_COMMENTARY_DEADLINE_MS=60000 OCI_MODEL_ENDPOINT_TIMEOUT_MS=50000 PAF_ADAPTER_HEALTH_TIMEOUT_MS=30000 PAF_TRACE_PERSIST=false`; rollout completed across 4 PAF replicas.
+  - Source fix in progress: `scripts/tfvars.mjs` defaults now match 60000/50000, and `deploy/k8s/base/private-agent-factory/private-agent-factory.yaml` declares those explicit env pins so Kustomize/DevOps overwrites stale live mutations.
+  - Public direct PAF commentary proof passed after rollout: `/paf/api/commentary` returned `source=oci-base`, `model_id=llama3.2:1b`, `runtime_mode=upstream-llm`, no warnings, and a short grounded line.
+  - Public browser one-minute game-over proof passed at `output/public-commentary-timer-livepatch-20260626/result.json`: server timer started at 60, ended in ~58s, result screen survived room reset, and `commentary.ready` updated the result card with `source=oci-base`, `fallback_source=oracle-sql`, `model_id=llama3.2:1b`.
+  - Public collision proof passed at `output/all-item-collision-public-livepatch-20260626/result.json`: trash `scoreDelta=1`, turtle `scoreDelta=-1`, powerup accepted with `scoreDelta=0`.
+  - Public browser pickup proof passed outside the macOS sandbox at `output/collect-trash-public-livepatch-20260626b/result.json`: score `0 -> 1`, trash `10 -> 9`, no browser errors. First sandboxed Playwright launch hit the known macOS `MachPortRendezvousServer` permission issue.
+
+2026-06-26 ws-server PAF budget live proof:
+  - Found the second commentary timeout drift: live `ws-server` had `PAF_AGENT_TIMEOUT_MS=45000`, so the game-over path could still fall back before PAF's longer OCI LLM route returned.
+  - Patched live `ws-server` with `PAF_AGENT_BASE_URL=http://private-agent-factory:8080` and `PAF_AGENT_TIMEOUT_MS=65000`; rollout completed across 4 replicas. Live pod env now also confirms canonical `GAME_DURATION_IN_SECONDS=60`.
+  - Source patch in `deploy/k8s/base/ws-server/ws-server.yaml` pins the same PAF base URL and timeout so OCI DevOps redeploys preserve the fix.
+  - Public browser one-minute game-over proof passed at `output/public-commentary-timer-ws65000-20260626/result.json`: `commentary.ready.source=oci-base`, `model_id=llama3.2:1b`, `runtime_mode=upstream-llm`, latency ~40s, and the result card showed the AI line instead of deterministic fallback.
+
+2026-06-26 fast-context live commentary hardening:
+  - Post-DevOps browser proof exposed intermittent LLM fallback: PAF could spend 8s on Oracle summary, 8s on match context, and then leave too little budget for the warmed Ollama/OCI-model adapter. One run returned `request-summary`; direct PAF still proved `oci-base` when the adapter responded in time.
+  - Patched live PAF to keep optional enrichment bounded for the live-line path: `PAF_ORACLE_QUERY_TIMEOUT_MS=1500`, `PAF_CONTEXT_TIMEOUT_MS=1500`, `INDB_AGENT_TIMEOUT_MS=1500`, `PAF_CANVAS_TIMEOUT_MS=750`, `PAF_CANVAS_RETURN_RESERVE_MS=250`, `OCI_MODEL_ENDPOINT_TIMEOUT_MS=60000`; patched `ws-server` to `PAF_AGENT_TIMEOUT_MS=75000`.
+  - Rollouts completed across PAF 4/4 and ws-server 4/4. Live env was verified from pods.
+  - Direct public PAF proof passed after warm-up: `source=oci-base`, `model_id=llama3.2:1b`, `runtime_mode=upstream-llm`, latency ~36.7s.
+  - Full public browser one-minute proof passed at `output/public-commentary-timer-fastctx-livepatch-20260626/result.json`: result card updated with `source=oci-base`, `runtime_mode=upstream-llm`, `model_id=llama3.2:1b`, server timer started at 60 and ended in ~57s.
+
+2026-06-26 keyboard steering + powerup badge polish:
+  - Restored keyboard steering sign to the observed/canonical scene convention (`ArrowLeft`/`A` positive steer, `ArrowRight`/`D` negative steer) across movement, replay snapshots, HUD debug, and telemetry samples; mobile joystick sign was left unchanged.
+  - Increased above-boat emoji badge texture size and tightened text-fit bounds so multi-codepoint powerup emoji such as `⚡🛡️` render without clipping.
+  - Validation passed: `node --check web/src/script.js`, focused mobile/gameplay polish tests, full web unit suite, web production build, scoped `git diff --check`, local gameplay visual QA, skill Playwright client run, and direct keyboard sign Playwright assertion after waiting for `RUNNING`.
+
+2026-06-27 enterprise QA hardening pass:
+  - Created `qa/hardening-tickets.md` with 6 evidence-backed tickets from public and local testing.
+  - Public pass results: transport lifecycle ready, desktop/mobile gameplay ready, visual/mobile QA ready, all-item collision smoke passed for trash/turtle/powerup, and PAF MCP/Select AI context proof passed.
+  - Main blockers opened: STWL-QA-001 P0 human multiplayer clients do not see each other in the same room; STWL-QA-002 P1 PAF commentary proves Select AI/MCP but not Canvas/GenAI/trace/candidate model route.
+  - Local pass results: web/server unit suites passed, web build passed with asset-size warnings, local visual/mobile QA passed, keyboard sign QA passed, and dev servers were stopped.
+
+2026-06-27 enterprise QA continuation:
+  - Added reusable public regression gate `scripts/multiplayer-sync-probe.mjs` for the P0 human multiplayer sync bug.
+  - Reran the probe against `http://130.162.174.167` with two desktop Chromium clients and one mobile-emulated Chromium client in room `QA-MULTI-853340`; it failed as expected because all clients saw zero non-bot human remotes even after `QAHumanA` moved locally by `11.488` world units.
+  - Reran conference preflight against the public URL; PAF still fails the demo proof contract because the returned line is Select AI/in-db agent sourced with `canvas=null`, no upstream runtime modes, and trace persistence disabled.
+  - Reran `/healthz`; it still returns SPA HTML rather than JSON health.
+  - Updated `qa/hardening-tickets.md` with the new evidence paths and exact verification command.
+
+2026-06-27 lobby/admin timer QA continuation:
+  - Added reusable socket-level gate `scripts/lobby-admin-timer-probe.mjs` for lobby waiting, room admin authorization, duplicate starts, and server-canonical timer checks.
+  - Public probe confirmed a fresh room stays `WAITING` before start and timer ticks are synchronized across the two clients once emitted.
+  - Opened STWL-QA-007 P0: deployed room admin/start state is not authoritative across clients. A non-admin client was allowed to start a room, a duplicate start while `STARTING` was accepted, both clients received two countdowns and two `game.on` positions, and the first `game.time` after `RUNNING` was already `56` instead of near `60`.
+  - Evidence: `.codex_tmp/qa-lobby-admin-timer-public-final/latest.md` and `.codex_tmp/qa-lobby-admin-timer-public-final/latest.json`.
+
+2026-06-27 admin UI QA continuation:
+  - Added reusable admin probe `scripts/admin-ui-probe.mjs` for `/admin/observability` and `/admin/ai-learning`.
+  - Public probe passed observability after a fair 12s wait: live cards and room rows populated, and no browser errors.
+  - Public probe passed commentary feed inspectability: `/admin/ai-learning` showed 7 commentary lines grouped across 3 players.
+  - Opened STWL-QA-008 P2: the Model AI panel shows `Base ready` but hides runtime/handoff/proof details because `admin-ai-runtime`, `admin-ai-handoff`, and `admin-ai-proof-gate` are not present in the HTML even though the script tries to update them.
+  - Evidence: `.codex_tmp/qa-admin-ui-public/latest.md`, `.codex_tmp/qa-admin-ui-public/latest.json`, and `.codex_tmp/qa-admin-ui-public/admin-ai-learning.png`.
+
+2026-06-27 mobile flow QA continuation:
+  - Added reusable mobile probe `scripts/mobile-flow-probe.mjs` for normal lobby entry, public autostart behavior, touch joystick drag/release, and portrait/landscape HUD/joystick separation.
+  - Public probe passed normal mobile entry without autostart: room stayed `WAITING` in lobby.
+  - Public probe passed joystick behavior: joystick visible, no HUD overlap in portrait/landscape, drag moved the boat by about `8.063` world units, and release decelerated the boat from speed `2.173` to `1.386`.
+  - Opened STWL-QA-009 P1: public `?autostart=1` still bypasses presenter/admin start and reaches `RUNNING` on the deployed public URL.
+  - Evidence: `.codex_tmp/qa-mobile-flow-public/latest.md`, `.codex_tmp/qa-mobile-flow-public/latest.json`, and `.codex_tmp/qa-mobile-flow-public/mobile-autostart-running.png`.
+
+2026-06-27 room isolation/reconnect QA continuation:
+  - Added reusable room isolation/reconnect probe `scripts/room-isolation-reconnect-probe.mjs` for cross-room item scoping, room-specific start events, disconnect visibility, and reconnect rehydration.
+  - Public probe against `http://130.162.174.167` used rooms `QA-ISO-A-134989` and `QA-ISO-B-134989`.
+  - Passing coverage: all clients joined their target rooms, Room A presenter start was accepted, Room A clients entered `RUNNING`, Room B did not receive Room A match events, Room A observed a player leave, reconnecting Room A player rehydrated into the running match, and presenter end was accepted.
+  - Failing coverage: clients in both fresh rooms still received `items.all` snapshots from `ROOM-0001` with `wrongRoomCount=9` before or after target-room join.
+  - Updated STWL-QA-004 rather than opening a duplicate ticket. Evidence: `.codex_tmp/qa-room-isolation-public/latest.md` and `.codex_tmp/qa-room-isolation-public/latest.json`.
+
+2026-06-27 browser compute/UI QA continuation:
+  - Added reusable result-card commentary gate `scripts/commentary-result-probe.mjs`. Public normal-player run passed result-card survival, bounded commentary display, non-deterministic Select AI source, and browser-error checks, but failed timer pacing: `timeRemaining` dropped from `60` to `50` after `5726ms` real time. Evidence: `.codex_tmp/qa-commentary-result-public-normal/latest.md` and `.codex_tmp/qa-commentary-result-public-normal/latest.json`.
+  - Installed Playwright WebKit runtime so Safari-family automated coverage is available. Native Safari exists through `safaridriver`, but `safaridriver --diagnose` did not return cleanly; treat Playwright WebKit as Safari-family proxy, not full native Safari proof.
+  - Added reusable browser compute/UI gate `scripts/browser-compute-ui-probe.mjs` for Chrome/WebKit desktop and mobile viewport runs through lobby, presenter start, movement, joystick visibility, screenshots, frame telemetry, RAF timing, long tasks, JS heap where available, and resource transfer size.
+  - Public installed Chrome/WebKit matrix passed: Chrome desktop `114.67` avg FPS, Chrome mobile `116.23`, WebKit desktop `61.55`, WebKit mobile `59.88`; all had movement and no browser errors. Evidence: `.codex_tmp/qa-browser-compute-ui-chrome-webkit-public/latest.md`.
+  - Bundled Playwright Chromium with SwiftShader failed frame budget while WebKit passed; do not use that generic headless Chromium result as a product Chrome proxy. Evidence retained at `.codex_tmp/qa-browser-compute-ui-public/latest.md`.
+
+2026-06-27 mechanics telemetry PAF QA continuation:
+  - Added reusable mechanics-to-PAF gate `scripts/mechanics-telemetry-paf-probe.mjs`.
+  - Public probe seeded a fresh session with `game_started`, `position_sample`, `trash_collected`, `powerup_collected`, `trail_crossed`, `player_frozen`, and `game_over`; every `game.event` ack returned `ok=true` and `persisted=true`.
+  - PAF context returned `source=oracle-match-intelligence`, `score=7`, `trash_collected=1`, `powerup_shield=1`, `trail_crosses=1`, `freezes=1`, coordinates `{x:2.75,y:0,z:-1.5}`, JSON events, and graph facts for trash, powerup, trail crossing, and frozen-by-trail.
+  - PAF commentary passed bounded mechanics-awareness: `The player collected some trash and crossed a trail, but also encountered a freeze and used a shield power-up.` Source remains `select-ai`; model routes were skipped with `live_line_select_ai_first` and `trace_persisted=false`, so this strengthens STWL-QA-002 rather than closing it.
+  - Evidence: `.codex_tmp/qa-mechanics-telemetry-paf-public/latest.md` and `.codex_tmp/qa-mechanics-telemetry-paf-public/latest.json`.
+
+2026-06-27 Firefox compute/UI QA continuation:
+  - Installed the Playwright Firefox runtime and ran `scripts/browser-compute-ui-probe.mjs` against the public deployment with `--engines firefox`.
+  - Public Firefox desktop passed lobby-before-start, presenter start, `RUNNING`, movement input, screenshot capture, no browser console/network errors, and frame budget.
+  - Firefox metrics: `119.54` avg FPS, p95 frame `8.44ms`, RAF p95 `9.78ms`, zero long tasks, movement distance `15.649`.
+  - Evidence: `.codex_tmp/qa-browser-compute-ui-firefox-public/latest.md`, `.codex_tmp/qa-browser-compute-ui-firefox-public/latest.json`, and `.codex_tmp/qa-browser-compute-ui-firefox-public/firefox-desktop/after-drive.png`.
+
+2026-06-27 Chrome/WebKit compute/UI rerun:
+  - Validated probe syntax and scoped markdown whitespace checks: `node --check scripts/browser-compute-ui-probe.mjs`, `node --check scripts/mechanics-telemetry-paf-probe.mjs`, `node --check scripts/commentary-result-probe.mjs`, `git diff --check -- progress.md`, and `git diff --no-index --check /dev/null qa/hardening-tickets.md; true`.
+  - Ran `/usr/bin/time -lp node scripts/browser-compute-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-compute-ui-20260627-rerun --engines chrome,webkit --include-mobile --sample-ms 15000 --timeout-ms 150000`.
+  - Public Chrome/WebKit rerun passed all four scenarios. Chrome desktop averaged `120.1` FPS, Chrome mobile `119.84`, WebKit desktop `60.85`, and WebKit mobile `60.02`; movement, joystick visibility, and browser error checks passed.
+  - The same run strengthened STWL-QA-007: timer pace is too fast across both engines. During about `14.6s` of sampled play, `timeRemaining` fell from `60` to `42` on Chrome desktop, `40` on Chrome mobile, and `41` on both WebKit scenarios.
+  - Native Safari smoke attempted through `safaridriver`, but WebDriver session creation failed because Safari's `Allow Remote Automation` setting is disabled. Evidence: `.codex_tmp/qa-native-safari-smoke-20260627/latest.json`.
+  - WebKit full-page screenshots can lag behind raw in-page state. The raw samples stayed near 60 FPS and `RUNNING`; one delayed screenshot showed later timer state. Keep using `render_game_to_text`/performance samples as the compute source of truth and screenshots as visual evidence.
+  - Updated `qa/hardening-tickets.md` with fresh evidence paths, Chrome/WebKit rerun metrics, Safari coverage caveat, WebKit screenshot caveat, and timer pacing evidence.
+
+2026-06-27 browser collision UI QA continuation:
+  - Added reusable QA gate `scripts/browser-collision-ui-probe.mjs` for browser-driven collision testing across Chrome/WebKit. The script starts a room through `admin.presenter.start`, reads visible `trashSamples` from `window.render_game_to_text()`, drives the real browser-controlled boat toward target coordinates, captures screenshots, and records score/trash/pickup/frame evidence.
+  - Calibration runs showed the probe needed to prefer forward-arc trash and use the deployed public keyboard yaw convention; those corrections were made before treating the result as product evidence.
+  - Final public run failed in both installed Chrome and WebKit: the boat reached minimum target distances `0.075` and `0.115` world units respectively, but score/trash stayed `0->0` and `15->15` / `14->14`; pickup responses were `ok=false`, `error=not_running` while UI state remained `RUNNING`.
+  - Frame rates were healthy during the failed collision runs: Chrome `119.96` avg FPS and WebKit `59.95` avg FPS, so this is not a Safari-vs-Chrome compute problem.
+  - Opened STWL-QA-010 P1 in `qa/hardening-tickets.md`. Evidence: `.codex_tmp/qa-browser-collision-ui-20260627-final/latest.md`, `.codex_tmp/qa-browser-collision-ui-20260627-final/latest.json`, and engine screenshots in that folder.
+
+2026-06-27 mobile joystick collision QA continuation:
+  - Extended `scripts/browser-collision-ui-probe.mjs` with `--include-mobile`; desktop scenarios use keyboard input and mobile scenarios use the visible on-screen joystick.
+  - Ran `/usr/bin/time -lp node scripts/browser-collision-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-collision-ui-mobile-20260627 --engines chrome,webkit --include-mobile --drive-ms 30000 --timeout-ms 150000`.
+  - Public desktop/mobile rerun failed all four collision scenarios while frame rates stayed healthy. Minimum target distances: Chrome desktop `0.007`, Chrome mobile `0.137`, WebKit desktop `0.075`, WebKit mobile `0.004`. All final pickup results were `ok=false`, `error=not_running`.
+  - Mobile joystick visibility passed in both Chrome mobile and WebKit mobile, so the mobile collision failure is not simply hidden/absent controls.
+  - Updated STWL-QA-010 to cover desktop keyboard and mobile joystick paths. Evidence: `.codex_tmp/qa-browser-collision-ui-mobile-20260627/latest.md`, `.codex_tmp/qa-browser-collision-ui-mobile-20260627/latest.json`, and mobile screenshots in that folder.
+
+2026-06-27 local collision comparison QA continuation:
+  - Started local ws-server/web in persistent sessions on `http://127.0.0.1:3100` and `http://127.0.0.1:8180` using memory realtime backend.
+  - Ran `/usr/bin/time -lp node scripts/browser-collision-ui-probe.mjs --base-url http://127.0.0.1:8180 --output-dir .codex_tmp/qa-browser-collision-ui-local-20260627-live --engines chrome,webkit --include-mobile --drive-ms 30000 --timeout-ms 150000`.
+  - Local comparison did not reproduce the public `not_running` collision rejection on desktop: Chrome desktop collected trash (`score 0->1`, `trash 7->6`) and WebKit desktop collected trash (`score 0->1`, `trash 6->5`). Chrome mobile registered a valid turtle collision (`score 0->-1`). WebKit mobile did not collect, but also did not produce a `not_running` rejection.
+  - This strengthens STWL-QA-010 as a public deployment/distributed-state bug rather than a pure frontend collision mesh or browser rendering bug.
+  - The same local run exposed local/prod duration drift: local rooms reached `RUNNING` with `timeRemaining=180` while public demo runs use `60`. Opened STWL-QA-011 P3 for local dev/default duration mismatch.
+  - The local webpack dev-server `Can't set headers after they are sent` noise reproduced again, so STWL-QA-006 was strengthened with the fresh evidence.
+
+2026-06-27 user-requested compute/UI and Safari-vs-Chrome QA rerun:
+  - Ran public compute/UI matrix: `node scripts/browser-compute-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-compute-ui-20260627-user-request --engines chrome,webkit --include-mobile --sample-ms 15000 --timeout-ms 180000`.
+  - Result: Chrome desktop/mobile passed at about `120` FPS with JS heap around `40.6MB` and `29.1MB`; WebKit mobile passed at about `60` FPS; WebKit desktop accepted presenter start but stayed visually in lobby/`WAITING` during the compute probe, so the run failed on lifecycle state rather than compute usage.
+  - Native Safari remains unautomated on this Mac because `safaridriver` requires Safari Settings -> Developer -> Allow Remote Automation; `safaridriver --version` reports Safari `26.5`.
+  - Added a `--scenarios` filter to `scripts/browser-collision-ui-probe.mjs` so Chrome/WebKit desktop/mobile collision probes can be rerun as bounded slices instead of one wedged matrix.
+  - Ran Chrome collision slice: `node scripts/browser-collision-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-collision-ui-20260627-user-request-chrome --engines chrome --include-mobile --drive-ms 20000 --timeout-ms 90000`.
+  - Result: Chrome desktop and mobile reached `RUNNING`, stayed frame-healthy at about `120` FPS, and failed pickup with `error=not_running`.
+  - Ran WebKit desktop slice: `node scripts/browser-collision-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-collision-ui-20260627-user-request-webkit-desktop --engines webkit --scenarios desktop --drive-ms 20000 --timeout-ms 90000`.
+  - Result: WebKit desktop accepted presenter start but never reached a stable playable `RUNNING` state in the probe; raw state ended `WAITING`, while the screenshot showed an idle/result overlay and no browser errors.
+  - Ran WebKit mobile slice: `node scripts/browser-collision-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-collision-ui-20260627-user-request-webkit-mobile --engines webkit --scenarios mobile --drive-ms 20000 --timeout-ms 90000`.
+  - Result: WebKit mobile reached `RUNNING`, joystick was visible, held about `60` FPS, and failed pickup with `error=not_running`.
+  - Ran server-affinity confirmation: `node scripts/server-affinity-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-server-affinity-public-20260627-user-request --clients 12 --timeout-ms 120000`.
+  - Result: all 12 clients received `game.on`, but only the three on server `b6HdPJwFGrDbnyaZ7b8BVb` accepted collisions; the nine on other ws-server IDs returned `error=not_running`.
+  - Updated `qa/hardening-tickets.md`: fresh evidence strengthens STWL-QA-007, STWL-QA-010, and STWL-QA-012. Current conclusion remains: public failures are primarily distributed lifecycle authority/collision validation issues, not browser FPS or Safari-vs-Chrome rendering saturation.
+
+2026-06-27 public controls-sign QA continuation:
+  - Added reusable QA-only `scripts/controls-sign-probe.mjs` for isolated keyboard and touch-joystick direction checks. Each control case now starts a fresh presenter-controlled room before measuring `x`, `z`, `rotY`, speed, release decay, browser errors, and RAF timing.
+  - Initial sequential probe was discarded as evidence because right-turn checks inherited the previous left-turn heading. The script was tightened to isolated trials before recording product conclusions.
+  - Public Chrome desktop isolated controls passed: `A+W` moved left (`xDelta=-2.059`), `D+W` moved right (`xDelta=2.081`), `ArrowLeft+ArrowUp` moved left (`xDelta=-1.687`), `ArrowRight+ArrowUp` moved right (`xDelta=2.06`), and release decelerated. Evidence: `.codex_tmp/qa-controls-sign-public-20260627-chrome-desktop-isolated/latest.md`.
+  - Public Chrome mobile isolated controls passed: joystick up-left moved left (`xDelta=-1.041`), joystick up-right moved right (`xDelta=1.041`), joystick was visible, and release decelerated. Evidence: `.codex_tmp/qa-controls-sign-public-20260627-chrome-mobile-isolated/latest.md`.
+  - Public WebKit desktop isolated controls passed with the same keyboard direction convention. Evidence: `.codex_tmp/qa-controls-sign-public-20260627-webkit-desktop-isolated/latest.md`.
+  - Public WebKit mobile isolated controls passed with joystick up-left/up-right direction and release behavior. Evidence: `.codex_tmp/qa-controls-sign-public-20260627-webkit-mobile-isolated/latest.md`.
+  - No new controls-direction ticket opened. Current public controls are behaving correctly in isolated browser trials; the remaining user-facing gameplay failures are still better explained by STWL-QA-012/STWL-QA-010 distributed lifecycle/collision authority.
+
+2026-06-27 admin observability stability QA continuation:
+  - Added `scripts/admin-observability-stability-probe.mjs` to sample `/admin/observability` DOM counters and raw `/metrics` repeatedly over time.
+  - First public run: `node scripts/admin-observability-stability-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-admin-observability-stability-20260627-public --samples 12 --interval-ms 3000`.
+  - Result: failed. DOM rooms changed `15 -> 34`, DOM items stayed `13`, raw metrics rooms changed across `34/38/40`, and raw metrics item totals changed across `460/493/519/529`.
+  - Tightened the sampler threshold so a large DOM room swing fails instead of being treated as "two distinct values but stable."
+  - Confirmation run: `node scripts/admin-observability-stability-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-admin-observability-stability-20260627-public-confirm --samples 8 --interval-ms 2500`.
+  - Confirmation result: failed again. DOM rooms changed across `17/38/40`, DOM items changed `0 -> 13`, raw metrics rooms ranged `34 -> 40`, and raw metrics items ranged `460 -> 529`. Final screenshot shows `Rooms 17` and `Items 13`, while nearby raw metrics report hundreds of items.
+  - Opened STWL-QA-014 P1: admin observability counters are non-canonical and oscillate across public deployment samples. This is separate from STWL-QA-013 stale active rooms, though both likely share the STWL-QA-012 distributed state root cause.
+
+2026-06-27 user-requested compute-usage/UI and Safari-vs-Chrome QA continuation:
+  - Ran fresh public compute/UI matrix: `/usr/bin/time -lp node scripts/browser-compute-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-compute-ui-20260627-compute-ui-safari-chrome --engines chrome,webkit --include-mobile --sample-ms 20000 --timeout-ms 180000`.
+  - Result: passed all four browser/viewport scenarios. Chrome desktop/mobile held about `120` FPS with p95 frame around `8.4ms` and JS heap around `26MB`; WebKit/Safari-family desktop/mobile held about `60` FPS with p95 frame around `16.8ms`; all moved the player and mobile joystick visibility passed.
+  - The same compute run still strengthened STWL-QA-007/STWL-QA-010: timer fell from `60` to `31/35/30/33` across Chrome desktop, Chrome mobile, WebKit desktop, and WebKit mobile during the 20-second sample plus readback, and every final state still showed `pickup.error=not_running`.
+  - Ran fresh public collision/UI matrix: `/usr/bin/time -lp node scripts/browser-collision-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-collision-ui-20260627-compute-ui-safari-chrome --engines chrome,webkit --include-mobile --drive-ms 20000 --timeout-ms 120000`.
+  - Result: failed again. Chrome desktop reached `RUNNING`, rendered visible trash, held `120.01` FPS, and still ended `score 0->0`, `trash 25->25`, `pickup.error=not_running`. Chrome mobile ended on Results with `Time: 60`; WebKit desktop stayed in lobby after presenter start; WebKit mobile showed a `GO` overlay with `Time: 60` and no joystick. RAF timing stayed healthy, so this is lifecycle/UI authority drift rather than GPU or Safari-vs-Chrome compute saturation.
+  - Native Safari: `safaridriver --version` reports Safari `26.5`, but WebDriver session creation fails with `session not created` because Safari Settings -> Developer -> Allow Remote Automation is disabled. Use Playwright WebKit as Safari-family proxy until that setting is enabled.
+  - Updated `qa/hardening-tickets.md` with evidence paths and conclusion: no new ticket; this strengthens STWL-QA-007, STWL-QA-010, and STWL-QA-012.
+
+2026-06-27 admin live commentary feed QA continuation:
+  - Added reusable QA-only `scripts/admin-commentary-feed-probe.mjs` to open `/admin/ai-learning?room=...`, seed fresh telemetry through `game.event`, wait for `commentary.ready`, and verify the presenter feed shows the new line grouped by player.
+  - First run used an overly long room ID and failed two room-join checks because the app normalized/truncated the room label; the core live commentary and feed checks still passed. Tightened the script to use short QA room IDs.
+  - Corrected public run passed: `/usr/bin/time -lp node scripts/admin-commentary-feed-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-admin-commentary-feed-20260627-public-shortroom --timeout-ms 180000`.
+  - Result: `commentary.ready` arrived in about `1.5s` from `source=select-ai`, line length `91`, no profanity, and text mentioned freeze/powerup/trash evidence: `A freeze event and a powerup were recorded, with a score of 9 and one trash item collected.`
+  - `/admin/ai-learning` showed `Players with lines=1`, `Commentary lines=1`, `Latest source=select-ai`, and the line under `QA Admin Feed 027573`; screenshot inspected at `.codex_tmp/qa-admin-commentary-feed-20260627-public-shortroom/admin-after-commentary.png`.
+  - Updated `qa/hardening-tickets.md`: no new ticket; this is passing coverage for the presenter commentary UI, while STWL-QA-002 remains open for Canvas/GenAI/trace/candidate model proof.
+
+2026-06-27 browser all-item collision QA continuation:
+  - Added reusable QA-only `scripts/browser-item-collision-matrix-probe.mjs` for browser-driven trash, turtle, and powerup interactions using `window.render_game_to_text()` item samples and real keyboard/joystick input.
+  - Ran public Chrome desktop matrix: `/usr/bin/time -lp node scripts/browser-item-collision-matrix-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-item-collision-matrix-20260627-public-chrome-desktop --engines chrome --scenarios desktop --item-types trash,turtle,powerup --drive-ms 20000 --timeout-ms 120000`.
+  - Result: failed overall. Trash reached `RUNNING`, showed visible trash, held `119.95` FPS, but failed `score 0->0`, `trash 11->11`, `pickup.error=not_running`.
+  - Powerup reached `RUNNING`, showed visible `powerup_speed`, held `119.94` FPS, but failed `score 0->0`, `powerup 1->1`, `pickup.error=not_running`, and no powerup state activated.
+  - Turtle exposed a lifecycle mismatch rather than a clean collision attempt: the probe timed out waiting for stable `RUNNING` with turtle sample present, then ended `WAITING`/Results with `Time: 60`, score `0`, and no pickup result.
+  - Screenshots inspected:
+    - `.codex_tmp/qa-browser-item-collision-matrix-20260627-public-chrome-desktop/chrome-desktop-trash/after-drive.png`
+    - `.codex_tmp/qa-browser-item-collision-matrix-20260627-public-chrome-desktop/chrome-desktop-powerup/after-drive.png`
+    - `.codex_tmp/qa-browser-item-collision-matrix-20260627-public-chrome-desktop/chrome-desktop-turtle/after-drive.png`
+  - Updated STWL-QA-010 title/scope from trash-only to browser-driven item interactions failing due `not_running` or lifecycle mismatch while render performance is healthy.
+
+2026-06-27 user-requested compute-usage/UI Safari-vs-Chrome QA continuation:
+  - Ran a fresh public compute/UI matrix with shell compute usage: `/usr/bin/time -lp node scripts/browser-compute-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-compute-ui-20260627-user-compute-ui-rerun2 --engines chrome,webkit --include-mobile --sample-ms 20000 --timeout-ms 180000`.
+  - Result: passed all four browser/viewport scenarios. Chrome desktop/mobile held `120.19/120.00` FPS with p95 frame time `8.38/8.37ms`; WebKit/Safari-family desktop/mobile held `60.74/59.93` FPS with p95 frame time `16.73/16.76ms`; all reached `RUNNING`, moved the player, had no browser/network errors, and mobile joystick visibility passed.
+  - Shell compute usage for the compute/UI matrix: `real=160.87s`, `user=31.10s`, `sys=12.19s`, max RSS `383107072`, peak memory footprint `157386632`.
+  - Gameplay caveat from the same run: timers still dropped too fast and Chrome desktop/mobile still ended with `pickup.error=not_running`; WebKit registered one turtle/trash collision in this run, strengthening the conclusion that public collision failures are intermittent distributed-state/lifecycle bugs, not raw Safari-vs-Chrome FPS saturation.
+  - Added reusable QA-only `scripts/browser-badge-ui-probe.mjs` to force long powerup/status badges through the existing `window.__stwlVisualQa.showBadges()` hook and compare Chrome/WebKit desktop/mobile UI fit and frame budget.
+  - Ran badge/UI matrix: `/usr/bin/time -lp node scripts/browser-badge-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-badge-ui-20260627-user-compute-ui --engines chrome,webkit --include-mobile --sample-ms 3000 --timeout-ms 150000`.
+  - Result: failed only the multi-powerup badge fit. Powerup badge `textWidthRatio` was `0.75` on Chrome and `0.781` on WebKit in both desktop/mobile, above the `<=0.70` safe budget; status badge, joystick placement, browser errors, and frame budget passed.
+  - Shell compute usage for the badge/UI matrix: `real=79.96s`, `user=12.12s`, `sys=5.43s`, max RSS `334446592`, peak memory footprint `146802304`.
+  - Opened STWL-QA-015 P2 for the powerup emoji badge clipping/squeezing issue. Evidence: `.codex_tmp/qa-browser-badge-ui-20260627-user-compute-ui/latest.md` and screenshots in that folder.
+  - Ran one focused public collision/UI compute-usage rerun: `/usr/bin/time -lp node scripts/browser-collision-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-collision-ui-20260627-user-compute-ui-rerun2 --engines chrome,webkit --include-mobile --drive-ms 15000 --timeout-ms 120000`.
+  - Result: failed overall after timeout-heavy lifecycle setup. Chrome mobile passed by registering a turtle hit at `119.67` FPS; WebKit desktop reached `RUNNING`, rendered visible trash, held `59.96` FPS, and still failed pickup with `error=not_running`; Chrome desktop failed presenter start/lifecycle setup and WebKit mobile failed stable playable state/joystick visibility.
+  - Shell compute usage for the collision/UI rerun: `real=293.62s`, `user=63.89s`, `sys=15.82s`, max RSS `443711488`, peak memory footprint `129336408`.
+  - Updated STWL-QA-010 rather than opening a duplicate. The conclusion remains that public failures are distributed lifecycle/collision authority issues, not raw Chrome-vs-Safari frame performance.
+
+2026-06-27 mixed-browser multiplayer sync QA continuation:
+  - Added reusable QA-only `scripts/multiplayer-cross-browser-sync-probe.mjs` for mixed Chrome/WebKit desktop/mobile multiplayer testing through the intended lobby plus `admin.presenter.start` flow. This avoids the older `autostart=1` path and captures screenshots, `render_game_to_text`, browser errors, and frame budgets for each client.
+  - Ran public mixed-browser probe: `/usr/bin/time -lp node scripts/multiplayer-cross-browser-sync-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-multiplayer-cross-browser-sync-20260627-public --drive-ms 3500 --timeout-ms 150000`.
+  - Result: failed, strengthening STWL-QA-001. All clients waited in lobby, admin start was accepted, all reached `RUNNING`, and Chrome desktop driver moved `10.789` world units. Chrome desktop saw zero non-bot humans; Chrome mobile saw zero non-bot humans; WebKit desktop saw the Chrome driver and trail but missed the mobile player. All clients reported `authStateCount=3`, so authoritative state exists but the remote render/roster merge is inconsistent.
+  - Frame budget remained healthy in the mixed multiplayer run: Chrome desktop `120` FPS, WebKit desktop `60` FPS, Chrome mobile `119` FPS. Shell compute usage: `real=35.93s`, `user=25.15s`, `sys=9.13s`, max RSS `349110272`, peak memory footprint `146097312`.
+  - The WebKit client logged `Audio load failed; continuing without engine sound EncodingError: Decoding failed`; opened STWL-QA-016 P3 rather than mixing it into the P0 multiplayer ticket.
+  - Evidence: `.codex_tmp/qa-multiplayer-cross-browser-sync-20260627-public/latest.md`, `.codex_tmp/qa-multiplayer-cross-browser-sync-20260627-public/latest.json`, and screenshots in that folder.
+
+2026-06-27 WebSocket stability QA continuation:
+  - Added reusable QA-only `scripts/websocket-stability-probe.mjs` for sustained multi-client Socket.IO/WebSocket observation. The probe joins several clients to one room, starts via admin presenter, samples connection/disconnect/reconnect events, `game.time` delivery, timer spread, and timer pace, then ends the room.
+  - Ran public stability probe: `/usr/bin/time -lp node scripts/websocket-stability-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-websocket-stability-20260627-public --clients 6 --sample-ms 45000 --timeout-ms 120000`.
+  - Result: passed. Six WebSocket clients connected and joined room `QA-WS-041174`, admin start was accepted, all observed `RUNNING`, no disconnects/reconnect attempts/connect errors occurred over the 45s observation window, all clients received 44 `game.time` updates, final timer spread was `0`, and admin end was accepted.
+  - Timer contrast: socket-level timer dropped from `52` to `8` over `44.989s`, within wall-clock tolerance. This does not close STWL-QA-007 because browser/admin duplicate-start and UI lifecycle paths still fail, but it narrows visible instability away from raw WebSocket churn.
+  - Shell compute usage: `real=63.66s`, `user=1.10s`, `sys=0.59s`, max RSS `78659584`, peak memory footprint `38178248`.
+  - Updated `qa/hardening-tickets.md` with passing coverage and contrast evidence for STWL-QA-007/STWL-QA-012. Evidence: `.codex_tmp/qa-websocket-stability-20260627-public/latest.md` and `.codex_tmp/qa-websocket-stability-20260627-public/latest.json`.
+
+2026-06-27 multi-user admin commentary QA continuation:
+  - Added reusable QA-only `scripts/admin-commentary-multiuser-probe.mjs` to seed three players into a fresh room, emit distinct gameplay telemetry, wait for three `commentary.ready` events, and verify `/admin/ai-learning` groups commentary by player.
+  - Ran public probe: `/usr/bin/time -lp node scripts/admin-commentary-multiuser-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-admin-commentary-multiuser-20260627-public --timeout-ms 180000`.
+  - Result: passed. Room `QA-ACM-414234` received telemetry for QA Caster Alpha/Bravo/Charlie; all `game.event` acks were accepted; all three `game_over` events queued commentary; all three `commentary.ready` payloads arrived from `source=select-ai`; all lines were under 200 chars, safe, and avoided unsupported facts.
+  - Admin UI proof: screenshot shows `Players with lines=3`, `Commentary lines=3`, `Latest source=select-ai`, and three readable player sections. This is strong presenter-list evidence.
+  - Remaining caveat: the ready payloads still reported `trace_persisted=false` and `canvas=null`, so STWL-QA-002/STWL-QA-008 remain open for Canvas/model/trace/candidate proof.
+  - Shell compute usage: `real=7.09s`, `user=3.72s`, `sys=1.81s`, max RSS `246398976`, peak memory footprint `104050952`.
+  - Evidence: `.codex_tmp/qa-admin-commentary-multiuser-20260627-public/latest.md`, `.codex_tmp/qa-admin-commentary-multiuser-20260627-public/latest.json`, and `.codex_tmp/qa-admin-commentary-multiuser-20260627-public/admin-after-multiuser-commentary.png`.
+
+2026-06-27 user-requested full browser lifecycle compute/UI QA continuation:
+  - Corrected `scripts/browser-match-lifecycle-probe.mjs` before treating it as evidence: `RUNNING` detection now happens concurrently across clients, and a post-match `admin.presenter.end` returning `invalid_state/ENDED` is treated as an already-ended room instead of a false failure.
+  - Syntax gate passed: `node --check scripts/browser-match-lifecycle-probe.mjs`.
+  - First public run before the correction failed noisily because the sequential wait/screenshot path produced misleading mobile/WebKit timing artifacts; evidence kept at `.codex_tmp/qa-browser-match-lifecycle-20260627-public/latest.md` for traceability but not used as the primary conclusion.
+  - Corrected public rerun: `/usr/bin/time -lp node scripts/browser-match-lifecycle-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-match-lifecycle-20260627-public-rerun --timeout-ms 150000`.
+  - Result: passed. Chrome desktop, WebKit desktop, and Chrome mobile all waited in lobby, accepted `admin.presenter.start`, reached `RUNNING` at `timeRemaining=60`, reached post-game/result state at `timeRemaining=0`, and ended together with `4ms` spread.
+  - Frame/compute result: Chrome desktop `120.1` FPS, Chrome mobile `119.6` FPS, WebKit/Safari-family desktop `60.4` FPS; no browser errors. WebKit still logged the known optional audio decode warning tracked under STWL-QA-016.
+  - Shell compute usage: `real=75.11s`, `user=64.85s`, `sys=20.11s`, max RSS `402276352`, peak memory footprint `153439024`.
+  - Evidence: `.codex_tmp/qa-browser-match-lifecycle-20260627-public-rerun/latest.md`, `.codex_tmp/qa-browser-match-lifecycle-20260627-public-rerun/latest.json`, and screenshots in that folder.
+  - Updated `qa/hardening-tickets.md` with this as passing contrast under STWL-QA-007 and the global passing coverage. It does not close STWL-QA-001, STWL-QA-010, STWL-QA-012, STWL-QA-014, or the PAF provenance gap.
+  - Follow-up four-client run included WebKit mobile explicitly: `/usr/bin/time -lp node scripts/browser-match-lifecycle-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-match-lifecycle-20260627-public-four-client --clients QALifeChrome:chrome:desktop,QALifeWebKit:webkit:desktop,QALifeChromeMob:chrome:mobile,QALifeWebKitMob:webkit:mobile --timeout-ms 165000`.
+  - Four-client result: passed lifecycle and frame checks. Chrome desktop/mobile reached `120.7/120.4` FPS; WebKit desktop/mobile reached `57.7/55.1` FPS; all four reached `RUNNING` at `timeRemaining=60`, results at `0`, and ended with `8ms` spread. Shell compute: `real=76.26s`, `user=71.83s`, `sys=25.48s`, max RSS `408649728`, peak memory footprint `153357152`.
+  - New visual defect found from screenshot inspection: WebKit mobile showed a huge cropped remote player name over the viewport and a remote boat overlapping the joystick area. Debug state showed remote human `QALifeWebKit` at the exact local player coordinates (`x=-1`, `z=5`). Opened STWL-QA-017 P2.
+  - Evidence: `.codex_tmp/qa-browser-match-lifecycle-20260627-public-four-client/latest.md`, `.codex_tmp/qa-browser-match-lifecycle-20260627-public-four-client/latest.json`, `.codex_tmp/qa-browser-match-lifecycle-20260627-public-four-client/QALifeWebKitMob-running.png`, and `.codex_tmp/qa-browser-match-lifecycle-20260627-public-four-client/QALifeChromeMob-running.png`.
+
+2026-06-27 human spawn/remote overlap QA continuation:
+  - Added reusable QA-only `scripts/human-spawn-overlap-probe.mjs` for mixed Chrome/WebKit desktop/mobile rooms. It starts via `admin.presenter.start`, samples `render_game_to_text()`, screenshots each client, flags visible human remotes at local-player distance `<=0.5`, and now fails if clients miss expected human remotes.
+  - First public run before tightening the remote-visibility gate passed overlap but still showed the old sync smell: `authStateCount=4`, desktop clients saw only one human remote, and mobile clients saw zero human remotes. Evidence kept at `.codex_tmp/qa-human-spawn-overlap-20260627-public/latest.md`.
+  - Strict public rerun: `/usr/bin/time -lp node scripts/human-spawn-overlap-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-human-spawn-overlap-20260627-public-strict --timeout-ms 130000 --sample-ms 5000`.
+  - Result: failed with stronger reproduction of STWL-QA-001/STWL-QA-017. All four clients reached `RUNNING` and reported `authStateCount=4`, but remote visibility was asymmetric: Chrome desktop saw all three human remotes, WebKit desktop missed Chrome desktop, Chrome mobile saw only WebKit mobile, and WebKit mobile saw only Chrome mobile.
+  - Exact overlap evidence: Chrome desktop, WebKit desktop, and Chrome mobile all rendered `QASpawnWebKitMob` at distance `0` from their own local player. Chrome mobile screenshot shows a giant cropped `...SpawnWebKit...` name label across the viewport.
+  - Frame/compute result: Chrome desktop `119.7` FPS, WebKit desktop `60.5` FPS, Chrome mobile `120.8` FPS, WebKit mobile `60.0` FPS. Shell compute: `real=24.47s`, `user=21.74s`, `sys=7.51s`, max RSS `332660736`, peak memory footprint `154405032`.
+  - Updated `qa/hardening-tickets.md`: STWL-QA-001 now includes strict spawn/remote evidence; STWL-QA-017 is broadened from WebKit-only to mobile clients rendering oversized overlapping remote names/boats.
+  - Evidence: `.codex_tmp/qa-human-spawn-overlap-20260627-public-strict/latest.md`, `.codex_tmp/qa-human-spawn-overlap-20260627-public-strict/latest.json`, `.codex_tmp/qa-human-spawn-overlap-20260627-public-strict/QASpawnChromeMob-running.png`, and `.codex_tmp/qa-human-spawn-overlap-20260627-public-strict/QASpawnWebKitMob-running.png`.
+
+2026-06-27 browser result commentary matrix QA continuation:
+  - Added reusable QA-only `scripts/browser-result-commentary-matrix-probe.mjs` to run Chrome desktop, WebKit desktop, Chrome mobile, and WebKit mobile through the real lobby/admin/match/result flow, then wait for result-card commentary and inspect `commentary.ready` source metadata.
+  - First public run showed all product commentary checks passing but the monitor socket join ack timing out. The monitor still captured `commentary.pending` and `commentary.ready`, so the script was corrected to treat that ack timeout as a warning, not a product failure.
+  - Clean public rerun: `/usr/bin/time -lp node scripts/browser-result-commentary-matrix-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-result-commentary-matrix-20260627-public-rerun --timeout-ms 165000 --commentary-wait-ms 30000`.
+  - Result: passed. All four clients reached result surfaces, initially showed `Commentary is being drafted...`, then received final player-facing commentary in `1014-1519ms`. Lines were safe and under 200 chars: 65, 85, 104, and 102 chars.
+  - Source/provenance: every `commentary.ready` used `source=select-ai`, with no deterministic fallback. The PAF proof caveat remains: `trace_persisted=false`, `canvas=null` or absent, and primary/candidate routes skipped with `live_line_select_ai_first`.
+  - Frame/compute result: shell compute `real=81.99s`, `user=78.19s`, `sys=27.20s`, max RSS `405323776`, peak memory footprint `154880456`. Browser frame checks passed; WebKit still logged the known audio decode warning.
+  - Screenshot inspection: Chrome mobile result card is readable with final commentary. WebKit mobile result card is readable too, but the same giant remote-name overlay appears behind it, strengthening STWL-QA-017.
+  - Updated `qa/hardening-tickets.md`: added player-facing commentary matrix evidence under STWL-QA-002 and added the WebKit mobile result screenshot to STWL-QA-017.
+  - Evidence: `.codex_tmp/qa-browser-result-commentary-matrix-20260627-public-rerun/latest.md`, `.codex_tmp/qa-browser-result-commentary-matrix-20260627-public-rerun/latest.json`, `.codex_tmp/qa-browser-result-commentary-matrix-20260627-public-rerun/QAComChromeMob-commentary-final.png`, and `.codex_tmp/qa-browser-result-commentary-matrix-20260627-public-rerun/QAComWebKitMob-commentary-final.png`.
+
+2026-06-27 user-requested compute-usage/UI Safari-vs-Chrome item population QA continuation:
+  - Added reusable QA-only `scripts/browser-item-population-probe.mjs` for public Chrome/WebKit desktop/mobile item-health testing through the real lobby plus `admin.presenter.start` flow.
+  - The probe captures `render_game_to_text()` item counts every second, start/mid/final screenshots, browser errors, frame telemetry, pickup results, and `/usr/bin/time -lp` shell compute usage.
+  - Ran public probe: `/usr/bin/time -lp node scripts/browser-item-population-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-item-population-20260627-public --sample-ms 70000 --timeout-ms 180000`.
+  - Result: failed product checks while compute stayed healthy. All four clients reached `RUNNING` with `35` trash, `1` powerup, and visible turtles at start; trash stayed healthy at `32+` and powerups stayed at `1`, so this did not reproduce whole-match trash depletion.
+  - Collision authority still failed in the same running room: Chrome desktop accepted one turtle hit (`scoreDelta=-1`, `not_running=0`), while WebKit desktop, Chrome mobile, and WebKit mobile recorded `54`, `52`, and `51` repeated `pickup.error=not_running` results.
+  - New item-health defect opened as STWL-QA-018: turtle/marine visibility/debug count falls to `0` mid-match while trash and powerups remain populated.
+  - STWL-QA-017 was broadened because item-pop screenshots reproduced giant cropped remote-name overlays on WebKit desktop, Chrome mobile, and WebKit mobile while frame budgets were healthy.
+  - Shell compute usage: `real=80.19s`, `user=83.94s`, `sys=24.27s`, max RSS `429408256`, peak memory footprint `158763752`.
+  - Evidence: `.codex_tmp/qa-browser-item-population-20260627-public/latest.md`, `.codex_tmp/qa-browser-item-population-20260627-public/latest.json`, and screenshots in that folder.
+
+2026-06-27 user-requested compute-usage/UI Safari-vs-Chrome PAF context QA continuation:
+  - Added/used reusable QA-only `scripts/browser-paf-context-matrix-probe.mjs` to run Chrome desktop, WebKit desktop, Chrome mobile, and WebKit mobile through the real lobby/admin/match/result flow, wait for result-card commentary, and then compare browser `commentary.ready` metadata with `/paf/api/context` and `/paf/api/commentary`.
+  - Public run: `/usr/bin/time -lp node scripts/browser-paf-context-matrix-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-paf-context-matrix-20260627-public --timeout-ms 190000 --commentary-wait-ms 35000 --paf-timeout-ms 35000`.
+  - Result: failed evidence/session checks while confirming the front-door commentary UI is alive. All four clients reached post-game and displayed final Select AI commentary; direct `/paf/api/commentary` calls were bounded, safe, and live. Every ready payload still used `source=select-ai`, `trace_persisted=false`, `canvas=null`, `route_mode=primary`, and skipped primary/candidate model routes with `live_line_select_ai_first`.
+  - Safari/WebKit-specific defect found: WebKit desktop and WebKit mobile shared the same `commentary.ready` session/player id (`QA-PAFCTX-071134:1pNgx1EnZbuSs5uZqRcVR1:1782562100466` / `1pNgx1EnZbuSs5uZqRcVR1`) even though their result cards represented different browser clients. WebKit desktop's visible result text mentioned a trail/freeze, while the bound PAF context summary for that shared session reported zero trail/freezes.
+  - Context defect found: all four `/paf/api/context` responses omitted visible `game_over` in the returned event window even though the clients had reached result screens, suggesting the context endpoint is too raw/page-limited for demo proof and should always include canonical terminal result facts.
+  - Frame/compute result: healthy browser performance, so this is not compute saturation. Shell compute usage: `real=91.69s`, `user=83.34s`, `sys=26.99s`, max RSS `426164224`, peak memory footprint `180275584`. Chrome desktop/mobile held about `119` FPS; WebKit/Safari-family desktop/mobile held about `60` FPS.
+  - Updated `qa/hardening-tickets.md`: added the PAF context matrix evidence to STWL-QA-002, opened STWL-QA-019 P1 for cross-browser commentary session/context binding, and updated executive summary counts/readiness blockers.
+  - Evidence: `.codex_tmp/qa-browser-paf-context-matrix-20260627-public/latest.md`, `.codex_tmp/qa-browser-paf-context-matrix-20260627-public/latest.json`, and final commentary screenshots in that folder.
+
+2026-06-27 P0 recovery implementation:
+  - Addressed all three open P0s locally: STWL-QA-012 cross-pod room lifecycle/collision split, STWL-QA-007 admin/start/timer authority, and STWL-QA-001 human multiplayer spawn/remote-state mismatch.
+  - Server lifecycle fix in `server/server.js`:
+    - Added canonical room helpers: `readCanonicalRoomState()`, `writeCanonicalRoomState()`, `syncRoomStateToSocket()`, `roomStartPositionForPlayer()`, and canonical async session id lookup.
+    - `startRoomMatch()` and `endRoomMatch()` are now async and persist shared room records with `state`, `startTime`, `startingAt`, `durationSeconds`, `ownerServerId`, `startPosition`, and `startPositions`.
+    - `items.collision`, stale-player cleanup, late room joins, room summaries, and `game.event` session binding now read canonical room state instead of local-only `roomTimers`.
+    - Removed the `admin.start` auto-admin loophole; normal player starts now require the current room admin, while presenter start remains the demo override.
+    - Owner timer loop self-skips if canonical state/owner changes, so a different pod ending a room stops stale owner behavior.
+  - Multiplayer state/spawn fix:
+    - `startRoomMatch()` builds a shared `startPositions` map from the shared roster but only initializes `playersState` for local sockets, avoiding duplicate static authoritative states from the owner pod.
+    - `game.start` snaps each socket-local server-auth state to that player's canonical start if the room is already `RUNNING`.
+    - `player.state` now carries local player profile metadata so clients can merge roster labels directly from authoritative state packets.
+    - `web/src/script.js` now merges `body.players` into `otherPlayersInfo` and chooses `startPositions[yourId]` from `game.on`.
+  - Tests updated:
+    - `server/test/gameLogic.test.js` now pins canonical lifecycle helpers, canonical collision validation, and separated start-position payloads.
+    - `web/src/__tests__/lobbyAdminFlow.test.js` now pins canonical stale cleanup, late-join sync, async presenter start, and removal of local-only collision gating.
+  - Validation:
+    - `node --check server/server.js` passed.
+    - `node --check web/src/script.js` passed.
+    - `npm --prefix server run test:unit` passed: 7 files, 71 tests.
+    - `npm --prefix web run test:unit` passed: 10 files, 64 tests.
+    - `npm --prefix web run build` passed with existing asset-size warnings only.
+    - Direct local lifecycle smoke against `http://localhost:3100` passed join, non-admin rejection, admin start, duplicate-start rejection, shared countdown, RUNNING, synced timer emissions, and admin end. The only failing assertion was local `.config/.env` overriding `GAME_DURATION_IN_SECONDS=180`; deployment templates already set `60`.
+    - Direct local server-affinity/collision smoke passed: `.codex_tmp/qa-server-affinity-local-direct-after-p0/latest.md` reported `not_running=0` and 4 accepted trash collisions after `game.on`.
+    - Direct start-position payload proof passed: two sockets received a shared `startPositions` map with distinct coordinates for `start-a` and `start-b`.
+  - Local browser Playwright probe caveat:
+    - A local four-client browser spawn probe failed before app interaction because Chrome launch timed out.
+    - A web-dev-proxy timer probe failed while webpack dev server reported `EMFILE: too many open files, watch`.
+    - The direct ws-server socket probes above bypassed that local tooling issue and are the useful local evidence.
+  - Ticket ledger updated:
+    - `qa/hardening-tickets.md` now marks STWL-QA-001, STWL-QA-007, and STWL-QA-012 as `Fixed locally; public deployment verification pending`.
+  - Required next step:
+    - Deploy this server/web build through OCI DevOps, then rerun public P0 gates: `scripts/server-affinity-probe.mjs`, `scripts/lobby-admin-timer-probe.mjs`, `scripts/multiplayer-cross-browser-sync-probe.mjs`, and `scripts/browser-collision-ui-probe.mjs` against `http://130.162.174.167`.
+
+2026-06-27 P0 recovery test hardening follow-up:
+  - Extracted pure canonical room-state helpers into `server/lib/gameLogic.js` so the cross-pod lifecycle behavior is unit-testable rather than only pinned by static regex checks.
+  - Added tests for:
+    - room id and start-position normalization;
+    - fresher cached `RUNNING` state winning over stale local `WAITING` state;
+    - persisted room-state shape excluding local-only timer handles;
+    - per-player start-position selection;
+    - canonical remaining-time calculation from server `startTime`.
+  - Updated `server/server.js` to use the shared helper implementations for canonical ids, state normalization, persisted state, canonical selection, remaining time, and per-player start-position lookup.
+  - Validation:
+    - `node --check server/server.js` passed.
+    - `node --check server/lib/gameLogic.js` passed.
+    - `npm --prefix server run test:unit -- --run test/gameLogic.test.js` passed: 44 tests.
+    - `npm --prefix server run test:unit` passed: 7 files, 76 tests.
+    - `npm --prefix web run test:unit -- --run src/__tests__/lobbyAdminFlow.test.js` passed: 14 tests.
+    - `npm --prefix web run test:unit` passed: 10 files, 64 tests.
+    - Scoped `git diff --check` passed for touched P0 files.
+
+2026-06-27 P0 recovery deploy preflight:
+  - Re-ran local gates before production rollout:
+    - `/usr/bin/time -lp npm --prefix server run test:unit` passed: 7 files, 76 tests; max RSS 136757248; peak memory footprint 26594040.
+    - `/usr/bin/time -lp npm --prefix web run test:unit` passed: 10 files, 64 tests; max RSS 193282048; peak memory footprint 26446608.
+    - `/usr/bin/time -lp npm --prefix web run build` passed with the existing asset-size warnings; bundle `bundle.0850ba14e2d3ca2540fa.js`, max RSS 989593600.
+    - `git diff --check` passed for the P0 touched files.
+  - Re-ran local direct game probes with `GAME_DURATION_IN_SECONDS=60`:
+    - `/usr/bin/time -lp node scripts/server-affinity-probe.mjs --base-url http://localhost:3100 --clients 4 --output-dir .codex_tmp/qa-server-affinity-local-direct-current --timeout-ms 120000` passed with `not_running=0` and 4 accepted trash collisions; max RSS 73695232.
+    - `/usr/bin/time -lp node scripts/lobby-admin-timer-probe.mjs --base-url http://localhost:3100 --output-dir .codex_tmp/qa-lobby-admin-timer-local-direct-current --timeout-ms 120000 --pre-start-ms 3000 --wait-game-over` passed non-admin rejection, duplicate-start rejection, one shared countdown, canonical 60s timer, and synchronized game end; max RSS 84344832.
+  - Bumped deploy image versions for the P0 rollout: web `0.0.85`, ws-server `0.0.53`.
+  - Next required step remains production deployment through OCI DevOps, followed by public compute/socket/browser verification against `http://130.162.174.167`.

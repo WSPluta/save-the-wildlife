@@ -45,6 +45,95 @@ export function resolveJoiningRoom({ requestedRoom, socketRoom, defaultRoom = "R
   );
 }
 
+export function canonicalRoomId(room, defaultRoom = "ROOM-0001") {
+  return normalizeRoom(room) || normalizeRoom(defaultRoom) || "ROOM-0001";
+}
+
+export function normalizeStartPosition(position) {
+  if (!position || typeof position !== "object") return null;
+  const x = Number(position.x);
+  const y = Number(position.y || 0);
+  const z = Number(position.z);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  return { x, y: Number.isFinite(y) ? y : 0, z };
+}
+
+export function normalizeStartPositions(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const positions = {};
+  for (const [playerId, position] of Object.entries(value)) {
+    const parsed = normalizeStartPosition(position);
+    if (playerId && parsed) positions[playerId] = parsed;
+  }
+  return Object.keys(positions).length ? positions : null;
+}
+
+export function normalizeRoomStateRecord(room, state = {}, {
+  defaultRoom = "ROOM-0001",
+  durationSeconds = 60,
+  now = Date.now(),
+} = {}) {
+  const safeRoom = canonicalRoomId(room, defaultRoom);
+  const rawState = String(state?.state || "WAITING").toUpperCase();
+  const allowedState = ["WAITING", "STARTING", "RUNNING", "ENDED"].includes(rawState)
+    ? rawState
+    : "WAITING";
+  const startTime = Number(state?.startTime);
+  const startingAt = Number(state?.startingAt);
+  const updatedAt = Number(state?.updatedAt);
+  return {
+    room: safeRoom,
+    state: allowedState,
+    startTime: Number.isFinite(startTime) && startTime > 0 ? startTime : null,
+    startingAt: Number.isFinite(startingAt) && startingAt > 0 ? startingAt : null,
+    startPosition: normalizeStartPosition(state?.startPosition),
+    startPositions: normalizeStartPositions(state?.startPositions),
+    ownerServerId: state?.ownerServerId || null,
+    durationSeconds: Number.isFinite(Number(state?.durationSeconds))
+      ? Math.max(1, Number(state.durationSeconds))
+      : Math.max(1, Number(durationSeconds) || 60),
+    updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : now,
+  };
+}
+
+export function selectCanonicalRoomState(local, cached) {
+  if (!cached) return local || null;
+  if (!local) return cached;
+  return Number(cached.updatedAt || 0) >= Number(local.updatedAt || 0)
+    ? cached
+    : local;
+}
+
+export function persistedRoomState(room, state = {}, options = {}) {
+  const normalized = normalizeRoomStateRecord(room, state, options);
+  return {
+    state: normalized.state,
+    startTime: normalized.startTime,
+    startingAt: normalized.startingAt,
+    startPosition: normalized.startPosition,
+    startPositions: normalized.startPositions,
+    ownerServerId: normalized.ownerServerId,
+    durationSeconds: normalized.durationSeconds,
+    updatedAt: normalized.updatedAt,
+  };
+}
+
+export function roomStartPositionForPlayer(state = {}, playerId) {
+  const own = state?.startPositions && playerId ? normalizeStartPosition(state.startPositions[playerId]) : null;
+  return own || normalizeStartPosition(state?.startPosition) || { x: 0, y: 0, z: 0 };
+}
+
+export function roomRemainingSeconds(state = {}, {
+  durationSeconds = 60,
+  now = Date.now(),
+} = {}) {
+  const duration = Math.max(1, Number(state.durationSeconds || durationSeconds) || 60);
+  const startTime = Number(state.startTime || 0);
+  if (!startTime) return duration;
+  const remaining = (duration * 1000) - (now - startTime);
+  return Math.max(0, Math.round(remaining / 1000));
+}
+
 /**
  * Compute target item counts given players and spawn mode.
  * Params:

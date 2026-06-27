@@ -23,10 +23,18 @@ import {
   buildStartPositionItemRelocations,
   buildOpeningCollectiblePositions,
   countMirroredMapEntries,
+  canonicalRoomId as resolveCanonicalRoomId,
   resolveCollisionValidateRadius,
   resolveItemCollisionRadius,
   resolvePickupTouchForgiveness,
   resolveServerAuthSpeedLimit,
+  normalizeRoomStateRecord as normalizeRoomStateRecordBase,
+  normalizeStartPosition,
+  normalizeStartPositions,
+  persistedRoomState as buildPersistedRoomState,
+  roomRemainingSeconds as computeRoomRemainingSeconds,
+  roomStartPositionForPlayer,
+  selectCanonicalRoomState,
 } from "./lib/gameLogic.js";
 
 dotenv.config();
@@ -358,6 +366,7 @@ let gameTimer = null;
 const roomTimers = new Map(); // roomId -> { state, startTime, startingAt, timerId, resetTimerId }
 const GLOBAL_ROOM = "__global__";
 const pendingRoomRefills = new Map();
+const ROOM_COUNTDOWN_MS = parseInt(process.env.ROOM_COUNTDOWN_MS ?? "10000");
 
 // Default room and rooms directory (authoritative on server)
 const DEFAULT_ROOM_ID = (process.env.ROOM_DEFAULT_ID || "ROOM-0001").toUpperCase();
@@ -476,6 +485,114 @@ function isLoadCanarySocket(socket) {
   );
 }
 
+function canonicalRoomId(room) {
+  return resolveCanonicalRoomId(room, DEFAULT_ROOM_ID);
+}
+
+function normalizeRoomStateRecord(room, state = {}) {
+  return normalizeRoomStateRecordBase(room, state, {
+    defaultRoom: DEFAULT_ROOM_ID,
+    durationSeconds: GAME_DURATION_IN_SECONDS,
+  });
+}
+
+function mergeRuntimeRoomState(room, canonical, runtime = {}) {
+  const safeRoom = canonicalRoomId(room);
+  const existing = roomTimers.get(safeRoom) || {};
+  const merged = {
+    ...existing,
+    ...normalizeRoomStateRecord(safeRoom, canonical),
+  };
+  if (Object.prototype.hasOwnProperty.call(runtime, "timerId")) merged.timerId = runtime.timerId;
+  if (Object.prototype.hasOwnProperty.call(runtime, "resetTimerId")) merged.resetTimerId = runtime.resetTimerId;
+  return merged;
+}
+
+function persistedRoomState(room, state = {}) {
+  return buildPersistedRoomState(room, state, {
+    defaultRoom: DEFAULT_ROOM_ID,
+    durationSeconds: GAME_DURATION_IN_SECONDS,
+  });
+}
+
+async function readCanonicalRoomState(room) {
+  const safeRoom = canonicalRoomId(room);
+  const local = roomTimers.get(safeRoom) ? normalizeRoomStateRecord(safeRoom, roomTimers.get(safeRoom)) : null;
+  let cached = null;
+  if (ENABLE_COHERENCE_BACKEND && mapRooms) {
+    try {
+      const value = await readCache(mapRooms, safeRoom);
+      if (value && value.state) cached = normalizeRoomStateRecord(safeRoom, value);
+    } catch (_) {}
+  } else if (mapRooms && mapRooms[safeRoom]) {
+    cached = normalizeRoomStateRecord(safeRoom, mapRooms[safeRoom]);
+  }
+  const chosen = selectCanonicalRoomState(local, cached);
+  if (!chosen) return null;
+  roomTimers.set(safeRoom, mergeRuntimeRoomState(safeRoom, chosen));
+  return roomTimers.get(safeRoom);
+}
+
+async function writeCanonicalRoomState(room, state = {}, runtime = {}) {
+  const safeRoom = canonicalRoomId(room);
+  const canonical = normalizeRoomStateRecord(safeRoom, {
+    ...state,
+    updatedAt: state.updatedAt || Date.now(),
+  });
+  const merged = mergeRuntimeRoomState(safeRoom, canonical, runtime);
+  roomTimers.set(safeRoom, merged);
+  const persisted = persistedRoomState(safeRoom, merged);
+  try {
+    if (ENABLE_COHERENCE_BACKEND && mapRooms && safeRoom) {
+      await writeCache(mapRooms, safeRoom, persisted);
+    } else if (mapRooms && typeof mapRooms === "object") {
+      mapRooms[safeRoom] = persisted;
+    }
+  } catch (e) {
+    logger.error(`writeCanonicalRoomState error: ${e && e.message ? e.message : e}`);
+  }
+  return merged;
+}
+
+function roomRemainingSeconds(state = {}) {
+  return computeRoomRemainingSeconds(state, {
+    durationSeconds: GAME_DURATION_IN_SECONDS,
+  });
+}
+
+async function sessionIdForRoomAsync(room) {
+  const safeRoom = canonicalRoomId(room);
+  const rs = await readCanonicalRoomState(safeRoom);
+  const start = rs && rs.startTime ? rs.startTime : gameStartTime;
+  return `${safeRoom}:${start || "pending"}`;
+}
+
+function buildSeparatedStartPositions(playerIds = [], primaryPosition) {
+  const starts = {};
+  const blocked = [];
+  const primary = normalizeStartPosition(primaryPosition) || { x: 0, y: 0, z: 0 };
+  const ids = Array.from(new Set(playerIds.filter(Boolean))).sort();
+  ids.forEach((playerId, index) => {
+    let position;
+    if (index === 0) {
+      position = primary;
+    } else {
+      position = chooseSpawnPositionAwayFromPlayers({
+        players: blocked,
+        requiredPlayers: blocked,
+        coordinateFactory: randSpawnCoord,
+        worldSizeX,
+        worldSizeZ,
+        clearRadius: Math.max(3, SPAWN_PLAYER_CLEAR_RADIUS),
+        attempts: 36,
+      });
+    }
+    starts[playerId] = normalizeStartPosition(position) || primary;
+    blocked.push({ x: starts[playerId].x, z: starts[playerId].z });
+  });
+  return starts;
+}
+
 // Directory cache (in-memory, optionally persisted via Coherence)
 const roomDirectory = new Map();
 let roomsUpdateTimer = null;
@@ -507,6 +624,15 @@ async function buildRoomsPayload() {
   for (const k of roomTimers.keys()) {
     if (!isLoadCanaryRoom(k)) set.add(k);
   }
+  try {
+    const roomsCache = ENABLE_COHERENCE_BACKEND && mapRooms
+      ? await readCacheEntries(mapRooms)
+      : (mapRooms || {});
+    for (const [id, value] of Object.entries(roomsCache || {})) {
+      const room = normalizeRoom(id) || normalizeRoom(value?.room);
+      if (room && !isLoadCanaryRoom(room)) set.add(room);
+    }
+  } catch (_) {}
   for (const [, r] of playerRooms.entries()) {
     const room = r || GLOBAL_ROOM;
     if (!isLoadCanaryRoom(room)) set.add(room);
@@ -523,7 +649,7 @@ async function buildRoomsPayload() {
 
   const rooms = [];
   for (const id of set.values()) {
-    const rs = roomTimers.get(id) || { state: 'WAITING', startTime: null, startingAt: null };
+    const rs = await readCanonicalRoomState(id) || { state: 'WAITING', startTime: null, startingAt: null };
     const humans = await humansInRoomDirectory(id);
     const bots = 0; // optional: compute from player list if needed
     rooms.push({
@@ -535,7 +661,9 @@ async function buildRoomsPayload() {
       capacity: null,
       startsAt: rs.startingAt || null,
       startTime: rs.startTime || null,
-      updatedAt: Date.now()
+      startPosition: rs.startPosition || null,
+      ownerServerId: rs.ownerServerId || null,
+      updatedAt: rs.updatedAt || Date.now()
     });
   }
   return {
@@ -791,16 +919,34 @@ export async function start(
   // Persist per-room timer state (document-like record)
   async function persistRoomState(room, state) {
     try {
-      if (ENABLE_COHERENCE_BACKEND && mapRooms && room) {
-        await writeCache(mapRooms, room, {
-          state: state.state,
-          startTime: state.startTime || null,
-          startingAt: state.startingAt || null,
-          updatedAt: Date.now(),
-        });
-      }
+      await writeCanonicalRoomState(room, state);
     } catch (e) {
       logger.error(`persistRoomState error: ${e && e.message ? e.message : e}`);
+    }
+  }
+
+  async function syncRoomStateToSocket(socket, room, { emitJoined = false, playerId = null } = {}) {
+    const wanted = canonicalRoomId(room);
+    const rs = await readCanonicalRoomState(wanted);
+    const state = rs?.state || "WAITING";
+    if (emitJoined) {
+      socket.emit("room.joined", { id: wanted, default: wanted === DEFAULT_ROOM_ID, state });
+    }
+    socket.emit("game.state", state);
+    if (state === "STARTING" && rs?.startingAt) {
+      socket.emit("startingGame", {
+        startsAt: rs.startingAt,
+        countdownMs: Math.max(0, rs.startingAt - Date.now()),
+      });
+    } else if (state === "RUNNING" && rs?.startTime) {
+      const startPosition = roomStartPositionForPlayer(rs, playerId);
+      socket.emit("game.on", {
+        startPosition,
+        startPositions: rs.startPositions || null,
+        room: wanted,
+        startTime: rs.startTime,
+      });
+      socket.emit("game.time", roomRemainingSeconds(rs));
     }
   }
 
@@ -833,12 +979,13 @@ export async function start(
   // authoritative simulation must include bots so deployed demo bots can
   // create real collision, powerup, trail, freeze, and game_over telemetry.
   async function listPlayersInRoom(room, { includeBots = true } = {}) {
-    const info = await getPlayersInfoObject();
+    const info = await getPlayersInfoForRoom(room);
     const ids = Object.keys(info || {});
     const want = room || GLOBAL_ROOM;
     const players = [];
     for (const id of ids) {
-      const r = playerRooms.get(id) || GLOBAL_ROOM;
+      const profileRoom = info[id] && info[id].room ? normalizeRoom(info[id].room) : null;
+      const r = profileRoom || playerRooms.get(id) || GLOBAL_ROOM;
       if (r !== want) continue;
       if (!includeBots && isBotProfile(info[id], id)) continue;
       players.push(id);
@@ -1028,13 +1175,16 @@ export async function start(
   }
 
   // Per-room match lifecycle: separate STARTING/RUNNING/ENDED timers per room (time only; items remain global)
-function broadcastRoomState(room, state, extra = {}) {
+async function broadcastRoomState(room, state, extra = {}) {
   if (!room) return;
   const rs = roomTimers.get(room) || { state: 'WAITING', startTime: null, startingAt: null, timerId: null };
   rs.state = state;
   if (state === "WAITING" || state === "ENDED") {
     rs.startTime = null;
     rs.startingAt = null;
+    rs.startPosition = null;
+    rs.startPositions = null;
+    if (state === "WAITING") rs.ownerServerId = null;
   }
   if (state === "STARTING" && extra.startsAt) {
     rs.startingAt = extra.startsAt;
@@ -1042,12 +1192,27 @@ function broadcastRoomState(room, state, extra = {}) {
   if (state === "RUNNING") {
     rs.startingAt = null;
   }
-  roomTimers.set(room, rs);
-  persistRoomState(room, rs);
+  if (extra.startPosition) rs.startPosition = normalizeStartPosition(extra.startPosition);
+  if (extra.startPositions) rs.startPositions = normalizeStartPositions(extra.startPositions);
+  if (extra.ownerServerId) rs.ownerServerId = extra.ownerServerId;
+  if (extra.startTime) rs.startTime = extra.startTime;
+  rs.durationSeconds = GAME_DURATION_IN_SECONDS;
+  const persisted = await writeCanonicalRoomState(room, rs, {
+    timerId: rs.timerId || null,
+    resetTimerId: rs.resetTimerId || null,
+  });
   io.to(room).emit("game.state", state);
   if (!isLoadCanaryRoom(room)) scheduleRoomsUpdate(io);
   if (extra.startsAt) io.to(room).emit("startingGame", extra);
-  if (extra.startPosition) io.to(room).emit("game.on", extra);
+  if (extra.startPosition || extra.startPositions) {
+    io.to(room).emit("game.on", {
+      ...extra,
+      startPosition: persisted.startPosition || extra.startPosition || null,
+      startPositions: persisted.startPositions || extra.startPositions || null,
+      startTime: persisted.startTime || extra.startTime || null,
+      room,
+    });
+  }
   if (extra.remaining) io.to(room).emit("game.time", extra.remaining);
   if (extra.end) io.to(room).emit("game.end", extra.end);
 }
@@ -1065,19 +1230,18 @@ function scheduleRoomWaitingReset(room, delayMs = 10000) {
   if (!room) return;
   clearRoomResetTimer(room);
   const rs = roomTimers.get(room) || { state: 'ENDED', startTime: null, startingAt: null, timerId: null };
-  rs.resetTimerId = setTimeout(() => {
-    const latest = roomTimers.get(room);
+  rs.resetTimerId = setTimeout(() => runAsyncTask(`room.reset.${room}`, async () => {
+    const latest = await readCanonicalRoomState(room);
     if (!latest || latest.state !== 'ENDED') return;
     latest.resetTimerId = null;
-    roomTimers.set(room, latest);
-    broadcastRoomState(room, 'WAITING');
-  }, Math.max(0, delayMs));
+    await broadcastRoomState(room, 'WAITING');
+  }), Math.max(0, delayMs));
   roomTimers.set(room, rs);
 }
 
-function startRoomMatch(room) {
+async function startRoomMatch(room) {
   if (!room) return { ok: false, error: "missing_room" };
-  const existing = roomTimers.get(room) || { state: 'WAITING', startTime: null, startingAt: null, timerId: null };
+  const existing = await readCanonicalRoomState(room) || { state: 'WAITING', startTime: null, startingAt: null, timerId: null };
   if (existing.state !== 'WAITING' && existing.state !== 'ENDED') {
     return { ok: false, error: "invalid_state", room, state: existing.state };
   }
@@ -1087,18 +1251,21 @@ function startRoomMatch(room) {
     existing.timerId = null;
   }
 
-  const startingAt = Date.now() + 10000;
+  const startingAt = Date.now() + ROOM_COUNTDOWN_MS;
   existing.state = "STARTING";
   existing.startingAt = startingAt;
   existing.startTime = null;
-  roomTimers.set(room, existing);
-  persistRoomState(room, existing);
+  existing.startPosition = null;
+  existing.startPositions = null;
+  existing.ownerServerId = serverId;
+  existing.durationSeconds = GAME_DURATION_IN_SECONDS;
+  await persistRoomState(room, existing);
   io.to(room).emit("server.info", serverInfoPayload());
-  broadcastRoomState(room, 'STARTING', { startsAt: startingAt, countdownMs: 10000 });
+  await broadcastRoomState(room, 'STARTING', { startsAt: startingAt, countdownMs: ROOM_COUNTDOWN_MS, ownerServerId: serverId });
 
   setTimeout(async () => {
-    const rs = roomTimers.get(room) || { state: 'WAITING' };
-    if (rs.state !== 'STARTING') return; // Prevent race conditions
+    const rs = await readCanonicalRoomState(room) || { state: 'WAITING' };
+    if (rs.state !== 'STARTING' || rs.ownerServerId !== serverId) return; // Prevent race conditions
 
     const startTime = Date.now();
     const startPosition = await chooseStartPositionForRoom(room).catch(() => ({
@@ -1106,15 +1273,16 @@ function startRoomMatch(room) {
       y: 0,
       z: randSpawnCoord(worldSizeZ),
     }));
-    const startX = startPosition.x;
-    const startZ = startPosition.z;
+    const players = await listPlayersInRoom(room, { includeBots: true }).catch(() => []);
+    const startPositions = buildSeparatedStartPositions(players, startPosition);
     if (SERVER_AUTH_ENABLED) {
-      const players = await listPlayersInRoom(room, { includeBots: true }).catch(() => []);
       for (const playerId of players) {
+        if (!mapPlayerSockets[playerId]) continue;
+        const ownStart = roomStartPositionForPlayer({ startPosition, startPositions }, playerId);
         playersState.set(playerId, {
-          x: startX,
+          x: ownStart.x,
           y: 0,
-          z: startZ,
+          z: ownStart.z,
           rotY: 0,
           vel: 0,
           speedMul: 1,
@@ -1125,35 +1293,53 @@ function startRoomMatch(room) {
         playersInput.set(playerId, { throttle: 0, steer: 0, brake: false, lastSeq: -1 });
       }
     }
-    await clearOpeningItemsNearStart(room, { x: startX, y: 0, z: startZ })
-      .catch((error) => logAsyncFailure("room.start.openingItemSweep", error));
-    await seedOpeningTrashNearStart(room, { x: startX, y: 0, z: startZ })
+    const openingPositions = Object.values(startPositions).length ? Object.values(startPositions) : [startPosition];
+    for (const position of openingPositions) {
+      await clearOpeningItemsNearStart(room, position)
+        .catch((error) => logAsyncFailure("room.start.openingItemSweep", error));
+    }
+    await seedOpeningTrashNearStart(room, startPosition)
       .catch((error) => logAsyncFailure("room.start.openingTrashSeed", error));
     rs.startTime = startTime;
     rs.startingAt = null;
-    broadcastRoomState(room, 'RUNNING', { startPosition: { x: startX, y: 0, z: startZ } });
+    rs.ownerServerId = serverId;
+    rs.startPosition = normalizeStartPosition(startPosition);
+    rs.startPositions = normalizeStartPositions(startPositions);
+    await broadcastRoomState(room, 'RUNNING', {
+      startTime,
+      ownerServerId: serverId,
+      startPosition: rs.startPosition,
+      startPositions: rs.startPositions,
+    });
 
     if (rs.timerId) clearInterval(rs.timerId);
-    rs.timerId = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const remaining = GAME_DURATION_IN_SECONDS * 1000 - elapsed;
+    rs.timerId = setInterval(() => runAsyncTask(`room.timer.${room}`, async () => {
+      const latest = await readCanonicalRoomState(room);
+      if (!latest || latest.state !== "RUNNING" || latest.ownerServerId !== serverId) {
+        clearInterval(rs.timerId);
+        rs.timerId = null;
+        roomTimers.set(room, rs);
+        return;
+      }
+      const elapsed = Date.now() - latest.startTime;
+      const remaining = (latest.durationSeconds || GAME_DURATION_IN_SECONDS) * 1000 - elapsed;
       if (remaining <= 0) {
         clearInterval(rs.timerId);
         rs.timerId = null;
-        broadcastRoomState(room, 'ENDED', { end: { room } });
+        await broadcastRoomState(room, 'ENDED', { end: { room }, ownerServerId: serverId });
         scheduleRoomWaitingReset(room, 10000);
         return;
       }
       io.to(room).emit("game.time", Math.max(0, Math.round(remaining / 1000)));
-    }, 1000);
+    }), 1000);
     roomTimers.set(room, rs);
-  }, 10000);
-  return { ok: true, scope: "room", room, state: "STARTING", startsAt: startingAt, countdownMs: 10000 };
+  }, Math.max(0, ROOM_COUNTDOWN_MS));
+  return { ok: true, scope: "room", room, state: "STARTING", startsAt: startingAt, countdownMs: ROOM_COUNTDOWN_MS };
 }
 
-function endRoomMatch(room) {
+async function endRoomMatch(room) {
   if (!room) return { ok: false, error: "missing_room" };
-  const rs = roomTimers.get(room);
+  const rs = await readCanonicalRoomState(room);
   if (!rs || (rs.state !== "RUNNING" && rs.state !== "STARTING")) {
     return { ok: false, error: "invalid_state", room, state: rs ? rs.state : "WAITING" };
   }
@@ -1161,7 +1347,8 @@ function endRoomMatch(room) {
   rs.timerId = null;
   rs.startingAt = null;
   rs.startTime = null;
-  broadcastRoomState(room, 'ENDED', { end: { room } });
+  rs.ownerServerId = serverId;
+  await broadcastRoomState(room, 'ENDED', { end: { room }, ownerServerId: serverId });
   scheduleRoomWaitingReset(room, 10000);
   return { ok: true, scope: "room", room, state: "ENDED" };
 }
@@ -1306,29 +1493,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           if (!isLoadCanaryRoom(rnorm)) scheduleRoomsUpdate(io);
           await emitLobbyPlayersForRooms(prev, rnorm);
 
-          let rs = roomTimers.get(rnorm);
-          if (!rs && ENABLE_COHERENCE_BACKEND) {
-            try {
-              const cached = await readCache(mapRooms, rnorm);
-              if (cached && cached.state) {
-                rs = { state: cached.state, startTime: cached.startTime || null, startingAt: cached.startingAt || null, timerId: null };
-                roomTimers.set(rnorm, rs);
-              }
-            } catch (_) {}
-          }
-          if (rs) {
-            socket.emit("game.state", rs.state);
-            if (rs.state === 'STARTING' && rs.startingAt) {
-              socket.emit("startingGame", { startsAt: rs.startingAt, countdownMs: Math.max(0, rs.startingAt - Date.now()) });
-            } else if (rs.state === 'RUNNING' && rs.startTime) {
-              const startX = randSpawnCoord(worldSizeX);
-              const startZ = randSpawnCoord(worldSizeZ);
-              socket.emit("game.on", { startPosition: { x: startX, y: 0, z: startZ } });
-              const elapsed = Date.now() - rs.startTime;
-              const remaining = GAME_DURATION_IN_SECONDS * 1000 - elapsed;
-              socket.emit("game.time", Math.max(0, Math.round(remaining / 1000)));
-            }
-          }
+          await syncRoomStateToSocket(socket, rnorm, { playerId: id });
           try {
             const itemsForThisRoom = await getItemsForRoom(rnorm);
             socket.emit("items.all", itemsForThisRoom);
@@ -1350,23 +1515,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           socket.join(defRoom);
           await emitLobbyPlayersForRooms(prevR, defRoom);
         } catch (_) {}
-        // Sync per-room state if any
-        const rs = roomTimers.get(defRoom);
-        if (rs) {
-          socket.emit("game.state", rs.state);
-          if (rs.state === 'STARTING' && rs.startingAt) {
-            socket.emit("startingGame", { startsAt: rs.startingAt, countdownMs: Math.max(0, rs.startingAt - Date.now()) });
-          } else if (rs.state === 'RUNNING' && rs.startTime) {
-            const startX = randSpawnCoord(worldSizeX);
-            const startZ = randSpawnCoord(worldSizeZ);
-            socket.emit("game.on", { startPosition: { x: startX, y: 0, z: startZ } });
-            const elapsed = Date.now() - rs.startTime;
-            const remaining = GAME_DURATION_IN_SECONDS * 1000 - elapsed;
-            socket.emit("game.time", Math.max(0, Math.round(remaining / 1000)));
-          }
-        } else {
-          socket.emit("game.state", 'WAITING');
-        }
+        await syncRoomStateToSocket(socket, defRoom, { playerId: id });
         try {
           const itemsDefault = await getItemsForRoom(defRoom);
           socket.emit("items.all", itemsDefault);
@@ -1405,24 +1554,8 @@ function scheduleRoomRefill(room, delayMs = 0) {
         }
         await emitLobbyPlayersForRooms(prev, wanted);
         // Ack to caller and push current state/items for that room
-        socket.emit("room.joined", { id: wanted, default: wanted === DEFAULT_ROOM_ID, state: (roomTimers.get(wanted)?.state || 'WAITING') });
         try {
-          const rs = roomTimers.get(wanted);
-          if (rs) {
-            socket.emit("game.state", rs.state);
-            if (rs.state === 'STARTING' && rs.startingAt) {
-              socket.emit("startingGame", { startsAt: rs.startingAt, countdownMs: Math.max(0, rs.startingAt - Date.now()) });
-            } else if (rs.state === 'RUNNING' && rs.startTime) {
-              const startX = randSpawnCoord(worldSizeX);
-              const startZ = randSpawnCoord(worldSizeZ);
-              socket.emit("game.on", { startPosition: { x: startX, y: 0, z: startZ } });
-              const elapsed = Date.now() - rs.startTime;
-              const remaining = GAME_DURATION_IN_SECONDS * 1000 - elapsed;
-              socket.emit("game.time", Math.max(0, Math.round(remaining / 1000)));
-            }
-          } else {
-            socket.emit("game.state", 'WAITING');
-          }
+          await syncRoomStateToSocket(socket, wanted, { emitJoined: true, playerId: playerIdForSocket });
           const itemsForRoom = await getItemsForRoom(wanted);
           socket.emit("items.all", itemsForRoom);
         } catch (_) {}
@@ -1469,9 +1602,14 @@ function scheduleRoomRefill(room, delayMs = 0) {
       // Initialize authoritative state as soon as the player enters the game flow.
       // Players often press Continue while the room is still waiting/counting down;
       // they still need to appear in authoritative multiplayer snapshots.
-      if (SERVER_AUTH_ENABLED && !playersState.has(playerId)) {
-        const startX = randSpawnCoord(worldSizeX);
-        const startZ = randSpawnCoord(worldSizeZ);
+      if (SERVER_AUTH_ENABLED) {
+        const canonicalRoomState = await readCanonicalRoomState(room);
+        const canonicalStart = canonicalRoomState?.state === "RUNNING"
+          ? roomStartPositionForPlayer(canonicalRoomState, playerId)
+          : null;
+        if (!canonicalStart && playersState.has(playerId)) return;
+        const startX = canonicalStart ? canonicalStart.x : randSpawnCoord(worldSizeX);
+        const startZ = canonicalStart ? canonicalStart.z : randSpawnCoord(worldSizeZ);
         playersState.set(playerId, {
           x: startX,
           y: 0,
@@ -1575,7 +1713,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         } catch (_) {}
         const result = await recordGameEvent(payload, {
           roomId: room,
-          sessionId: payload.session_id || payload.sessionId || sessionIdForRoom(room),
+          sessionId: payload.session_id || payload.sessionId || await sessionIdForRoomAsync(room),
           playerId: playerIdForSocket,
           playerName: canonicalPlayerName,
         });
@@ -1623,7 +1761,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           playerName = playerName || "Player";
         }
         // Ignore collisions unless match is RUNNING (per-room or global)
-        const rs = roomTimers.get(room);
+        const rs = await readCanonicalRoomState(room);
         if (rs ? rs.state !== 'RUNNING' : gameState !== 'RUNNING') {
           safeAck({ ok: false, error: "not_running", itemId });
           return;
@@ -1731,7 +1869,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
             score: null,
             position: itemSnapshot?.position,
             metadata: { item_type: itemSnapshot?.type || "trash" },
-          }, { roomId: room, sessionId: sessionIdForRoom(room) });
+          }, { roomId: room, sessionId: await sessionIdForRoomAsync(room) });
           await refillOnce(room);
         } else if (itemType === "turtle") {
           if (ENABLE_COHERENCE_BACKEND) {
@@ -1755,7 +1893,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
               score: null,
               position: itemSnapshot?.position,
               metadata: { item_type: itemSnapshot?.type || "turtle" },
-            }, { roomId: room, sessionId: sessionIdForRoom(room) });
+            }, { roomId: room, sessionId: await sessionIdForRoomAsync(room) });
           }
           await refillOnce(room);
         } else {
@@ -1808,7 +1946,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
             position: itemSnapshot?.position,
             powerupType: itemSnapshot?.type,
             metadata: { item_type: itemSnapshot?.type },
-          }, { roomId: room, sessionId: sessionIdForRoom(room) });
+          }, { roomId: room, sessionId: await sessionIdForRoomAsync(room) });
         }
       } catch (e) {
         logger.error(`items.collision error: ${e && e.message ? e.message : e}`);
@@ -1890,7 +2028,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       playerIdForSocket = undefined;
     });
 
-    socket.on("admin.presenter.start", (payload = {}, ack) => {
+    socket.on("admin.presenter.start", async (payload = {}, ack) => {
       const cmdId = payload && payload.cmdId;
       if (adminTrackDuplicate(cmdId)) { try { if (typeof ack === "function") ack({ ok: true, duplicate: true }); } catch (_) {} return; }
       try {
@@ -1899,7 +2037,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           return;
         }
         const room = normalizeRoom(payload.room || payload.id || payload.roomId) || DEFAULT_ROOM_ID;
-        const result = startRoomMatch(room);
+        const result = await startRoomMatch(room);
         try { if (typeof ack === "function") ack(result); } catch (_) {}
       } catch (e) {
         logger.error(`admin.presenter.start error: ${e && e.message ? e.message : e}`);
@@ -1907,7 +2045,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       }
     });
 
-    socket.on("admin.presenter.end", (payload = {}, ack) => {
+    socket.on("admin.presenter.end", async (payload = {}, ack) => {
       const cmdId = payload && payload.cmdId;
       if (adminTrackDuplicate(cmdId)) { try { if (typeof ack === "function") ack({ ok: true, duplicate: true }); } catch (_) {} return; }
       try {
@@ -1916,7 +2054,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           return;
         }
         const room = normalizeRoom(payload.room || payload.id || payload.roomId) || DEFAULT_ROOM_ID;
-        const result = endRoomMatch(room);
+        const result = await endRoomMatch(room);
         try { if (typeof ack === "function") ack(result); } catch (_) {}
       } catch (e) {
         logger.error(`admin.presenter.end error: ${e && e.message ? e.message : e}`);
@@ -1956,20 +2094,15 @@ function scheduleRoomRefill(room, delayMs = 0) {
       }
     });
 
-    socket.on("admin.start", (payload = {}, ack) => {
+    socket.on("admin.start", async (payload = {}, ack) => {
       const cmdId = payload && payload.cmdId;
       if (adminTrackDuplicate(cmdId)) { try { if (typeof ack === "function") ack({ ok: true, duplicate: true }); } catch (_) {} return; }
       // If this client is in a room, start that room's independent timer/countdown
       const room = (socket.data && socket.data.room) || null;
       if (room) {
-        // If no admin yet, first caller claims admin automatically for smoother UX
-        if (!roomAdmin.has(room)) {
-          roomAdmin.set(room, playerIdForSocket);
-          io.to(room).emit("room.admin", { id: playerIdForSocket });
-        }
         // Authorization: only current room admin may start
         if (roomAdmin.get(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
-        const result = startRoomMatch(room);
+        const result = await startRoomMatch(room);
         try { if (typeof ack === "function") ack(result); } catch (_) {}
         return;
       }
@@ -2085,7 +2218,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       }, 10000);
     });
 
-    socket.on("admin.end", (payload = {}, ack) => {
+    socket.on("admin.end", async (payload = {}, ack) => {
       const cmdId = payload && payload.cmdId;
       if (adminTrackDuplicate(cmdId)) { try { if (typeof ack === "function") ack({ ok: true, duplicate: true }); } catch (_) {} return; }
       // If this client is in a room, end that room's independent timer
@@ -2093,7 +2226,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       if (room) {
         // Authorization: only current room admin may end
         if (roomAdmin.get(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
-        const result = endRoomMatch(room);
+        const result = await endRoomMatch(room);
         try { if (typeof ack === "function") ack(result); } catch (_) {}
         return;
       }
@@ -2311,13 +2444,23 @@ function scheduleRoomRefill(room, delayMs = 0) {
       const t = Date.now();
       // Build per-room snapshots
       const byRoom = new Map();
+      const playersByRoom = new Map();
       for (const [id, s] of playersState.entries()) {
         const room = playerRooms.get(id) || GLOBAL_ROOM;
         if (!byRoom.has(room)) byRoom.set(room, {});
         byRoom.get(room)[id] = { x: s.x || 0, z: s.z || 0, rotY: s.rotY || 0, speed: s.vel || 0 };
+        const profile = localPlayersInfo[id];
+        if (profile) {
+          if (!playersByRoom.has(room)) playersByRoom.set(room, {});
+          playersByRoom.get(room)[id] = profile;
+        }
       }
       for (const [room, states] of byRoom.entries()) {
-        io.to(room).volatile.compress(true).emit("player.state", { t, states });
+        io.to(room).volatile.compress(true).emit("player.state", {
+          t,
+          states,
+          players: playersByRoom.get(room) || null,
+        });
       }
     }, Math.max(1, Math.round(1000 / Math.max(1, STATE_BROADCAST_HZ))));
   }
@@ -2453,7 +2596,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
     for (const p of staleIds) {
       logger.info(`Stale player ${p.id} by ${p.elapsed}ms`);
       const room = playerRooms.get(p.id) || GLOBAL_ROOM;
-      const roomState = roomTimers.get(room)?.state || gameState || "WAITING";
+      const roomState = (await readCanonicalRoomState(room))?.state || gameState || "WAITING";
       if (roomState !== "RUNNING") {
         if (ENABLE_COHERENCE_BACKEND) {
           await deleteCache(mapPlayersTraces, p.id);

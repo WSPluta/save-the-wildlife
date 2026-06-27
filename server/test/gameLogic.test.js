@@ -9,6 +9,7 @@ import {
   buildPlayerSessionProfile,
   fib,
   normalizeRoom,
+  canonicalRoomId,
   resolveJoiningRoom,
   normalizePlayerName,
   computeTargets,
@@ -23,6 +24,13 @@ import {
   buildStartPositionItemRelocations,
   buildOpeningCollectiblePositions,
   isPositionWithinRadius2d,
+  normalizeRoomStateRecord,
+  normalizeStartPosition,
+  normalizeStartPositions,
+  persistedRoomState,
+  roomRemainingSeconds,
+  roomStartPositionForPlayer,
+  selectCanonicalRoomState,
 } from "../lib/gameLogic.js";
 
 describe("clampNum", () => {
@@ -73,6 +81,92 @@ describe("resolveJoiningRoom", () => {
   it("falls back to socket room and then default room", () => {
     expect(resolveJoiningRoom({ socketRoom: "room-socket", defaultRoom: "ROOM-0001" })).toBe("ROOM-SOCKET");
     expect(resolveJoiningRoom({ defaultRoom: "ROOM-0001" })).toBe("ROOM-0001");
+  });
+});
+
+describe("canonical room state helpers", () => {
+  it("normalizes room ids and start positions for persistence", () => {
+    expect(canonicalRoomId(" room-x ", "ROOM-0001")).toBe("ROOM-X");
+    expect(canonicalRoomId("!!!", "room-default")).toBe("ROOM-DEFAULT");
+    expect(normalizeStartPosition({ x: "1.5", y: "2", z: "-3" })).toEqual({ x: 1.5, y: 2, z: -3 });
+    expect(normalizeStartPosition({ x: "bad", z: 1 })).toBeNull();
+    expect(normalizeStartPositions({
+      p1: { x: 1, z: 2 },
+      p2: { x: "bad", z: 3 },
+      p3: { x: -4, y: 0.5, z: 6 },
+    })).toEqual({
+      p1: { x: 1, y: 0, z: 2 },
+      p3: { x: -4, y: 0.5, z: 6 },
+    });
+  });
+
+  it("selects fresher shared state over stale local state for cross-pod lifecycle authority", () => {
+    const localWaiting = normalizeRoomStateRecord("room-p0", {
+      state: "WAITING",
+      updatedAt: 100,
+    }, { defaultRoom: "ROOM-0001", durationSeconds: 60, now: 100 });
+    const cachedRunning = normalizeRoomStateRecord("room-p0", {
+      state: "RUNNING",
+      startTime: 1000,
+      updatedAt: 200,
+      ownerServerId: "starter-pod",
+    }, { defaultRoom: "ROOM-0001", durationSeconds: 60, now: 200 });
+
+    expect(selectCanonicalRoomState(localWaiting, cachedRunning)).toEqual(cachedRunning);
+    expect(selectCanonicalRoomState(cachedRunning, localWaiting)).toEqual(cachedRunning);
+    expect(selectCanonicalRoomState(null, cachedRunning)).toEqual(cachedRunning);
+  });
+
+  it("persists only canonical lifecycle fields used by every ws-server replica", () => {
+    const persisted = persistedRoomState("room-persist", {
+      state: "RUNNING",
+      startTime: 1234,
+      startingAt: 0,
+      timerId: { localOnly: true },
+      resetTimerId: { localOnly: true },
+      ownerServerId: "server-a",
+      startPosition: { x: 2, y: 0, z: 3 },
+      startPositions: { p1: { x: 2, z: 3 }, p2: { x: 8, z: -4 } },
+      durationSeconds: 60,
+      updatedAt: 5678,
+    }, { defaultRoom: "ROOM-0001", durationSeconds: 60 });
+
+    expect(persisted).toEqual({
+      state: "RUNNING",
+      startTime: 1234,
+      startingAt: null,
+      startPosition: { x: 2, y: 0, z: 3 },
+      startPositions: {
+        p1: { x: 2, y: 0, z: 3 },
+        p2: { x: 8, y: 0, z: -4 },
+      },
+      ownerServerId: "server-a",
+      durationSeconds: 60,
+      updatedAt: 5678,
+    });
+    expect(persisted).not.toHaveProperty("timerId");
+    expect(persisted).not.toHaveProperty("resetTimerId");
+  });
+
+  it("uses per-player start positions when present and falls back safely", () => {
+    const state = {
+      startPosition: { x: 0, y: 0, z: 0 },
+      startPositions: {
+        p1: { x: 4, y: 0, z: 5 },
+        p2: { x: -6, z: 7 },
+      },
+    };
+
+    expect(roomStartPositionForPlayer(state, "p1")).toEqual({ x: 4, y: 0, z: 5 });
+    expect(roomStartPositionForPlayer(state, "p2")).toEqual({ x: -6, y: 0, z: 7 });
+    expect(roomStartPositionForPlayer(state, "missing")).toEqual({ x: 0, y: 0, z: 0 });
+  });
+
+  it("computes canonical remaining time from server start time", () => {
+    expect(roomRemainingSeconds({ startTime: 10_000, durationSeconds: 60 }, { now: 10_100 })).toBe(60);
+    expect(roomRemainingSeconds({ startTime: 10_000, durationSeconds: 60 }, { now: 15_200 })).toBe(55);
+    expect(roomRemainingSeconds({ startTime: 10_000, durationSeconds: 60 }, { now: 80_000 })).toBe(0);
+    expect(roomRemainingSeconds({}, { durationSeconds: 60, now: 20_000 })).toBe(60);
   });
 });
 
@@ -227,11 +321,32 @@ describe("production collision configuration", () => {
 });
 
 describe("authoritative multiplayer lifecycle", () => {
-  it("initializes player state on game.start before the room reaches RUNNING", () => {
+  it("initializes player state from canonical room starts when a room is running", () => {
     const server = readFileSync("server.js", "utf8");
     expect(server).toMatch(/socket\.on\("game\.start"/);
-    expect(server).toMatch(/if \(SERVER_AUTH_ENABLED && !playersState\.has\(playerId\)\)/);
+    expect(server).toMatch(/const canonicalRoomState = await readCanonicalRoomState\(room\)/);
+    expect(server).toMatch(/roomStartPositionForPlayer\(canonicalRoomState, playerId\)/);
     expect(server).not.toMatch(/SERVER_AUTH_ENABLED && matchRunning && !playersState\.has\(playerId\)/);
+  });
+
+  it("uses shared room lifecycle state for starts and pickup validation", () => {
+    const server = readFileSync("server.js", "utf8");
+    expect(server).toMatch(/async function readCanonicalRoomState\(room\)/);
+    expect(server).toMatch(/async function writeCanonicalRoomState\(room, state = \{\}, runtime = \{\}\)/);
+    expect(server).toMatch(/async function startRoomMatch\(room\)/);
+    expect(server).toMatch(/const existing = await readCanonicalRoomState\(room\)/);
+    expect(server).toMatch(/const rs = await readCanonicalRoomState\(room\);[\s\S]*error: "not_running"/);
+    expect(server).not.toMatch(/const rs = roomTimers\.get\(room\);[\s\S]{0,140}error: "not_running"/);
+  });
+
+  it("builds separated player starts and sends them to clients", () => {
+    const server = readFileSync("server.js", "utf8");
+    const script = readFileSync("../web/src/script.js", "utf8");
+    expect(server).toMatch(/function buildSeparatedStartPositions\(playerIds = \[\], primaryPosition\)/);
+    expect(server).toMatch(/const startPositions = buildSeparatedStartPositions\(players, startPosition\)/);
+    expect(server).toMatch(/startPositions: rs\.startPositions/);
+    expect(script).toMatch(/body && body\.startPositions && typeof body\.startPositions === "object"/);
+    expect(script).toMatch(/startPositions && startPositions\[yourId\]/);
   });
 });
 

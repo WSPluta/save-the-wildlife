@@ -90,8 +90,16 @@ describe("presenter-controlled lobby flow", () => {
   });
 
   it("preserves waiting-room roster entries when stale gameplay traces age out", () => {
-    expect(server).toMatch(/const roomState = roomTimers\.get\(room\)\?\.state \|\| gameState \|\| "WAITING"/);
+    expect(server).toMatch(/const roomState = \(await readCanonicalRoomState\(room\)\)\?\.state \|\| gameState \|\| "WAITING"/);
     expect(server).toMatch(/if \(roomState !== "RUNNING"\)\s*{[\s\S]*deleteCache\(mapPlayersTraces, p\.id\)[\s\S]*continue;/);
+  });
+
+  it("uses canonical room state for presenter start, collisions, and late joins", () => {
+    expect(server).toMatch(/async function syncRoomStateToSocket\(socket, room, \{ emitJoined = false, playerId = null \} = \{\}\)/);
+    expect(server).toMatch(/await syncRoomStateToSocket\(socket, wanted, \{ emitJoined: true, playerId: playerIdForSocket \}\)/);
+    expect(server).toMatch(/const result = await startRoomMatch\(room\)/);
+    expect(server).toMatch(/const rs = await readCanonicalRoomState\(room\);[\s\S]*error: "not_running"/);
+    expect(server).not.toMatch(/const rs = roomTimers\.get\(room\);[\s\S]{0,140}error: "not_running"/);
   });
 
   it("serves the SPA for clean /admin URLs in dev and nginx", () => {
