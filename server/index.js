@@ -7,6 +7,7 @@ import * as dotenv from "dotenv";
 import { start } from "./server.js";
 import pinoHttp from "pino-http";
 import { register } from "./metrics.js";
+import { getObservabilitySnapshot } from "./lib/observability.js";
 import {
   assertRealtimeTopology,
   resolveRealtimeBackend,
@@ -43,6 +44,19 @@ app.get("/metrics", async (_req, res) => {
     res.end(await register.metrics());
   } catch (e) {
     res.status(500).end(String(e && e.message ? e.message : e));
+  }
+});
+app.get("/api/observability", async (req, res) => {
+  try {
+    const snapshot = await getObservabilitySnapshot({ room: req.query?.room });
+    res.setHeader("Cache-Control", "no-store");
+    res.json(snapshot);
+  } catch (e) {
+    res.status(500).json({
+      ok: false,
+      source: "canonical-observability",
+      error: e && e.message ? e.message : String(e),
+    });
   }
 });
 if (process.env.ENABLE_REPLAY_FALLBACK === "true") {

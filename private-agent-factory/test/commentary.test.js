@@ -1656,6 +1656,79 @@ test("builds match intelligence context with SQL, graph, replay, and memory evid
   assert.ok(executeCalls.some((sql) => /STWL_AGENT_MEMORIES/i.test(sql)));
 });
 
+test("match context pins terminal game_over evidence when telemetry exceeds the event window", async () => {
+  const earlyRows = Array.from({ length: 12 }, (_, index) => ({
+    ID: index + 1,
+    EVENT_TYPE: index === 1 ? "trash_collected" : "position_sample",
+    OCCURRED_AT: `2026-06-11T10:00:${String(index).padStart(2, "0")}.000Z`,
+    SCORE: index === 1 ? 1 : 0,
+    X: index,
+    Y: 0,
+    Z: index * -1,
+    METADATA_JSON: JSON.stringify({ sample: index }),
+  }));
+  const latestRows = [
+    {
+      ID: 99,
+      EVENT_TYPE: "game_over",
+      OCCURRED_AT: "2026-06-11T10:01:00.000Z",
+      SCORE: 7,
+      X: 12,
+      Y: 0,
+      Z: -4,
+      METADATA_JSON: JSON.stringify({ reason: "timer" }),
+    },
+    {
+      ID: 98,
+      EVENT_TYPE: "position_sample",
+      OCCURRED_AT: "2026-06-11T10:00:59.000Z",
+      SCORE: 7,
+      X: 11,
+      Y: 0,
+      Z: -4,
+      METADATA_JSON: "{}",
+    },
+  ];
+  const oracleConnection = {
+    async execute(sql) {
+      if (/FROM STWL_GAME_EVENTS/i.test(sql) && /ORDER BY occurred_at DESC/i.test(sql)) {
+        return { rows: latestRows };
+      }
+      if (/FROM STWL_GAME_EVENTS/i.test(sql)) {
+        return { rows: earlyRows };
+      }
+      return { rows: [] };
+    },
+  };
+
+  await withEnv({
+    PAF_MATCH_INTELLIGENCE_ENABLED: "true",
+    PAF_MATCH_INTELLIGENCE_AUTO_INIT: "false",
+    PAF_AGENT_MEMORY_PERSIST: "false",
+    PAF_REPLAY_RETRIEVAL_ENABLED: "false",
+    PAF_VECTOR_RETRIEVAL_ENABLED: "false",
+    PAF_MATCH_CONTEXT_MAX_EVENTS: "12",
+  }, async () => {
+    const context = await buildMatchContext(
+      {
+        summary: {
+          session_id: "S-NOISY",
+          player_id: "P-NOISY",
+          player_name: "Noisy Player",
+          score: 7,
+        },
+      },
+      { oracleConnection, skipOracleSummary: true }
+    );
+
+    assert.equal(context.ok, true);
+    assert.ok(context.json_events.length <= 12);
+    assert.ok(context.json_events.some((event) => event.type === "game_over"));
+    assert.ok(context.json_events.some((event) => event.type === "trash_collected"));
+    assert.ok(context.json_events.filter((event) => event.type === "position_sample").length < 12);
+  });
+});
+
 test("resolves room-only context to the latest SQL-backed session", async () => {
   const executeCalls = [];
   const oracleConnection = {

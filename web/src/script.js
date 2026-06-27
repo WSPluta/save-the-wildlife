@@ -58,17 +58,50 @@ function generatePlayerId() {
   return shortUuidTranslator.fromUUID(uuid);
 }
 
-if (!localStorage.getItem("yourId")) {
-  localStorage.setItem("yourId", generatePlayerId());
-}
-const yourId = localStorage.getItem("yourId");
+const PLAYER_ID_STORAGE_KEY = "yourId";
+const PLAYER_TAB_ID_STORAGE_KEY = "stwlTabPlayerId";
 const CLIENT_SESSION_STORAGE_KEY = "stwlClientSessionId";
-function getOrCreateClientSessionId() {
+
+function urlHasExplicitJoinIdentity() {
   try {
-    const existing = localStorage.getItem(CLIENT_SESSION_STORAGE_KEY);
+    const params = new URLSearchParams(window.location.search || "");
+    return params.has("name") || params.has("room") || params.has("playerSession");
+  } catch (_) {
+    return false;
+  }
+}
+
+function getOrCreatePlayerId() {
+  try {
+    if (urlHasExplicitJoinIdentity() && window.sessionStorage) {
+      const existing = sessionStorage.getItem(PLAYER_TAB_ID_STORAGE_KEY);
+      if (existing) return existing;
+      const next = generatePlayerId();
+      sessionStorage.setItem(PLAYER_TAB_ID_STORAGE_KEY, next);
+      return next;
+    }
+  } catch (_) {}
+
+  try {
+    const existing = localStorage.getItem(PLAYER_ID_STORAGE_KEY);
     if (existing) return existing;
     const next = generatePlayerId();
-    localStorage.setItem(CLIENT_SESSION_STORAGE_KEY, next);
+    localStorage.setItem(PLAYER_ID_STORAGE_KEY, next);
+    return next;
+  } catch (_) {
+    return generatePlayerId();
+  }
+}
+
+const yourId = getOrCreatePlayerId();
+
+function getOrCreateClientSessionId() {
+  try {
+    const storage = window.sessionStorage || localStorage;
+    const existing = storage.getItem(CLIENT_SESSION_STORAGE_KEY);
+    if (existing) return existing;
+    const next = generatePlayerId();
+    storage.setItem(CLIENT_SESSION_STORAGE_KEY, next);
     return next;
   } catch (_) {
     return generatePlayerId();
@@ -209,6 +242,7 @@ const LOCAL_AUTH_POSITION_SMOOTHING = 2.4;
 const LOCAL_AUTH_ROTATION_SMOOTHING = 3.2;
 const LOCAL_AUTH_SNAP_DISTANCE = 9.5;
 const LOCAL_AUTH_DEADZONE_DISTANCE = 0.08;
+const REMOTE_PLAYER_LOCAL_SUPPRESSION_RADIUS = 1.45;
 const REMOTE_PLAYER_POSITION_SMOOTHING = 7.5;
 const REMOTE_PLAYER_ROTATION_SMOOTHING = 8.5;
 const REMOTE_PLAYER_FROZEN_SMOOTHING = 3.5;
@@ -235,6 +269,7 @@ const EMOJI_BADGE_TEXTURE_SIZE = 192;
 const EMOJI_BADGE_SAFE_WIDTH_RATIO = 0.68;
 const EMOJI_BADGE_MAX_FONT_RATIO = 0.56;
 const EMOJI_BADGE_MIN_FONT_RATIO = 0.13;
+const EMOJI_BADGE_COMPACT_MIN_COUNT = 3;
 const trashTmpMatrix = new THREE.Matrix4();
 const trashTmpPos = new THREE.Vector3();
 const trashTmpScale = new THREE.Vector3();
@@ -382,10 +417,37 @@ function mergeBotProfileEvidence(id, profile = {}) {
   };
 }
 
+function isMeaningfulPlayerName(name, id) {
+  const value = String(name || "").trim();
+  if (!value) return false;
+  const playerId = String(id || "").trim();
+  return value !== playerId;
+}
+
+function mergePlayerProfileEvidence(id, profile = {}) {
+  const playerId = String(id || profile?.id || "");
+  if (!playerId) return profile || {};
+  const existing = (otherPlayersInfo && otherPlayersInfo[playerId]) || {};
+  const merged = mergeBotProfileEvidence(playerId, profile || {});
+  const incomingName = merged?.name || profile?.name;
+  const existingName = existing?.name;
+  const stableName = isMeaningfulPlayerName(incomingName, playerId)
+    ? incomingName
+    : isMeaningfulPlayerName(existingName, playerId)
+      ? existingName
+      : incomingName || existingName || playerId;
+  return {
+    ...(existing || {}),
+    ...(merged || profile || {}),
+    id: playerId,
+    name: stableName,
+  };
+}
+
 function mergeRosterProfileEvidence(roster = {}) {
   if (!roster || typeof roster !== "object" || Array.isArray(roster)) return roster || {};
   return Object.fromEntries(
-    Object.entries(roster).map(([id, profile]) => [id, mergeBotProfileEvidence(id, profile || {})])
+    Object.entries(roster).map(([id, profile]) => [id, mergePlayerProfileEvidence(id, profile || {})])
   );
 }
 
@@ -416,6 +478,27 @@ function shouldRenderRemotePlayer(id) {
 
 function botDemoLabel() {
   return "BOT";
+}
+
+function remoteDistanceToLocal2d(x, z) {
+  if (!player) return null;
+  const dx = Number(x) - Number(player.position?.x || 0);
+  const dz = Number(z) - Number(player.position?.z || 0);
+  if (!Number.isFinite(dx) || !Number.isFinite(dz)) return null;
+  return Math.hypot(dx, dz);
+}
+
+function shouldSuppressRemoteNearLocal(id, positionLike) {
+  if (!id || id === yourId || isBotPlayerId(id) || !positionLike) return false;
+  const distance = remoteDistanceToLocal2d(positionLike.x, positionLike.z);
+  return Number.isFinite(distance) && distance <= REMOTE_PLAYER_LOCAL_SUPPRESSION_RADIUS;
+}
+
+function setRemoteLocalSuppression(group, suppressed, distance = null) {
+  if (!group || !group.userData) return;
+  group.userData.localSuppressed = !!suppressed;
+  group.userData.localSuppressionDistance = Number.isFinite(distance) ? distance : null;
+  if (suppressed) group.visible = false;
 }
 
 function keepBotRemoteBoatVisible(group) {
@@ -997,6 +1080,17 @@ let pendingStartRequested = false; // start requested before room ack
 let autoStartMatch = false;      // autostart match when URL flag present
 let allowJoinRunningMatch = false; // explicit debug/late-join escape hatch
 
+function isLocalDebugHost(hostname = window.location.hostname) {
+  const host = String(hostname || "").trim().toLowerCase();
+  return host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host.endsWith(".localhost") ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+}
+
 function normalizeDisplayName(value, fallback = "Default") {
   const raw = value == null ? "" : String(value).trim();
   const normalized = raw.replace(/\s+/g, " ").slice(0, 80);
@@ -1218,6 +1312,7 @@ function formatCount(value) {
 let aiLearningHealthPromise = null;
 let observabilityMetricsPromise = null;
 let lastObservabilityMetricsFetchAt = 0;
+let lastCanonicalObservabilityAt = 0;
 let latestGlobalObservabilityMetrics = null;
 let latestRoomObservabilityMetrics = null;
 const adminCommentaryEntries = [];
@@ -1241,13 +1336,13 @@ async function updateAiLearningHealth() {
       setTextById("admin-ai-note-title", "Generation proof is live.");
       setTextById(
         "admin-ai-note-body",
-        "Both private routes completed a bounded generation probe. Oracle AI Database keeps changing facts, Select AI and in-db agents ground context, and the model route shapes safe language."
+        "The route health probe is green. Oracle AI Database keeps changing facts, Select AI and in-db agents ground context, and the model route shapes safe language."
       );
     } else if (adapter.degraded) {
-      setTextById("admin-ai-note-title", "Base route is live; candidate needs attention.");
+      setTextById("admin-ai-note-title", "Select AI fast path is live; candidate needs attention.");
       setTextById(
         "admin-ai-note-body",
-        "The presenter can use the base route now. The fine-tuned shadow route is configured but did not complete its bounded generation probe, so keep the claim framed as candidate-degraded until that model is repaired."
+        "The presenter can use the grounded Select AI line now. The candidate route is configured but did not complete its bounded generation probe, so keep the claim framed as candidate-degraded."
       );
     }
   } catch (error) {
@@ -1491,6 +1586,10 @@ function updateObservabilityMetrics(m = {}) {
   updateObservabilityNetwork();
 }
 
+function hasFreshCanonicalObservability() {
+  return IS_OBSERVABILITY_VIEW && lastCanonicalObservabilityAt > 0;
+}
+
 function hasObservabilityPlayerValues(players = {}) {
   return Number.isFinite(Number(players.humans)) ||
     Number.isFinite(Number(players.bots)) ||
@@ -1582,15 +1681,53 @@ function prometheusMetricsToObservabilityPayload(values = {}) {
   };
 }
 
+function canonicalObservabilityToRoomPayload(payload = {}) {
+  const selected = payload.selectedRoom || {};
+  const metrics = selected.metrics || {};
+  const global = payload.global || metrics.global || {};
+  return {
+    ...metrics,
+    scope: "room",
+    room: payload.room || selected.id || metrics.room,
+    global: {
+      players: global.players || metrics.global?.players || {},
+      items: global.items || metrics.global?.items || {},
+      rooms: global.rooms || metrics.global?.rooms || {},
+      sockets: global.sockets || metrics.global?.sockets || {},
+    },
+  };
+}
+
 async function refreshObservabilityMetrics() {
   if (!IS_OBSERVABILITY_VIEW) return;
   const now = Date.now();
   if (observabilityMetricsPromise || now - lastObservabilityMetricsFetchAt < 5000) return;
   lastObservabilityMetricsFetchAt = now;
   observabilityMetricsPromise = (async () => {
-    const response = await fetch("/metrics", { cache: "no-store" });
-    if (!response.ok) throw new Error(`metrics_${response.status}`);
-    const text = await response.text();
+    const room = normalizeRoomId(getConfiguredAdminRoom()) || DEFAULT_ADMIN_ROOM_ID;
+    const response = await fetch(`/api/observability?room=${encodeURIComponent(room)}`, { cache: "no-store" });
+    if (response.ok) {
+      const payload = await response.json();
+      if (payload && payload.ok !== false) {
+        lastCanonicalObservabilityAt = Date.now();
+        if (payload.rooms && typeof payload.rooms === "object") {
+          roomsDirectory = {
+            default: payload.rooms.default || DEFAULT_ADMIN_ROOM_ID,
+            rooms: Array.isArray(payload.rooms.rooms) ? payload.rooms.rooms : [],
+            ts: payload.rooms.ts || Date.now(),
+          };
+          renderRoomsDirectory();
+        }
+        if (payload.global) updateObservabilityMetrics({ ...payload.global, scope: "global" });
+        updateObservabilityMetrics(canonicalObservabilityToRoomPayload(payload));
+        renderObservabilityRooms();
+        return;
+      }
+    }
+    lastCanonicalObservabilityAt = 0;
+    const metricsResponse = await fetch("/metrics", { cache: "no-store" });
+    if (!metricsResponse.ok) throw new Error(`metrics_${metricsResponse.status}`);
+    const text = await metricsResponse.text();
     updateObservabilityMetrics(prometheusMetricsToObservabilityPayload(parsePrometheusMetrics(text)));
   })()
     .catch(() => {})
@@ -1919,8 +2056,36 @@ function removeItemFromScene(itemId) {
   delete itemMeshes[itemId];
 }
 
+function normalizeAuthoritativeItemsPayload(nextItems = {}) {
+  const payload = nextItems && typeof nextItems === "object" && !Array.isArray(nextItems) ? nextItems : {};
+  const hasEnvelope = payload.items && typeof payload.items === "object" && !Array.isArray(payload.items);
+  return {
+    room: normalizeRoomId(payload.room || payload.roomId || null),
+    items: hasEnvelope ? payload.items : payload,
+  };
+}
+
 function syncAuthoritativeItems(nextItems = {}) {
-  const scopedItems = nextItems && typeof nextItems === "object" ? nextItems : {};
+  const { room: payloadRoom, items: rawItems } = normalizeAuthoritativeItemsPayload(nextItems);
+  const currentRoom = normalizeRoomId(roomId);
+  if (payloadRoom && currentRoom && payloadRoom !== currentRoom) return;
+
+  const rawEntries = Object.entries(rawItems && typeof rawItems === "object" ? rawItems : {});
+  const itemRooms = new Set(
+    rawEntries
+      .map(([, item]) => normalizeRoomId(item && item.room))
+      .filter(Boolean)
+  );
+  if (!payloadRoom && currentRoom && itemRooms.size > 0 && !itemRooms.has(currentRoom)) {
+    return;
+  }
+
+  const scopedItems = {};
+  for (const [itemId, item] of rawEntries) {
+    const itemRoom = normalizeRoomId(item && item.room);
+    if (currentRoom && itemRoom && itemRoom !== currentRoom) continue;
+    scopedItems[itemId] = item;
+  }
   const nextIds = new Set(Object.keys(scopedItems));
 
   for (const itemId of Object.keys(items || {})) {
@@ -2574,14 +2739,16 @@ if (document.readyState === "loading") {
 } else {
   bindGlobalUI();
 }
-// Optional dev autostart behind URL flag (?autostart=1)
+// Optional dev autostart behind URL flag (?autostart=1). Public demos must
+// always use the presenter/admin start path.
 try {
   const url = new URL(window.location.href);
-  if (!IS_ADMIN_VIEW && url.searchParams.get("autostart") === "1") {
+  const localDebugUrlFlagsAllowed = isLocalDebugHost(url.hostname);
+  if (!IS_ADMIN_VIEW && localDebugUrlFlagsAllowed && url.searchParams.get("autostart") === "1") {
     autoStartMatch = true;
     setTimeout(() => { if (!gameInitialized) init(); }, 100);
   }
-  if (!IS_ADMIN_VIEW && url.searchParams.get("joinRunning") === "1") {
+  if (!IS_ADMIN_VIEW && localDebugUrlFlagsAllowed && url.searchParams.get("joinRunning") === "1") {
     allowJoinRunningMatch = true;
   }
 } catch (_) {}
@@ -3021,12 +3188,17 @@ async function init() {
     }
   }
 
-  // Audio (Firefox-safe: gracefully handle autoplay/codec failures)
-  try {
-    const audioLoader = new THREE.AudioLoader();
-    sounds = await audioLoader.loadAsync("/assets/mixkit-motorboat-on-the-sea-1183.m4v");
-  } catch (e) {
-    console.warn("Audio load failed; continuing without engine sound", e);
+  // Audio is optional; Safari-family WebKit can reject the current engine asset.
+  const ua = navigator.userAgent || "";
+  const skipEngineAudio = /AppleWebKit/i.test(ua) && !/(Chrome|CriOS|Chromium|Edg|OPR|Firefox)/i.test(ua);
+  if (!skipEngineAudio) {
+    try {
+      const audioLoader = new THREE.AudioLoader();
+      sounds = await audioLoader.loadAsync("/assets/mixkit-motorboat-on-the-sea-1183.m4v");
+    } catch (_) {
+      sounds = null;
+    }
+  } else {
     sounds = null;
   }
 
@@ -3212,7 +3384,8 @@ async function init() {
           if (clientGameStarted) {
             prepareExistingSceneForMatch(sp);
           }
-          if (gameState !== "RUNNING") {
+          const shouldStartGameplayTelemetry = gameState !== "RUNNING" || !currentSessionId;
+          if (shouldStartGameplayTelemetry) {
             gameState = "RUNNING";
             setPhase("GAMEPLAY");
             resetGameplayTelemetry();
@@ -3343,9 +3516,9 @@ async function init() {
           if (joinedId) {
             // Ensure name map is updated so subsequent mesh creation shows correct label
             if (body.profile && typeof body.profile === "object") {
-              otherPlayersInfo[joinedId] = mergeBotProfileEvidence(joinedId, body.profile);
+              otherPlayersInfo[joinedId] = mergePlayerProfileEvidence(joinedId, body.profile);
             } else if (joinedName) {
-              otherPlayersInfo[joinedId] = mergeBotProfileEvidence(joinedId, { id: joinedId, name: joinedName });
+              otherPlayersInfo[joinedId] = mergePlayerProfileEvidence(joinedId, { id: joinedId, name: joinedName });
             }
             if (!shouldRenderRemotePlayer(joinedId)) {
               removeRemotePlayerVisual(joinedId);
@@ -3473,6 +3646,16 @@ async function init() {
           authStateSeenAt = authStateSeenAt && typeof authStateSeenAt === "object" ? authStateSeenAt : {};
           Object.entries(body.states || {}).forEach(([id, state]) => {
             if (!id || !state) return;
+            if (state && typeof state === "object" && (state.name || state.isBot || state.teacher || state.botPolicy)) {
+              otherPlayersInfo[id] = mergePlayerProfileEvidence(id, {
+                id,
+                name: state.name || id,
+                isBot: state.isBot,
+                teacher: state.teacher,
+                botPolicy: state.botPolicy,
+              });
+              refreshNameTagForPlayer(id);
+            }
             authStates[id] = state;
             authStateSeenAt[id] = receivedAt;
           });
@@ -3481,7 +3664,9 @@ async function init() {
         break;
       case "server.metrics":
         updateMonitor(body || {});
-        updateObservabilityMetrics(body || {});
+        if (!hasFreshCanonicalObservability()) {
+          updateObservabilityMetrics(body || {});
+        }
         break;
       case "network.stats":
         if (body && typeof body === "object") {
@@ -3497,14 +3682,16 @@ async function init() {
         }
         break;
       case "rooms.update": {
-        roomsDirectory = body || null;
-        // If we don't yet know our room, reflect default in HUD for UX
-        if (!roomId && body && body.default) {
-          roomId = body.default;
-          updateRoomHud();
+        if (!hasFreshCanonicalObservability()) {
+          roomsDirectory = body || null;
+          // If we don't yet know our room, reflect default in HUD for UX
+          if (!roomId && body && body.default) {
+            roomId = body.default;
+            updateRoomHud();
+          }
+          renderRoomsDirectory();
+          renderObservabilityRooms();
         }
-        renderRoomsDirectory();
-        renderObservabilityRooms();
         break;
       }
       case "room.joined": {
@@ -3921,6 +4108,27 @@ async function init() {
   }
   ensureRemotePlayerVisualForScene = ensureRemotePlayerVisual;
 
+  function remoteDistanceToLocal2d(x, z) {
+    if (!player) return null;
+    const dx = Number(x) - Number(player.position?.x || 0);
+    const dz = Number(z) - Number(player.position?.z || 0);
+    if (!Number.isFinite(dx) || !Number.isFinite(dz)) return null;
+    return Math.hypot(dx, dz);
+  }
+
+  function shouldSuppressRemoteNearLocal(id, positionLike) {
+    if (!id || id === yourId || isBotPlayerId(id) || !positionLike) return false;
+    const distance = remoteDistanceToLocal2d(positionLike.x, positionLike.z);
+    return Number.isFinite(distance) && distance <= REMOTE_PLAYER_LOCAL_SUPPRESSION_RADIUS;
+  }
+
+  function setRemoteLocalSuppression(group, suppressed, distance = null) {
+    if (!group || !group.userData) return;
+    group.userData.localSuppressed = !!suppressed;
+    group.userData.localSuppressionDistance = Number.isFinite(distance) ? distance : null;
+    if (suppressed) group.visible = false;
+  }
+
   function ensureBotRosterVisuals() {
     const debug = {
       mode: BOT_RENDER_MODE,
@@ -4309,6 +4517,28 @@ function applyBoatBadgeLayout() {
   }
 }
 
+function splitBadgeGraphemes(text) {
+  const value = String(text || "");
+  if (!value) return [];
+  try {
+    if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+      return Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value), (entry) => entry.segment)
+        .filter((entry) => entry && entry.trim());
+    }
+  } catch (_) {}
+  return Array.from(value).filter((entry) => entry && entry.trim());
+}
+
+function compactBadgeText(text, ctx, maxWidth, fontSize) {
+  const original = String(text || "");
+  const graphemes = splitBadgeGraphemes(original);
+  if (graphemes.length < EMOJI_BADGE_COMPACT_MIN_COUNT) return original;
+  const first = graphemes[0] || "";
+  const compact = `${first}+${graphemes.length - 1}`;
+  ctx.font = `bold ${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`;
+  return ctx.measureText(compact).width <= maxWidth ? compact : original;
+}
+
 function setSpriteText(sprite, text) {
   const canvas = sprite.userData.canvas;
   const ctx = sprite.userData.ctx;
@@ -4320,22 +4550,35 @@ function setSpriteText(sprite, text) {
     let fontSize = Math.round(size * EMOJI_BADGE_MAX_FONT_RATIO);
     const minFontSize = Math.round(size * EMOJI_BADGE_MIN_FONT_RATIO);
     let measuredWidth = 0;
+    let displayText = String(text || "");
     while (fontSize >= minFontSize) {
       ctx.font = `bold ${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`;
-      measuredWidth = ctx.measureText(text).width;
+      measuredWidth = ctx.measureText(displayText).width;
       if (measuredWidth <= maxWidth) break;
       fontSize -= 4;
     }
+    if (measuredWidth > maxWidth) {
+      displayText = compactBadgeText(text, ctx, maxWidth, Math.max(fontSize, minFontSize));
+      fontSize = Math.round(size * EMOJI_BADGE_MAX_FONT_RATIO);
+      while (fontSize >= minFontSize) {
+        ctx.font = `bold ${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`;
+        measuredWidth = ctx.measureText(displayText).width;
+        if (measuredWidth <= maxWidth) break;
+        fontSize -= 4;
+      }
+    }
     ctx.font = `bold ${fontSize}px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`;
-    measuredWidth = ctx.measureText(text).width;
+    measuredWidth = ctx.measureText(displayText).width;
+    sprite.userData.renderedText = displayText;
     sprite.userData.fontSize = fontSize;
     sprite.userData.textWidthRatio = measuredWidth > 0 ? measuredWidth / size : 0;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.shadowColor = "black";
     ctx.shadowBlur = Math.max(4, Math.round(fontSize * 0.1));
-    ctx.fillText(text, size / 2, size / 2 + Math.max(3, Math.round(fontSize * 0.075)));
+    ctx.fillText(displayText, size / 2, size / 2 + Math.max(3, Math.round(fontSize * 0.075)));
   } else {
+    sprite.userData.renderedText = "";
     sprite.userData.fontSize = 0;
     sprite.userData.textWidthRatio = 0;
   }
@@ -4347,6 +4590,7 @@ function getBadgeDebug(sprite) {
   return {
     visible: !!sprite.visible,
     text: String(sprite.userData?.text || ""),
+    renderedText: String(sprite.userData?.renderedText || ""),
     layout: String(sprite.userData?.layout || (isMobileGameViewport() ? "mobile" : "desktop")),
     y: Number((sprite.position?.y || 0).toFixed(3)),
     scale: Number((sprite.scale?.x || 0).toFixed(3)),
@@ -5299,7 +5543,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const spd = __effectiveSpeedForFrame();
     const ts = Date.now();
     const throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
-    const steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) + Number(mobileInput.steer || 0)));
+    const steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0) + Number(mobileInput.steer || 0)));
     return {
       ts,
       timeISO: new Date(ts).toISOString(),
@@ -5615,7 +5859,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     const lagMs = serverAuthEnabled ? (nowMs - (authStatesTime || 0)) : 0;
     const movement = new THREE.Vector3(0, 0, 0);
     let throttle = Math.max(-1, Math.min(1, (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0)));
-    let steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) + Number(mobileInput.steer || 0)));
+    let steer = Math.max(-1, Math.min(1, (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0) + Number(mobileInput.steer || 0)));
     if (trailSlowActive) {
       throttle *= TRAIL_SLOW_SPEED_MULT;
       steer *= 0.75;
@@ -5732,6 +5976,9 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         m.position.z = THREE.MathUtils.lerp(m.position.z, s.z, lerpFactor);
         const delta = ((s.rotY - m.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
         m.rotation.y += delta * rotLerpFactor;
+        const suppressionDistance = remoteDistanceToLocal2d(m.position.x, m.position.z);
+        const suppressNearLocal = shouldSuppressRemoteNearLocal(id, m.position);
+        setRemoteLocalSuppression(m, suppressNearLocal, suppressionDistance);
         updateBoatFeel(m, m.userData && m.userData.boatFeel, {
           dt: frameDt || 0.016,
           time: performance.now() * 0.001,
@@ -5742,7 +5989,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
           isMobile: window.innerWidth < 800,
         });
         // Trail for remote players
-        addTrailPoint(id, m.position);
+        if (!suppressNearLocal) addTrailPoint(id, m.position);
       });
       return;
     }
@@ -5753,6 +6000,9 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         playerMeshes[id].position.z = THREE.MathUtils.lerp(playerMeshes[id].position.z, otherPlayers[id].z, lerpFactor);
         const delta = ((otherPlayers[id].rotY - playerMeshes[id].rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
         playerMeshes[id].rotation.y += delta * rotLerpFactor;
+        const suppressionDistance = remoteDistanceToLocal2d(playerMeshes[id].position.x, playerMeshes[id].position.z);
+        const suppressNearLocal = shouldSuppressRemoteNearLocal(id, playerMeshes[id].position);
+        setRemoteLocalSuppression(playerMeshes[id], suppressNearLocal, suppressionDistance);
         updateBoatFeel(playerMeshes[id], playerMeshes[id].userData && playerMeshes[id].userData.boatFeel, {
           dt: frameDt || 0.016,
           time: performance.now() * 0.001,
@@ -5764,7 +6014,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         });
         applyLodForGroup(playerMeshes[id]);
         // Leave a trail point for remote players
-        addTrailPoint(id, playerMeshes[id].position);
+        if (!suppressNearLocal) addTrailPoint(id, playerMeshes[id].position);
       }
     });
   }
@@ -5784,7 +6034,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     if (compactFpsEl) compactFpsEl.innerText = `FPS: ${fps} / ${frame}ms / lag ${lag}ms`;
     if (hudDebugEl) {
       const th = (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0);
-      const st = (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0);
+      const st = (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0);
       const sp = Number.isFinite(latestEffectiveSpeed) ? latestEffectiveSpeed.toFixed(2) : "0.00";
       const px = player ? player.position.x.toFixed(2) : "0.00";
       const pz = player ? player.position.z.toFixed(2) : "0.00";
@@ -5804,7 +6054,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
         speed: Number(__effectiveSpeedForFrame() || 0),
         input: {
           throttle: (keyboard["ArrowUp"] ? 1 : 0) + (keyboard["ArrowDown"] ? -1 : 0) + Number(mobileInput.throttle || 0),
-          steer: (keyboard["ArrowLeft"] ? 1 : 0) + (keyboard["ArrowRight"] ? -1 : 0) + Number(mobileInput.steer || 0),
+          steer: (keyboard["ArrowLeft"] ? -1 : 0) + (keyboard["ArrowRight"] ? 1 : 0) + Number(mobileInput.steer || 0),
         },
       });
     }
@@ -5859,6 +6109,10 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       Object.values(itemMeshes).forEach((m) => { if (m) cullCandidates.push(m); });
       Object.values(otherPlayersMeshes).forEach((g) => {
         if (!g) return;
+        if (g.userData && g.userData.localSuppressed) {
+          g.visible = false;
+          return;
+        }
         if (g.userData && g.userData.isBot) {
           g.visible = true;
           g.frustumCulled = false;
@@ -6000,14 +6254,19 @@ function hideMessages() {
 function renderGameToText() {
   try { ensureBotRosterVisualsForScene(); } catch (_) {}
   refreshVisualQaBadges();
-  const turtleSamples = Object.values(itemMeshes || {})
-    .filter((mesh) => mesh && String(mesh.itemType || "") === "turtle" && mesh.visible !== false)
+  const turtleWorldMeshes = Object.values(itemMeshes || {})
+    .filter((mesh) => mesh && String(mesh.itemType || "") === "turtle");
+  const turtleCameraVisibleCount = turtleWorldMeshes
+    .filter((mesh) => mesh.visible !== false)
+    .length;
+  const turtleSamples = turtleWorldMeshes
     .slice(0, 3)
     .map((mesh) => ({
       x: Number((mesh.position?.x || 0).toFixed(3)),
       y: Number((mesh.position?.y || 0).toFixed(3)),
       z: Number((mesh.position?.z || 0).toFixed(3)),
       rotY: Number((mesh.rotation?.y || 0).toFixed(3)),
+      cameraVisible: mesh.visible !== false,
     }));
   const px = player ? Number(player.position.x || 0) : 0;
   const pz = player ? Number(player.position.z || 0) : 0;
@@ -6054,29 +6313,89 @@ function renderGameToText() {
     .slice(0, 5);
   const remotePlayerEntries = Object.entries(otherPlayersMeshes || {})
     .filter(([, mesh]) => mesh && mesh.visible !== false);
-  const remotePlayerSamples = remotePlayerEntries
-    .slice(0, 5)
-    .map(([id, mesh]) => ({
+  const remotePlayerEntriesHumanFirst = remotePlayerEntries
+    .slice()
+    .sort(([a], [b]) => Number(isBotPlayerId(a)) - Number(isBotPlayerId(b)));
+  const remoteDistanceForDebug = (x, z) => {
+    if (!player) return null;
+    const dx = Number(x) - Number(player.position?.x || 0);
+    const dz = Number(z) - Number(player.position?.z || 0);
+    if (!Number.isFinite(dx) || !Number.isFinite(dz)) return null;
+    return Math.hypot(dx, dz);
+  };
+  const buildRemoteSample = ({ id, name, x, y = 0, z, rotY = 0, isBot = false, mesh = null, source }) => {
+    const distanceToLocal = remoteDistanceForDebug(x, z);
+    const visualSuppressed = !isBot && (
+      !!(mesh && mesh.userData && mesh.userData.localSuppressed) ||
+      (Number.isFinite(distanceToLocal) && distanceToLocal <= REMOTE_PLAYER_LOCAL_SUPPRESSION_RADIUS)
+    );
+    const base = {
+      id,
+      name,
+      isBot,
+      hasMesh: !!mesh,
+      visible: !!(mesh && mesh.visible !== false && !visualSuppressed),
+      source,
+      visualSuppressed,
+      distanceToLocal: Number.isFinite(distanceToLocal) ? Number(distanceToLocal.toFixed(3)) : null,
+    };
+    if (visualSuppressed) return base;
+    return {
+      ...base,
+      x: Number((Number(x) || 0).toFixed(3)),
+      y: Number((Number(y) || 0).toFixed(3)),
+      z: Number((Number(z) || 0).toFixed(3)),
+      rotY: Number((Number(rotY) || 0).toFixed(3)),
+    };
+  };
+  const authRemoteSamples = Object.entries(authStates || {})
+    .filter(([id]) => id !== yourId)
+    .map(([id, state]) => {
+      const mesh = otherPlayersMeshes && otherPlayersMeshes[id];
+      return buildRemoteSample({
+        id,
+        name: getDisplayNameForPlayer(id) || state?.name || id,
+        x: Number(state?.x) || 0,
+        y: Number(state?.y) || 0,
+        z: Number(state?.z) || 0,
+        rotY: Number(state?.rotY) || 0,
+        isBot: isBotPlayerId(id),
+        mesh,
+        source: "auth",
+      });
+    })
+    .sort((a, b) => Number(a.isBot) - Number(b.isBot));
+  const authRemoteIds = new Set(authRemoteSamples.map((sample) => sample.id));
+  const meshRemoteSamples = remotePlayerEntries
+    .slice()
+    .sort(([a], [b]) => Number(isBotPlayerId(a)) - Number(isBotPlayerId(b)))
+    .filter(([id]) => !authRemoteIds.has(id))
+    .map(([id, mesh]) => buildRemoteSample({
       id,
       name: getDisplayNameForPlayer(id) || id,
-      x: Number((mesh.position?.x || 0).toFixed(3)),
-      y: Number((mesh.position?.y || 0).toFixed(3)),
-      z: Number((mesh.position?.z || 0).toFixed(3)),
-      rotY: Number((mesh.rotation?.y || 0).toFixed(3)),
+      x: mesh.position?.x || 0,
+      y: mesh.position?.y || 0,
+      z: mesh.position?.z || 0,
+      rotY: mesh.rotation?.y || 0,
       isBot: isBotPlayerId(id),
+      mesh,
+      source: "mesh",
     }));
+  const remotePlayerSamples = [...authRemoteSamples, ...meshRemoteSamples].slice(0, 8);
   const authStateSamples = Object.entries(authStates || {})
     .filter(([id]) => id !== yourId)
     .slice(0, 5)
     .map(([id, state]) => ({
       id,
+      name: getDisplayNameForPlayer(id) || state?.name || id,
       x: Number((Number(state?.x) || 0).toFixed(3)),
       z: Number((Number(state?.z) || 0).toFixed(3)),
       rotY: Number((Number(state?.rotY) || 0).toFixed(3)),
       speed: Number((Number(state?.speed) || 0).toFixed(3)),
+      isBot: isBotPlayerId(id),
       hasMesh: !!(otherPlayersMeshes && otherPlayersMeshes[id]),
     }));
-  const botSamples = remotePlayerEntries
+  const botSamples = remotePlayerEntriesHumanFirst
     .filter(([id]) => isBotPlayerId(id))
     .slice(0, 5)
     .map(([id, mesh]) => {
@@ -6101,6 +6420,8 @@ function renderGameToText() {
     coordinateSystem: "World origin is center; +x right, +z forward, +y up",
     player: player
       ? {
+          id: yourId,
+          name: currentDisplayName(),
           x: Number(player.position.x || 0),
           y: Number(player.position.y || 0),
           z: Number(player.position.z || 0),
@@ -6108,6 +6429,11 @@ function renderGameToText() {
           speed: Number((latestEffectiveSpeed || 0).toFixed(3)),
         }
       : null,
+    playerId: yourId,
+    playerName: currentDisplayName(),
+    clientSessionId,
+    gameplaySessionId: currentSessionId || null,
+    roomId: roomId || null,
     serverAuthEnabled,
     authLagMs: latestAuthLagMs,
     frame: {
@@ -6147,7 +6473,8 @@ function renderGameToText() {
     powerupInstances: powerupInstances && powerupInstances.map ? powerupInstances.map.size : 0,
     powerupSamples,
     environmentPropsVisible: environmentPropStats.total || 0,
-    turtlesVisible: turtleSamples.length,
+    turtlesVisible: turtleWorldMeshes.length,
+    turtlesCameraVisible: turtleCameraVisibleCount,
     turtleSamples,
     camera: latestCameraCompositionDebug,
     boatFeel: getBoatFeelDebug(localBoatFeelState) || latestBoatFeelDebug,

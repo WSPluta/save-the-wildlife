@@ -52,14 +52,20 @@ describe("admin load evaluation view", () => {
     expect(styles).toMatch(/body\.admin-view:not\(\.ai-learning-view\) #admin-ai-learning/);
   });
 
-  it("keeps the AI learning route focused on live commentary only", () => {
+  it("keeps the AI learning route focused on commentary with compact route proof", () => {
     expect(html).toContain('id="admin-ai-learning"');
     expect(html).toContain("Live Commentary");
     expect(html).toContain('id="admin-commentary-feed"');
     expect(html).toContain('id="admin-ai-commentary-count"');
+    expect(html).toContain('id="admin-ai-runtime"');
+    expect(html).toContain('id="admin-ai-handoff"');
+    expect(html).toContain('id="admin-ai-proof-gate"');
+    expect(html).toContain('id="admin-ai-note-title"');
+    expect(html).toContain('id="admin-ai-note-body"');
     expect(html).toContain("Gameplay facts stay in Oracle AI Database");
     const block = html.match(/<div id="admin-ai-learning"[\s\S]*?<\/div>\s*<\/section>/)?.[0] || "";
     expect(block).toContain("Every finished run appears below by player");
+    expect(block).toContain("Live commentary uses the fastest grounded path");
     expect(block).not.toContain("oci-base");
     expect(block).not.toContain("oci-fine-tuned");
     expect(block).not.toContain("health + generation probe");
@@ -79,8 +85,8 @@ describe("admin load evaluation view", () => {
     expect(worker).toMatch(/commentary\.history/);
     expect(adminAiHealth).toMatch(/generation_ready/);
     expect(adminAiHealth).toMatch(/generationDegraded/);
-    expect(adminAiHealth).toContain("Base ready; candidate degraded");
-    expect(script).toContain("Base route is live; candidate needs attention.");
+    expect(adminAiHealth).toContain("candidate degraded");
+    expect(script).toContain("Select AI fast path is live; candidate needs attention.");
   });
 
   it("treats a proven base route plus timed-out candidate as degraded", () => {
@@ -125,8 +131,47 @@ describe("admin load evaluation view", () => {
     expect(summary.ready).toBe(false);
     expect(summary.degraded).toBe(true);
     expect(summary.verdictText).toBe("Base ready");
-    expect(summary.gateText).toBe("Base ready; candidate degraded");
+    expect(summary.gateText).toBe("Stage-safe; trace off; candidate degraded");
     expect(summary.runtimeText).toBe("oci-base ready; oci-fine-tuned degraded");
+  });
+
+  it("labels the live Select AI path without claiming the candidate produced the line", () => {
+    const summary = summarizeAiAdapterHealth({
+      live_line_fast_return: true,
+      indb_agent_enabled: true,
+      canvas_configured: true,
+      model_router: {
+        route_mode: "primary",
+        trace_persist: false,
+      },
+      model_adapter_summary: {
+        generation_ready: false,
+        upstream_llm_ready: false,
+      },
+      model_adapters: [
+        {
+          ok: true,
+          provider: "oci-base",
+          runtime_mode: "upstream-llm",
+          upstream_format: "ollama",
+          generation_ready: true,
+        },
+        {
+          ok: true,
+          provider: "oci-fine-tuned",
+          runtime_mode: "upstream-llm",
+          upstream_format: "ollama",
+          generation_ready: false,
+        },
+      ],
+    });
+
+    expect(summary.ready).toBe(false);
+    expect(summary.degraded).toBe(true);
+    expect(summary.verdictText).toBe("Fast path live");
+    expect(summary.runtimeText).toBe("Select AI fast path; oci-base ready; oci-fine-tuned degraded");
+    expect(summary.handoffText).toBe("Canvas configured; in-db Select AI enabled; primary route");
+    expect(summary.gateText).toBe("Stage-safe; trace off; candidate degraded");
   });
 
   it("styles the commentary-only AI learning screen", () => {
@@ -153,6 +198,9 @@ describe("admin load evaluation view", () => {
     expect(script).toMatch(/latestRoomObservabilityMetrics/);
     expect(script).toMatch(/function stableObservabilityRooms\(\)/);
     expect(script).toMatch(/function deriveStableObservabilityRooms\(globalRooms = \{\}\)/);
+    expect(script).toMatch(/function hasFreshCanonicalObservability\(\)/);
+    expect(script).toMatch(/if \(!hasFreshCanonicalObservability\(\)\) \{\s*updateObservabilityMetrics\(body \|\| \{\}\);/);
+    expect(script).toMatch(/if \(!hasFreshCanonicalObservability\(\)\) \{\s*roomsDirectory = body \|\| null;/);
     expect(script).not.toContain('items: { trash: 0, marine: 0, powerups: 0 }');
     expect(script).not.toMatch(/setTextById\("obs-humans", formatCount\(lobbyCount\)\)/);
     expect(script).toMatch(/parsePrometheusMetrics/);
@@ -181,7 +229,8 @@ describe("admin load evaluation view", () => {
   it("shows PAF-trained bot persona metadata in the admin roster", () => {
     expect(script).toMatch(/botPolicy: value && value\.botPolicy/);
     expect(script).toMatch(/function mergeBotProfileEvidence\(id, profile = \{\}\)/);
-    expect(script).toMatch(/otherPlayersInfo\[joinedId\] = mergeBotProfileEvidence\(joinedId, body\.profile\);/);
+    expect(script).toMatch(/function mergePlayerProfileEvidence\(id, profile = \{\}\)/);
+    expect(script).toMatch(/otherPlayersInfo\[joinedId\] = mergePlayerProfileEvidence\(joinedId, body\.profile\);/);
     expect(script).toMatch(/\$\{policy\.name \|\| policy\.id\} · \$\{policy\.source \|\| p\.teacher \|\| "paf"\}/);
     expect(readFileSync("../bots/index.js", "utf8")).toMatch(/botPolicy: profile\.botPolicy/);
   });

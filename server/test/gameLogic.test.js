@@ -19,6 +19,8 @@ import {
   resolveItemCollisionRadius,
   resolvePickupTouchForgiveness,
   resolveServerAuthSpeedLimit,
+  clampTrashVisualScale,
+  isTrashBoxFootprintOverlap,
   countMirroredMapEntries,
   chooseSpawnPositionAwayFromPlayers,
   buildStartPositionItemRelocations,
@@ -84,6 +86,15 @@ describe("resolveJoiningRoom", () => {
   });
 });
 
+describe("room-scoped initial sync", () => {
+  it("waits for room join before sending authoritative item snapshots", () => {
+    const serverSource = readFileSync("server.js", "utf8");
+    expect(serverSource).not.toMatch(/getItemsForRoom\(DEFAULT_ROOM_ID\)/);
+    expect(serverSource).toMatch(/Room-scoped state is emitted after player\.info\.joining\/room\.join/);
+    expect(serverSource).toMatch(/socket\.emit\("items\.all", itemsForRoom\);/);
+  });
+});
+
 describe("canonical room state helpers", () => {
   it("normalizes room ids and start positions for persistence", () => {
     expect(canonicalRoomId(" room-x ", "ROOM-0001")).toBe("ROOM-X");
@@ -125,6 +136,7 @@ describe("canonical room state helpers", () => {
       timerId: { localOnly: true },
       resetTimerId: { localOnly: true },
       ownerServerId: "server-a",
+      adminId: "player-admin",
       startPosition: { x: 2, y: 0, z: 3 },
       startPositions: { p1: { x: 2, z: 3 }, p2: { x: 8, z: -4 } },
       durationSeconds: 60,
@@ -135,6 +147,7 @@ describe("canonical room state helpers", () => {
       state: "RUNNING",
       startTime: 1234,
       startingAt: null,
+      adminId: "player-admin",
       startPosition: { x: 2, y: 0, z: 3 },
       startPositions: {
         p1: { x: 2, y: 0, z: 3 },
@@ -283,12 +296,12 @@ describe("resolveItemCollisionRadius", () => {
 
 describe("resolvePickupTouchForgiveness", () => {
   it("adds a small bounded tolerance for visual-model pickup edge cases", () => {
-    expect(DEFAULT_PICKUP_TOUCH_FORGIVENESS).toBe(0.2);
-    expect(resolvePickupTouchForgiveness()).toBe(0.2);
+    expect(DEFAULT_PICKUP_TOUCH_FORGIVENESS).toBe(0.3);
+    expect(resolvePickupTouchForgiveness()).toBe(0.3);
     expect(resolvePickupTouchForgiveness("0.18")).toBe(0.18);
     expect(resolvePickupTouchForgiveness("0")).toBe(0);
     expect(resolvePickupTouchForgiveness("5")).toBe(0.5);
-    expect(resolvePickupTouchForgiveness("bad")).toBe(0.2);
+    expect(resolvePickupTouchForgiveness("bad")).toBe(0.3);
   });
 
   it("covers the observed deployed near-miss without widening pickups across lanes", () => {
@@ -296,9 +309,33 @@ describe("resolvePickupTouchForgiveness", () => {
     const trash = resolveItemCollisionRadius("trash");
     const allowed = boat + trash + resolvePickupTouchForgiveness();
 
-    expect(allowed).toBeCloseTo(2.4);
+    expect(allowed).toBeCloseTo(2.5);
     expect(2.224).toBeLessThanOrEqual(allowed);
+    expect(2.449).toBeLessThanOrEqual(allowed);
     expect(2.75).toBeGreaterThan(allowed);
+  });
+});
+
+describe("trash footprint validation", () => {
+  it("matches the client trash box primitive at diagonal edges", () => {
+    const boat = resolveAuthoritativeBoatTypes().speed.collisionRadius;
+    const forgiveness = resolvePickupTouchForgiveness();
+
+    expect(clampTrashVisualScale("0.50")).toBe(1.08);
+    expect(isTrashBoxFootprintOverlap({
+      dx: 1.9,
+      dz: 1.78,
+      boatRadius: boat,
+      itemSize: "0.50",
+      forgiveness,
+    })).toBe(true);
+    expect(isTrashBoxFootprintOverlap({
+      dx: 2.15,
+      dz: 1.95,
+      boatRadius: boat,
+      itemSize: "0.50",
+      forgiveness,
+    })).toBe(false);
   });
 });
 
@@ -333,9 +370,17 @@ describe("authoritative multiplayer lifecycle", () => {
     const server = readFileSync("server.js", "utf8");
     expect(server).toMatch(/async function readCanonicalRoomState\(room\)/);
     expect(server).toMatch(/async function writeCanonicalRoomState\(room, state = \{\}, runtime = \{\}\)/);
+    expect(server).toMatch(/async function readCanonicalRoomAdmin\(room\)/);
+    expect(server).toMatch(/async function setCanonicalRoomAdmin\(room, playerId\)/);
     expect(server).toMatch(/async function startRoomMatch\(room\)/);
+    expect(server).toMatch(/const chosen = ENABLE_COHERENCE_BACKEND && cached[\s\S]{0,80}\? cached[\s\S]{0,80}: selectCanonicalRoomState\(local, cached\)/);
+    expect(server).toMatch(/updatedAt: Date\.now\(\)/);
+    expect(server).toMatch(/const explicitlyEnded =[\s\S]{0,220}\["ENDED", "WAITING"\]\.includes/);
+    expect(server).toMatch(/const supersededByNewOwner =[\s\S]{0,220}latest\.ownerServerId !== serverId/);
+    expect(server).toMatch(/const timingState = latest\?\.state === "RUNNING" && latestStartTime \? latest : rs;/);
     expect(server).toMatch(/const existing = await readCanonicalRoomState\(room\)/);
     expect(server).toMatch(/const rs = await readCanonicalRoomState\(room\);[\s\S]*error: "not_running"/);
+    expect(server).toMatch(/if \(await readCanonicalRoomAdmin\(room\) !== playerIdForSocket\)/);
     expect(server).not.toMatch(/const rs = roomTimers\.get\(room\);[\s\S]{0,140}error: "not_running"/);
   });
 

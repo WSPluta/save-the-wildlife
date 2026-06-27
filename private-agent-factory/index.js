@@ -673,6 +673,58 @@ function compactEvent(row = {}) {
   };
 }
 
+function eventRowIdentity(row = {}) {
+  const id = row.ID ?? row.id;
+  if (id != null) return `id:${id}`;
+  return [
+    textValue(row.EVENT_TYPE || row.event_type),
+    textValue(row.OCCURRED_AT || row.occurred_at),
+    textValue(row.RELATED_PLAYER_ID || row.related_player_id),
+    textValue(row.RELATED_ITEM_ID || row.related_item_id),
+  ].join("|");
+}
+
+function eventRowOccurredAtMs(row = {}) {
+  const value = row.OCCURRED_AT || row.occurred_at;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function eventRowType(row = {}) {
+  return textValue(row.EVENT_TYPE || row.event_type).toLowerCase();
+}
+
+function mergeEventRows(...groups) {
+  const merged = new Map();
+  for (const rows of groups) {
+    for (const row of rows || []) {
+      const key = eventRowIdentity(row);
+      if (!key || merged.has(key)) continue;
+      merged.set(key, row);
+    }
+  }
+  return [...merged.values()].sort((a, b) => eventRowOccurredAtMs(a) - eventRowOccurredAtMs(b));
+}
+
+function trimContextEventRows(rows = [], maxEvents = 12) {
+  const limit = Math.max(1, Number(maxEvents) || 12);
+  const trimmed = [...rows].sort((a, b) => eventRowOccurredAtMs(a) - eventRowOccurredAtMs(b));
+  const removablePriority = [
+    (row) => eventRowType(row) === "position_sample",
+    (row) => !["game_started", "game_over", "player_frozen", "trail_crossed", "powerup_collected", "marine_hit"].includes(eventRowType(row)),
+    (row) => eventRowType(row) !== "game_over",
+  ];
+
+  for (const canRemove of removablePriority) {
+    while (trimmed.length > limit) {
+      const index = trimmed.findIndex(canRemove);
+      if (index < 0) break;
+      trimmed.splice(index, 1);
+    }
+  }
+  return trimmed.slice(0, limit);
+}
+
 function compactGraphFacts(events = [], summary = {}) {
   const facts = [];
   const player = summary.player_name || summary.player_id || "Player";
@@ -2786,7 +2838,8 @@ async function queryOptionalRows(connection, sql, binds = {}) {
 }
 
 async function getOracleEventEvidence(connection, sessionId, playerId, maxEvents) {
-  const rows = await queryOptionalRows(
+  const limit = Math.max(1, Number(maxEvents) || 12);
+  const firstRows = await queryOptionalRows(
     connection,
     `SELECT *
      FROM (
@@ -2798,9 +2851,27 @@ async function getOracleEventEvidence(connection, sessionId, playerId, maxEvents
        ORDER BY occurred_at
      )
      WHERE ROWNUM <= :maxEvents`,
-    { sessionId, playerId, maxEvents }
+    { sessionId, playerId, maxEvents: limit }
   );
-  return (rows || []).map(compactEvent);
+  if (firstRows === null) return [];
+
+  const latestRows = await queryOptionalRows(
+    connection,
+    `SELECT *
+     FROM (
+       SELECT id, event_type, occurred_at, score, x, y, z,
+              related_player_id, related_item_id, metadata_json
+       FROM ${GAME_EVENTS_TABLE}
+       WHERE session_id = :sessionId
+         AND player_id = :playerId
+       ORDER BY occurred_at DESC
+     )
+     WHERE ROWNUM <= :maxEvents`,
+    { sessionId, playerId, maxEvents: limit }
+  );
+
+  const rows = trimContextEventRows(mergeEventRows(firstRows, latestRows || []), limit);
+  return rows.map(compactEvent);
 }
 
 async function getReplayEvidence(connection, sessionId, playerId, config) {

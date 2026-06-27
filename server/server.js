@@ -14,6 +14,7 @@ import {
   socketBusConfigFromEnv,
 } from "./lib/realtimeBackend.js";
 import { createCoherenceEntryReader } from "./lib/coherenceScan.js";
+import { setObservabilitySnapshotProvider } from "./lib/observability.js";
 import { reinitializeItemForSpawn, snapshotItemForEvent } from "./lib/itemLifecycle.js";
 import {
   buildPlayerSessionProfile,
@@ -28,6 +29,7 @@ import {
   resolveItemCollisionRadius,
   resolvePickupTouchForgiveness,
   resolveServerAuthSpeedLimit,
+  isTrashBoxFootprintOverlap,
   normalizeRoomStateRecord as normalizeRoomStateRecordBase,
   normalizeStartPosition,
   normalizeStartPositions,
@@ -104,6 +106,7 @@ const POWERUP_REFRESH_MS = parseInt(process.env.POWERUP_REFRESH_MS ?? "1500");
 const METRICS_BROADCAST_MS = parseInt(process.env.METRICS_BROADCAST_MS ?? (isProduction ? "1000" : "300"));
 const COHERENCE_SCAN_TIMEOUT_MS = parseInt(process.env.COHERENCE_SCAN_TIMEOUT_MS ?? "2500");
 const COHERENCE_SCAN_BACKOFF_MS = parseInt(process.env.COHERENCE_SCAN_BACKOFF_MS ?? "60000");
+const OBSERVABILITY_MAP_SIZE_TIMEOUT_MS = parseInt(process.env.OBSERVABILITY_MAP_SIZE_TIMEOUT_MS ?? "1200");
 const DEMO_ADMIN_TOKEN = process.env.DEMO_ADMIN_TOKEN || process.env.ADMIN_DEMO_TOKEN || "";
 const SPAWN_PLAYER_CLEAR_RADIUS = process.env.SPAWN_PLAYER_CLEAR_RADIUS
   ? parseFloat(process.env.SPAWN_PLAYER_CLEAR_RADIUS)
@@ -120,6 +123,21 @@ const OPENING_TRASH_RADIUS = process.env.OPENING_TRASH_RADIUS
 const OPENING_TRASH_MIN_SPACING = process.env.OPENING_TRASH_MIN_SPACING
   ? parseFloat(process.env.OPENING_TRASH_MIN_SPACING)
   : 3.5;
+const OPENING_POWERUP_COUNT = process.env.OPENING_POWERUP_COUNT
+  ? parseInt(process.env.OPENING_POWERUP_COUNT)
+  : 1;
+const OPENING_POWERUP_RADIUS = process.env.OPENING_POWERUP_RADIUS
+  ? parseFloat(process.env.OPENING_POWERUP_RADIUS)
+  : Math.max(10, START_POSITION_ITEM_CLEAR_RADIUS + 3);
+const OPENING_TURTLE_COUNT = process.env.OPENING_TURTLE_COUNT
+  ? parseInt(process.env.OPENING_TURTLE_COUNT)
+  : 1;
+const OPENING_TURTLE_RADIUS = process.env.OPENING_TURTLE_RADIUS
+  ? parseFloat(process.env.OPENING_TURTLE_RADIUS)
+  : Math.max(12, START_POSITION_ITEM_CLEAR_RADIUS + 5);
+const OPENING_MECHANIC_MIN_SPACING = process.env.OPENING_MECHANIC_MIN_SPACING
+  ? parseFloat(process.env.OPENING_MECHANIC_MIN_SPACING)
+  : 5;
 
 const ITEM_MAX_SIZE = process.env.ITEM_MAX_SIZE
   ? parseFloat(process.env.ITEM_MAX_SIZE)
@@ -325,6 +343,9 @@ function buildMetricsObject(playersInfo, counts, targets, roomStats = {}, socket
 const GAME_DURATION_IN_SECONDS = process.env.GAME_DURATION_IN_SECONDS
   ? parseInt(process.env.GAME_DURATION_IN_SECONDS)
   : 60;
+const OBSERVABILITY_ACTIVE_ROOM_TTL_MS = process.env.OBSERVABILITY_ACTIVE_ROOM_TTL_MS
+  ? Math.max(30_000, parseInt(process.env.OBSERVABILITY_ACTIVE_ROOM_TTL_MS, 10) || 0)
+  : 120_000;
 
 const BOAT_TYPES = resolveAuthoritativeBoatTypes(process.env);
 
@@ -527,7 +548,9 @@ async function readCanonicalRoomState(room) {
   } else if (mapRooms && mapRooms[safeRoom]) {
     cached = normalizeRoomStateRecord(safeRoom, mapRooms[safeRoom]);
   }
-  const chosen = selectCanonicalRoomState(local, cached);
+  const chosen = ENABLE_COHERENCE_BACKEND && cached
+    ? cached
+    : selectCanonicalRoomState(local, cached);
   if (!chosen) return null;
   roomTimers.set(safeRoom, mergeRuntimeRoomState(safeRoom, chosen));
   return roomTimers.get(safeRoom);
@@ -537,7 +560,7 @@ async function writeCanonicalRoomState(room, state = {}, runtime = {}) {
   const safeRoom = canonicalRoomId(room);
   const canonical = normalizeRoomStateRecord(safeRoom, {
     ...state,
-    updatedAt: state.updatedAt || Date.now(),
+    updatedAt: Date.now(),
   });
   const merged = mergeRuntimeRoomState(safeRoom, canonical, runtime);
   roomTimers.set(safeRoom, merged);
@@ -873,6 +896,12 @@ export async function start(
     return ENABLE_COHERENCE_BACKEND ? localPlayersInfo : mapPlayersInfo;
   }
 
+  async function getCanonicalPlayersInfoObject() {
+    return ENABLE_COHERENCE_BACKEND && mapPlayersInfo
+      ? await readCacheEntries(mapPlayersInfo)
+      : await getPlayersInfoObject();
+  }
+
   async function upsertPlayerSessionProfile(id, input = {}) {
     if (!id) return null;
     const info = await getPlayersInfoObject();
@@ -891,9 +920,7 @@ export async function start(
   }
 
   async function getPlayersInfoForRoom(room) {
-    const info = ENABLE_COHERENCE_BACKEND && mapPlayersInfo
-      ? await readCacheEntries(mapPlayersInfo)
-      : await getPlayersInfoObject();
+    const info = await getCanonicalPlayersInfoObject();
     const wanted = room || GLOBAL_ROOM;
     const scoped = {};
     for (const [id, value] of Object.entries(info || {})) {
@@ -916,6 +943,31 @@ export async function start(
     await Promise.all(uniqueRooms.map((room) => emitLobbyPlayersForRoom(room)));
   }
 
+  async function readCanonicalRoomAdmin(room) {
+    const wanted = canonicalRoomId(room);
+    const rs = await readCanonicalRoomState(wanted);
+    const adminId = String(rs?.adminId || roomAdmin.get(wanted) || "").trim() || null;
+    if (adminId) roomAdmin.set(wanted, adminId);
+    else roomAdmin.delete(wanted);
+    return adminId;
+  }
+
+  async function setCanonicalRoomAdmin(room, playerId) {
+    const wanted = canonicalRoomId(room);
+    const adminId = String(playerId || "").trim() || null;
+    const rs = await readCanonicalRoomState(wanted) || { state: "WAITING" };
+    rs.adminId = adminId;
+    await writeCanonicalRoomState(wanted, rs, {
+      timerId: rs.timerId || null,
+      resetTimerId: rs.resetTimerId || null,
+    });
+    if (adminId) roomAdmin.set(wanted, adminId);
+    else roomAdmin.delete(wanted);
+    io.to(wanted).emit("room.admin", { id: adminId });
+    if (!isLoadCanaryRoom(wanted)) scheduleRoomsUpdate(io);
+    return adminId;
+  }
+
   // Persist per-room timer state (document-like record)
   async function persistRoomState(room, state) {
     try {
@@ -932,6 +984,7 @@ export async function start(
     if (emitJoined) {
       socket.emit("room.joined", { id: wanted, default: wanted === DEFAULT_ROOM_ID, state });
     }
+    if (rs?.adminId) socket.emit("room.admin", { id: rs.adminId });
     socket.emit("game.state", state);
     if (state === "STARTING" && rs?.startingAt) {
       socket.emit("startingGame", {
@@ -1174,6 +1227,69 @@ export async function start(
     return { seeded, nearbyTrash };
   }
 
+  async function seedOpeningMechanicNearStart(room, startPosition, {
+    source,
+    type,
+    count,
+    ringRadius,
+    minSpacing = OPENING_MECHANIC_MIN_SPACING,
+  } = {}) {
+    if (!shouldSyncVisualItems(room)) return { seeded: 0, nearby: 0 };
+    const want = room || GLOBAL_ROOM;
+    const wantedCount = Math.max(0, Math.floor(Number(count) || 0));
+    if (!source || !type || wantedCount <= 0) return { seeded: 0, nearby: 0 };
+
+    const currentItems = await getItemsForRoom(want);
+    const isWantedType = (item) => {
+      const itemType = String(item?.type || "");
+      return type === "powerup" ? itemType.startsWith("powerup_") : itemType === type;
+    };
+    const nearby = Object.values(currentItems || {}).filter((item) => {
+      if (!item || !isWantedType(item) || !item.position) return false;
+      const dx = Number(item.position.x || 0) - Number(startPosition?.x || 0);
+      const dz = Number(item.position.z || 0) - Number(startPosition?.z || 0);
+      return Math.hypot(dx, dz) <= Number(ringRadius || 0) + 2;
+    }).length;
+    const needed = Math.max(0, wantedCount - nearby);
+    if (needed <= 0) return { seeded: 0, nearby };
+
+    const positions = buildOpeningCollectiblePositions({
+      startPosition,
+      existingItems: currentItems,
+      count: needed,
+      ringRadius,
+      clearRadius: START_POSITION_ITEM_CLEAR_RADIUS,
+      minSpacing,
+      worldSizeX,
+      worldSizeZ,
+    });
+
+    const powerTypes = ["powerup_speed", "powerup_shield", "powerup_magnet", "powerup_freeze"];
+    let seeded = 0;
+    for (const position of positions) {
+      const obj = itemPool.getObject();
+      if (!obj) continue;
+      const spawnType = type === "powerup" ? powerTypes[seeded % powerTypes.length] : type;
+      reinitItem(obj, spawnType);
+      obj.position = { x: position.x, y: 0, z: position.z };
+      obj.room = want;
+      await writeRoomItem(source, obj.id, obj);
+      io.to(want).emit("item.new", { id: obj.id, data: obj });
+      seeded += 1;
+    }
+    if (seeded > 0) {
+      io.to(want).emit("items.all", await getItemsForRoom(want));
+      logger.info({
+        room: want,
+        type,
+        seeded,
+        nearby,
+        radius: ringRadius,
+      }, "opening mechanic seed");
+    }
+    return { seeded, nearby };
+  }
+
   // Per-room match lifecycle: separate STARTING/RUNNING/ENDED timers per room (time only; items remain global)
 async function broadcastRoomState(room, state, extra = {}) {
   if (!room) return;
@@ -1265,14 +1381,25 @@ async function startRoomMatch(room) {
 
   setTimeout(async () => {
     const rs = await readCanonicalRoomState(room) || { state: 'WAITING' };
-    if (rs.state !== 'STARTING' || rs.ownerServerId !== serverId) return; // Prevent race conditions
+    if (rs.state !== 'STARTING' || rs.ownerServerId !== serverId) {
+      logger.warn({
+        room,
+        state: rs.state,
+        ownerServerId: rs.ownerServerId,
+        serverId,
+      }, "room start skipped because canonical owner/state changed");
+      return; // Prevent race conditions
+    }
 
     const startTime = Date.now();
-    const startPosition = await chooseStartPositionForRoom(room).catch(() => ({
-      x: randSpawnCoord(worldSizeX),
-      y: 0,
-      z: randSpawnCoord(worldSizeZ),
-    }));
+    const startPosition = chooseSpawnPositionAwayFromPlayers({
+      players: [],
+      coordinateFactory: randSpawnCoord,
+      worldSizeX,
+      worldSizeZ,
+      clearRadius: SPAWN_PLAYER_CLEAR_RADIUS,
+      attempts: 32,
+    });
     const players = await listPlayersInRoom(room, { includeBots: true }).catch(() => []);
     const startPositions = buildSeparatedStartPositions(players, startPosition);
     if (SERVER_AUTH_ENABLED) {
@@ -1293,13 +1420,6 @@ async function startRoomMatch(room) {
         playersInput.set(playerId, { throttle: 0, steer: 0, brake: false, lastSeq: -1 });
       }
     }
-    const openingPositions = Object.values(startPositions).length ? Object.values(startPositions) : [startPosition];
-    for (const position of openingPositions) {
-      await clearOpeningItemsNearStart(room, position)
-        .catch((error) => logAsyncFailure("room.start.openingItemSweep", error));
-    }
-    await seedOpeningTrashNearStart(room, startPosition)
-      .catch((error) => logAsyncFailure("room.start.openingTrashSeed", error));
     rs.startTime = startTime;
     rs.startingAt = null;
     rs.ownerServerId = serverId;
@@ -1312,17 +1432,52 @@ async function startRoomMatch(room) {
       startPositions: rs.startPositions,
     });
 
+    runAsyncTask(`room.start.openingItems.${room}`, async () => {
+      const openingPositions = Object.values(rs.startPositions || {}).length ? Object.values(rs.startPositions) : [rs.startPosition];
+      for (const position of openingPositions) {
+        await clearOpeningItemsNearStart(room, position);
+      }
+      await seedOpeningTrashNearStart(room, rs.startPosition);
+      await seedOpeningMechanicNearStart(room, rs.startPosition, {
+        source: "power",
+        type: "powerup",
+        count: OPENING_POWERUP_COUNT,
+        ringRadius: OPENING_POWERUP_RADIUS,
+      });
+      await seedOpeningMechanicNearStart(room, rs.startPosition, {
+        source: "marine",
+        type: "turtle",
+        count: OPENING_TURTLE_COUNT,
+        ringRadius: OPENING_TURTLE_RADIUS,
+      });
+    });
+
     if (rs.timerId) clearInterval(rs.timerId);
     rs.timerId = setInterval(() => runAsyncTask(`room.timer.${room}`, async () => {
       const latest = await readCanonicalRoomState(room);
-      if (!latest || latest.state !== "RUNNING" || latest.ownerServerId !== serverId) {
+      const latestUpdatedAt = Number(latest?.updatedAt || 0);
+      const latestStartTime = Number(latest?.startTime || 0);
+      const localStartTime = Number(rs.startTime || startTime || 0);
+      const explicitlyEnded =
+        latest &&
+        ["ENDED", "WAITING"].includes(String(latest.state || "")) &&
+        latestUpdatedAt > localStartTime;
+      const supersededByNewOwner =
+        latest &&
+        latest.state === "RUNNING" &&
+        latest.ownerServerId &&
+        latest.ownerServerId !== serverId &&
+        latestStartTime &&
+        latestStartTime !== localStartTime;
+      if (explicitlyEnded || supersededByNewOwner) {
         clearInterval(rs.timerId);
         rs.timerId = null;
         roomTimers.set(room, rs);
         return;
       }
-      const elapsed = Date.now() - latest.startTime;
-      const remaining = (latest.durationSeconds || GAME_DURATION_IN_SECONDS) * 1000 - elapsed;
+      const timingState = latest?.state === "RUNNING" && latestStartTime ? latest : rs;
+      const elapsed = Date.now() - (Number(timingState.startTime || 0) || localStartTime);
+      const remaining = (timingState.durationSeconds || GAME_DURATION_IN_SECONDS) * 1000 - elapsed;
       if (remaining <= 0) {
         clearInterval(rs.timerId);
         rs.timerId = null;
@@ -1391,6 +1546,176 @@ function scheduleRoomRefill(room, delayMs = 0) {
     return summary;
   }
 
+  function isOperatorVisibleRoom(room, selectedRoom, now = Date.now()) {
+    const id = normalizeRoom(room?.id);
+    if (!id || isLoadCanaryRoom(id)) return false;
+    if (id === selectedRoom || room?.default === true) return true;
+    if (Number(room?.humans || 0) > 0 || Number(room?.bots || 0) > 0) return true;
+    const state = String(room?.state || "WAITING").toUpperCase();
+    if (!["STARTING", "RUNNING"].includes(state)) return false;
+    const updatedAt = Number(room?.updatedAt || room?.startTime || room?.startsAt || 0);
+    return Number.isFinite(updatedAt) && updatedAt > 0 && now - updatedAt <= OBSERVABILITY_ACTIVE_ROOM_TTL_MS;
+  }
+
+  function operatorRoomsFromPayload(payload, selectedRoom) {
+    const now = Date.now();
+    const rooms = Array.isArray(payload?.rooms) ? payload.rooms : [];
+    const filtered = rooms
+      .filter((room) => isOperatorVisibleRoom(room, selectedRoom, now))
+      .sort((a, b) => {
+        const aHumans = Number(a?.humans || 0);
+        const bHumans = Number(b?.humans || 0);
+        return (bHumans - aHumans) || String(a?.id || "").localeCompare(String(b?.id || ""));
+      });
+    if (filtered.length) return filtered;
+    return [{
+      id: selectedRoom || DEFAULT_ROOM_ID,
+      default: selectedRoom === DEFAULT_ROOM_ID,
+      state: "WAITING",
+      humans: 0,
+      bots: 0,
+      capacity: null,
+      startsAt: null,
+      startTime: null,
+      updatedAt: now,
+    }];
+  }
+
+  async function countAllItemsCanonical() {
+    return {
+      trash: await mapEntryCount(mapTrash),
+      marine: await mapEntryCount(mapMarineLife),
+      powerups: await mapEntryCount(mapPowerUps),
+    };
+  }
+
+  async function readRoomStateForObservability(room) {
+    return promiseWithTimeout(
+      readCanonicalRoomState(room),
+      OBSERVABILITY_MAP_SIZE_TIMEOUT_MS,
+      null
+    );
+  }
+
+  async function countPlayersForObservability() {
+    const localCounts = countHumansAndBots(localPlayersInfo || {});
+    const total = await mapEntryCount(mapPlayersInfo);
+    const humans = Math.min(total, localCounts.humans || total);
+    const bots = Math.max(0, total - humans);
+    return { total, humans, bots };
+  }
+
+  function buildObservabilityMetricsFromCounts({
+    players = { total: 0, humans: 0, bots: 0 },
+    counts = { trash: 0, marine: 0, powerups: 0 },
+    targets = { trash: 0, marine: 0, powerups: 0 },
+    roomStats = {},
+    sockets = {},
+  } = {}) {
+    return {
+      players,
+      sockets: {
+        connections: Number.isFinite(sockets.connections) ? sockets.connections : 0,
+      },
+      rooms: {
+        active: Number.isFinite(roomStats.active) ? roomStats.active : 0,
+        waiting: Number.isFinite(roomStats.waiting) ? roomStats.waiting : 0,
+        starting: Number.isFinite(roomStats.starting) ? roomStats.starting : 0,
+        running: Number.isFinite(roomStats.running) ? roomStats.running : 0,
+        ended: Number.isFinite(roomStats.ended) ? roomStats.ended : 0,
+      },
+      world: { x: worldSizeX, z: worldSizeZ },
+      items: counts,
+      targets,
+      spawn: { mode: spawnMode, params: spawnParams, nextTickMs: Math.max(0, nextItemsSpawnAt - Date.now()) },
+      serverAuthEnabled: SERVER_AUTH_ENABLED,
+      tps: SIM_TPS,
+      hz: STATE_BROADCAST_HZ,
+    };
+  }
+
+  async function buildCanonicalObservabilitySnapshot({ room } = {}) {
+    const selectedRoom = canonicalRoomId(room || DEFAULT_ROOM_ID);
+    const [selectedState, playerCounts, allItemCounts] = await Promise.all([
+      readRoomStateForObservability(selectedRoom),
+      countPlayersForObservability(),
+      countAllItemsCanonical(),
+    ]);
+    const selectedRoomEntry = {
+      id: selectedRoom,
+      default: selectedRoom === DEFAULT_ROOM_ID,
+      state: selectedState?.state || "WAITING",
+      humans: playerCounts.humans,
+      bots: playerCounts.bots,
+      capacity: null,
+      startsAt: selectedState?.startingAt || null,
+      startTime: selectedState?.startTime || null,
+      startPosition: selectedState?.startPosition || null,
+      ownerServerId: selectedState?.ownerServerId || null,
+      updatedAt: selectedState?.updatedAt || Date.now(),
+    };
+    const roomsPayload = {
+      default: DEFAULT_ROOM_ID,
+      rooms: [selectedRoomEntry],
+      ts: Date.now(),
+    };
+    const operatorRooms = operatorRoomsFromPayload(roomsPayload, selectedRoom);
+    const roomStats = summarizeRoomsForObservability({ rooms: operatorRooms });
+    const globalMetrics = buildObservabilityMetricsFromCounts({
+      players: playerCounts,
+      counts: allItemCounts,
+      targets: computeEffectiveTargets(playerCounts.humans),
+      roomStats,
+      sockets: { connections: io.engine?.clientsCount || io.of("/").sockets.size || 0 },
+    });
+    globalMetrics.scope = "global";
+    const selectedMetrics = buildObservabilityMetricsFromCounts({
+      players: { total: selectedRoomEntry.humans + selectedRoomEntry.bots, humans: selectedRoomEntry.humans, bots: selectedRoomEntry.bots },
+      counts: allItemCounts,
+      targets: computeEffectiveTargets(selectedRoomEntry.humans),
+      roomStats,
+      sockets: globalMetrics.sockets,
+    });
+    selectedMetrics.scope = "room";
+    selectedMetrics.room = selectedRoom;
+    selectedMetrics.global = {
+      players: globalMetrics.players,
+      items: globalMetrics.items,
+      rooms: globalMetrics.rooms,
+      sockets: globalMetrics.sockets,
+    };
+    return {
+      ok: true,
+      source: "canonical-observability",
+      mode: "bounded-map-size",
+      generatedAt: new Date().toISOString(),
+      server: serverInfoPayload(),
+      room: selectedRoom,
+      scopeLabels: {
+        rooms: "canonical operator-visible rooms",
+        items: "cluster item map counts",
+        globalItems: "cluster item map counts",
+      },
+      rooms: {
+        default: DEFAULT_ROOM_ID,
+        rooms: operatorRooms,
+        summary: roomStats,
+        ts: Date.now(),
+      },
+      global: globalMetrics,
+      selectedRoom: {
+        id: selectedRoom,
+        room: operatorRooms.find((entry) => normalizeRoom(entry?.id) === selectedRoom) || null,
+        metrics: selectedMetrics,
+        players: selectedMetrics.players,
+        items: allItemCounts,
+        targets: selectedMetrics.targets,
+      },
+    };
+  }
+
+  setObservabilitySnapshotProvider(buildCanonicalObservabilitySnapshot);
+
   io.on("connection", async (socket) => {
     let playerIdForSocket;
     const loadCanarySocket = isLoadCanarySocket(socket);
@@ -1399,21 +1724,10 @@ function scheduleRoomRefill(room, delayMs = 0) {
 
     socket.data = socket.data || {};
     if (!loadCanarySocket) {
-      (async () => {
-        try {
-          const initialItems = await getItemsForRoom(DEFAULT_ROOM_ID);
-          socket.emit("items.all", initialItems);
-
-          socket.emit(
-            "player.info.all",
-            await getPlayersInfoForRoom(DEFAULT_ROOM_ID)
-          );
-        } catch (e) {
-          logger.error(`initial socket sync error: ${e && e.message ? e.message : e}`);
-        }
-      })();
-
       // Default assignment: put every new socket into DEFAULT_ROOM_ID immediately
+      // Room-scoped state is emitted after player.info.joining/room.join. Sending
+      // default-room items here can race with custom-room joins and poison pickup
+      // validation with stale ROOM-0001 objects.
       const defRoom = DEFAULT_ROOM_ID;
       const prevRoom = socket.data.room || null;
       if (prevRoom && prevRoom !== defRoom) { try { socket.leave(prevRoom); } catch (_) {} }
@@ -1472,9 +1786,10 @@ function scheduleRoomRefill(room, delayMs = 0) {
         playerRooms.set(id, cur);
         // Assign admin if unset for this room and joiner is a human
         try {
-          if (cur && !loadRoom && !roomAdmin.has(cur) && !isBotProfile(profile, id)) {
-            roomAdmin.set(cur, id);
-            io.to(cur).emit("room.admin", { id });
+          if (cur && !loadRoom && !isBotProfile(profile, id)) {
+            const adminId = await readCanonicalRoomAdmin(cur);
+            if (!adminId) await setCanonicalRoomAdmin(cur, id);
+            else socket.emit("room.admin", { id: adminId });
           }
         } catch (_) {}
       } catch (_) {}
@@ -1546,10 +1861,9 @@ function scheduleRoomRefill(room, delayMs = 0) {
           socket.emit("player.session", profile);
           // If no admin yet for this room, promote this player
           try {
-            if (!roomAdmin.has(wanted)) {
-              roomAdmin.set(wanted, playerIdForSocket);
-              io.to(wanted).emit("room.admin", { id: playerIdForSocket });
-            }
+            const adminId = await readCanonicalRoomAdmin(wanted);
+            if (!adminId) await setCanonicalRoomAdmin(wanted, playerIdForSocket);
+            else socket.emit("room.admin", { id: adminId });
           } catch (_) {}
         }
         await emitLobbyPlayersForRooms(prev, wanted);
@@ -1817,13 +2131,21 @@ function scheduleRoomRefill(room, delayMs = 0) {
           const dx = (validationPosition.x || 0) - ipos.x;
           const dz = (validationPosition.z || 0) - ipos.z;
           const dist = Math.hypot(dx, dz);
-          const footprintRadius = collisionBoatRadius(playerId) + collisionItemRadius(itemType, item);
+          const boatRadius = collisionBoatRadius(playerId);
+          const footprintRadius = boatRadius + collisionItemRadius(itemType, item);
           let allowedRadius = footprintRadius + PICKUP_TOUCH_FORGIVENESS;
           const st = playersState.get(playerId);
           if (st?.effects && st.effects.magnetUntil && Date.now() < st.effects.magnetUntil) {
             allowedRadius = Math.max(allowedRadius, POWERUP_MAGNET_RADIUS);
           }
-          if (dist > allowedRadius) {
+          const trashBoxOverlap = itemType === "trash" && isTrashBoxFootprintOverlap({
+            dx,
+            dz,
+            boatRadius,
+            itemSize: item?.size,
+            forgiveness: PICKUP_TOUCH_FORGIVENESS,
+          });
+          if (dist > allowedRadius && !trashBoxOverlap) {
             // Ignore spoofed/late collisions
             safeAck({
               ok: false,
@@ -2006,14 +2328,9 @@ function scheduleRoomRefill(room, delayMs = 0) {
       playerRooms.delete(playerIdForSocket);
       // Reassign admin if necessary
       try {
-        if (!loadRoom && prevRoom && roomAdmin.get(prevRoom) === playerIdForSocket) {
+        if (!loadRoom && prevRoom && await readCanonicalRoomAdmin(prevRoom) === playerIdForSocket) {
           const next = await pickNextAdmin(prevRoom);
-          if (next) {
-            roomAdmin.set(prevRoom, next);
-            io.to(prevRoom).emit("room.admin", { id: next });
-          } else {
-            roomAdmin.delete(prevRoom);
-          }
+          await setCanonicalRoomAdmin(prevRoom, next || null);
         }
       } catch (_) {}
       // Update rooms directory after membership change
@@ -2085,8 +2402,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           try { if (typeof ack === "function") ack({ ok: false, error: "target_is_bot" }); } catch (_) {}
           return;
         }
-        roomAdmin.set(room, target);
-        io.to(room).emit("room.admin", { id: target });
+        await setCanonicalRoomAdmin(room, target);
         try { if (typeof ack === "function") ack({ ok: true, room, id: target }); } catch (_) {}
       } catch (e) {
         logger.error(`admin.presenter.grant error: ${e && e.message ? e.message : e}`);
@@ -2101,7 +2417,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       const room = (socket.data && socket.data.room) || null;
       if (room) {
         // Authorization: only current room admin may start
-        if (roomAdmin.get(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
+        if (await readCanonicalRoomAdmin(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
         const result = await startRoomMatch(room);
         try { if (typeof ack === "function") ack(result); } catch (_) {}
         return;
@@ -2225,7 +2541,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
       const room = (socket.data && socket.data.room) || null;
       if (room) {
         // Authorization: only current room admin may end
-        if (roomAdmin.get(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
+        if (await readCanonicalRoomAdmin(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
         const result = await endRoomMatch(room);
         try { if (typeof ack === "function") ack(result); } catch (_) {}
         return;
@@ -2262,14 +2578,12 @@ function scheduleRoomRefill(room, delayMs = 0) {
     });
 
     // Admin: claim admin for current room if none assigned
-    socket.on("admin.claim", () => {
+    socket.on("admin.claim", async () => {
       try {
         const room = getSocketRoom(socket);
         if (!room) return;
-        if (!roomAdmin.has(room)) {
-          roomAdmin.set(room, playerIdForSocket);
-          io.to(room).emit("room.admin", { id: playerIdForSocket });
-        }
+        const adminId = await readCanonicalRoomAdmin(room);
+        if (!adminId) await setCanonicalRoomAdmin(room, playerIdForSocket);
       } catch (e) {
         logger.error(`admin.claim error: ${e && e.message ? e.message : e}`);
       }
@@ -2282,7 +2596,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         const room = getSocketRoom(socket);
         if (!room) { try { if (typeof ack === "function") ack({ ok: false, error: "not_in_room" }); } catch (_) {} return; }
         // Only current admin can grant
-        if (roomAdmin.get(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
+        if (await readCanonicalRoomAdmin(room) !== playerIdForSocket) { try { if (typeof ack === "function") ack({ ok: false, error: "not_admin" }); } catch (_) {} return; }
         const target = String(id || "").trim();
         if (!target) { try { if (typeof ack === "function") ack({ ok: false, error: "invalid_target" }); } catch (_) {} return; }
         // Must be in the same room
@@ -2290,8 +2604,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         // Ensure target is a human
         const info = await getPlayersInfoObject();
         if (isBotProfile(info && info[target], target)) { try { if (typeof ack === "function") ack({ ok: false, error: "target_is_bot" }); } catch (_) {} return; }
-        roomAdmin.set(room, target);
-        io.to(room).emit("room.admin", { id: target });
+        await setCanonicalRoomAdmin(room, target);
         try { if (typeof ack === "function") ack({ ok: true, room, id: target }); } catch (_) {}
       } catch (e) {
         logger.error(`admin.grant error: ${e && e.message ? e.message : e}`);
@@ -2448,8 +2761,17 @@ function scheduleRoomRefill(room, delayMs = 0) {
       for (const [id, s] of playersState.entries()) {
         const room = playerRooms.get(id) || GLOBAL_ROOM;
         if (!byRoom.has(room)) byRoom.set(room, {});
-        byRoom.get(room)[id] = { x: s.x || 0, z: s.z || 0, rotY: s.rotY || 0, speed: s.vel || 0 };
         const profile = localPlayersInfo[id];
+        byRoom.get(room)[id] = {
+          x: s.x || 0,
+          z: s.z || 0,
+          rotY: s.rotY || 0,
+          speed: s.vel || 0,
+          name: profile?.name || id,
+          isBot: !!(profile && isBotProfile(profile, id)),
+          teacher: profile?.teacher || null,
+          botPolicy: profile?.botPolicy || null,
+        };
         if (profile) {
           if (!playersByRoom.has(room)) playersByRoom.set(room, {});
           playersByRoom.get(room)[id] = profile;
@@ -2772,23 +3094,47 @@ async function readCacheEntries(cache) {
   });
 }
 
-async function mapEntryCount(mapLike) {
+async function promiseWithTimeout(promise, timeoutMs, fallback) {
+  const ms = Number(timeoutMs);
+  if (!Number.isFinite(ms) || ms <= 0) return promise;
+  let timeoutId;
   try {
-    return countMirroredMapEntries(mapLike, {
-      coherenceEnabled: ENABLE_COHERENCE_BACKEND,
-      mapPlayersInfo,
-      mapPlayersTraces,
-      mapTrash,
-      mapMarineLife,
-      mapPowerUps,
-      mapRooms,
-      localPlayersInfo,
-      localPlayerTraces,
-      localTrash,
-      localMarineLife,
-      localPowerUps,
-      localRooms,
-    });
+    return await Promise.race([
+      promise,
+      new Promise((resolve) => {
+        timeoutId = setTimeout(() => resolve(fallback), ms);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function mapEntryCount(mapLike) {
+  const localCount = () => countMirroredMapEntries(mapLike, {
+    coherenceEnabled: ENABLE_COHERENCE_BACKEND,
+    mapPlayersInfo,
+    mapPlayersTraces,
+    mapTrash,
+    mapMarineLife,
+    mapPowerUps,
+    mapRooms,
+    localPlayersInfo,
+    localPlayerTraces,
+    localTrash,
+    localMarineLife,
+    localPowerUps,
+    localRooms,
+  });
+  try {
+    if (ENABLE_COHERENCE_BACKEND && mapLike) {
+      const sizePromise = mapLike.size;
+      if (sizePromise && typeof sizePromise.then === "function") {
+        const count = await promiseWithTimeout(sizePromise, OBSERVABILITY_MAP_SIZE_TIMEOUT_MS, null);
+        if (Number.isFinite(Number(count))) return Number(count);
+      }
+    }
+    return localCount();
   } catch (error) {
     logger.error(`Error counting entries. ${error.message}`);
     return 0;

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { register, updateRuntimeMetrics } from "../metrics.js";
+import { getObservabilitySnapshot, setObservabilitySnapshotProvider } from "../lib/observability.js";
 
 const serverSource = readFileSync("server.js", "utf8");
+const indexSource = readFileSync("index.js", "utf8");
 
 describe("observability metrics", () => {
   it("exports user, socket, and room gauges for Prometheus", async () => {
@@ -34,5 +36,28 @@ describe("observability metrics", () => {
     expect(serverSource).toMatch(/roomMetrics\.scope = "room"/);
     expect(serverSource).toMatch(/roomMetrics\.global = \{/);
     expect(serverSource).toMatch(/io\.to\(room\)\.volatile\.compress\(true\)\.emit\("server\.metrics", roomMetrics\)/);
+  });
+
+  it("exposes a canonical JSON observability endpoint for the admin UI", () => {
+    expect(indexSource).toMatch(/app\.get\("\/api\/observability"/);
+    expect(indexSource).toMatch(/getObservabilitySnapshot\(\{ room: req\.query\?\.room \}\)/);
+    expect(serverSource).toMatch(/setObservabilitySnapshotProvider\(buildCanonicalObservabilitySnapshot\)/);
+    expect(serverSource).toMatch(/async function buildCanonicalObservabilitySnapshot/);
+    expect(serverSource).toMatch(/source: "canonical-observability"/);
+    expect(serverSource).toMatch(/mode: "bounded-map-size"/);
+    expect(serverSource).toMatch(/scopeLabels: \{/);
+    expect(serverSource).toMatch(/countAllItemsCanonical/);
+    expect(serverSource).toMatch(/mapLike\.size/);
+    expect(serverSource).toMatch(/operatorRoomsFromPayload/);
+  });
+
+  it("returns a starting snapshot until the game server registers the provider", async () => {
+    setObservabilitySnapshotProvider(null);
+    await expect(getObservabilitySnapshot({ room: "ROOM-QA" })).resolves.toMatchObject({
+      ok: false,
+      status: "starting",
+      source: "canonical-observability",
+      requestedRoom: "ROOM-QA",
+    });
   });
 });

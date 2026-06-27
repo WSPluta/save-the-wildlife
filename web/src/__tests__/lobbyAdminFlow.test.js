@@ -97,6 +97,9 @@ describe("presenter-controlled lobby flow", () => {
   it("uses canonical room state for presenter start, collisions, and late joins", () => {
     expect(server).toMatch(/async function syncRoomStateToSocket\(socket, room, \{ emitJoined = false, playerId = null \} = \{\}\)/);
     expect(server).toMatch(/await syncRoomStateToSocket\(socket, wanted, \{ emitJoined: true, playerId: playerIdForSocket \}\)/);
+    expect(server).toMatch(/async function readCanonicalRoomAdmin\(room\)/);
+    expect(server).toMatch(/async function setCanonicalRoomAdmin\(room, playerId\)/);
+    expect(server).toMatch(/if \(await readCanonicalRoomAdmin\(room\) !== playerIdForSocket\)/);
     expect(server).toMatch(/const result = await startRoomMatch\(room\)/);
     expect(server).toMatch(/const rs = await readCanonicalRoomState\(room\);[\s\S]*error: "not_running"/);
     expect(server).not.toMatch(/const rs = roomTimers\.get\(room\);[\s\S]{0,140}error: "not_running"/);
@@ -107,8 +110,12 @@ describe("presenter-controlled lobby flow", () => {
     const webpackDev = readFileSync("bundler/webpack.dev.js", "utf8");
     expect(webpackCommon).toMatch(/publicPath:\s*['"]\/['"]/);
     expect(webpackDev).toMatch(/historyApiFallback:\s*true/);
+    expect(webpackDev).toMatch(/devServer\.app\.get\("\/healthz"/);
     expect(webpackDev).toMatch(/context:\s*\["\/metrics"\][\s\S]*target:\s*`http:\/\/localhost:\$\{WS_PORT\}`/);
     expect(dockerfile).toMatch(/COPY nginx\.conf \/etc\/nginx\/conf\.d\/default\.conf/);
+    expect(nginx).toMatch(/location = \/healthz/);
+    expect(nginx).toMatch(/default_type application\/json;/);
+    expect(nginx).toMatch(/return 200 '\{"ok":true,"service":"web"\}'/);
     expect(nginx).toMatch(/try_files \$uri \$uri\/ \/index\.html;/);
     expect(nginx).toMatch(/Cache-Control "no-store, max-age=0" always/);
   });

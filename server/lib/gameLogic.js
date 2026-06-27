@@ -81,11 +81,13 @@ export function normalizeRoomStateRecord(room, state = {}, {
   const startTime = Number(state?.startTime);
   const startingAt = Number(state?.startingAt);
   const updatedAt = Number(state?.updatedAt);
+  const adminId = String(state?.adminId || state?.roomAdminId || "").trim() || null;
   return {
     room: safeRoom,
     state: allowedState,
     startTime: Number.isFinite(startTime) && startTime > 0 ? startTime : null,
     startingAt: Number.isFinite(startingAt) && startingAt > 0 ? startingAt : null,
+    adminId,
     startPosition: normalizeStartPosition(state?.startPosition),
     startPositions: normalizeStartPositions(state?.startPositions),
     ownerServerId: state?.ownerServerId || null,
@@ -110,6 +112,7 @@ export function persistedRoomState(room, state = {}, options = {}) {
     state: normalized.state,
     startTime: normalized.startTime,
     startingAt: normalized.startingAt,
+    adminId: normalized.adminId,
     startPosition: normalized.startPosition,
     startPositions: normalized.startPositions,
     ownerServerId: normalized.ownerServerId,
@@ -204,7 +207,11 @@ export const DEFAULT_COLLISION_VALIDATE_RADIUS = 3.6;
 export const DEFAULT_ITEM_COLLISION_RADIUS = 0.95;
 export const TURTLE_ITEM_COLLISION_RADIUS = 1.35;
 export const POWERUP_ITEM_COLLISION_RADIUS = 1.05;
-export const DEFAULT_PICKUP_TOUCH_FORGIVENESS = 0.2;
+export const DEFAULT_PICKUP_TOUCH_FORGIVENESS = 0.3;
+export const TRASH_FOOTPRINT_HALF_WIDTH = 0.5;
+export const TRASH_FOOTPRINT_HALF_DEPTH = 0.33;
+export const TRASH_VISUAL_SCALE_MIN = 1.08;
+export const TRASH_VISUAL_SCALE_MAX = 1.42;
 
 export function resolveCollisionValidateRadius(value) {
   if (value === undefined || value === null || value === "") {
@@ -231,6 +238,20 @@ export function resolvePickupTouchForgiveness(value) {
   return Number.isFinite(parsed) && parsed >= 0
     ? Math.min(parsed, 0.5)
     : DEFAULT_PICKUP_TOUCH_FORGIVENESS;
+}
+
+export function clampTrashVisualScale(size) {
+  const parsed = Number(size);
+  const scale = Number.isFinite(parsed) ? parsed : 1;
+  return Math.max(TRASH_VISUAL_SCALE_MIN, Math.min(TRASH_VISUAL_SCALE_MAX, scale));
+}
+
+export function isTrashBoxFootprintOverlap({ dx, dz, boatRadius, itemSize, forgiveness } = {}) {
+  const safeBoatRadius = Math.max(0, Number(boatRadius) || 0);
+  const safeForgiveness = Math.max(0, Number(forgiveness) || 0);
+  const scale = clampTrashVisualScale(itemSize);
+  return Math.abs(Number(dx) || 0) <= safeBoatRadius + TRASH_FOOTPRINT_HALF_WIDTH * scale + safeForgiveness
+    && Math.abs(Number(dz) || 0) <= safeBoatRadius + TRASH_FOOTPRINT_HALF_DEPTH * scale + safeForgiveness;
 }
 
 function positiveNumber(value, fallback, max = Number.POSITIVE_INFINITY) {

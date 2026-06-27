@@ -73,10 +73,17 @@ write_files:
 
       for attempt in $(seq 1 90); do
         if curl -fsS "http://$${OLLAMA_HOST}/api/tags" >/dev/null; then
+          ollama_ready=1
           break
         fi
         sleep 5
       done
+      if [ "$${ollama_ready:-0}" != "1" ]; then
+        systemctl status ollama --no-pager -l || true
+        journalctl -u ollama --no-pager -n 120 || true
+        echo "Ollama did not become ready on $${OLLAMA_HOST}" >&2
+        exit 1
+      fi
       ollama pull "${base_model}"
       cp /opt/stwl-ollama/Modelfile.base /opt/stwl-ollama/Modelfile
       download_adapter
@@ -85,11 +92,13 @@ write_files:
         printf '\nADAPTER %s\n' "$(dirname "$adapter_file")" >> /opt/stwl-ollama/Modelfile
       fi
       ollama create "${custom_model}" -f /opt/stwl-ollama/Modelfile
+      curl -fsS "http://$${OLLAMA_HOST}/api/tags" >/opt/stwl-ollama/tags.json
       date --iso-8601=seconds > /opt/stwl-ollama/ready.txt
 
 runcmd:
-  - [ bash, -lc, "set -euxo pipefail; dnf install -y curl firewalld python3 python3-pip || true" ]
-  - [ bash, -lc, "systemctl enable --now firewalld || true; firewall-cmd --add-port=${port}/tcp --permanent || true; firewall-cmd --reload || true" ]
+  - [ bash, -lc, "set -euxo pipefail; dnf install -y curl python3 python3-pip oracle-cloud-agent || dnf install -y curl python3 python3-pip || true" ]
+  - [ bash, -lc, "systemctl enable --now oracle-cloud-agent || true" ]
+  - [ bash, -lc, "systemctl disable --now firewalld || true" ]
   - [ bash, -lc, "curl -fsSL https://ollama.com/install.sh | sh" ]
   - [ bash, -lc, "mkdir -p /etc/systemd/system/ollama.service.d; printf '%s\n' '[Service]' 'Environment=\"OLLAMA_HOST=0.0.0.0:${port}\"' 'Environment=\"OLLAMA_KEEP_ALIVE=24h\"' > /etc/systemd/system/ollama.service.d/override.conf" ]
   - [ bash, -lc, "systemctl daemon-reload; systemctl enable --now ollama; systemctl enable --now stwl-ollama-bootstrap.service" ]

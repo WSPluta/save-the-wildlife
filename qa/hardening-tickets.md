@@ -3,19 +3,57 @@
 - QA pass: 2026-06-27
 - Tester role: senior beta tester, multiplayer web/mobile game hardening
 - Public URL: `http://130.162.174.167`
-- Local commit tested: `b8f0c650`
-- Local package versions: web `0.0.85`, ws-server `0.0.53`, private-agent-factory `0.0.27`
-- Public bundle observed: `/bundle.548bb110df79ed10fb15.js`
-- Public PAF observed: `0.0.27`
-- Latest focused rerun: 2026-06-27 14:09 CEST, public bundle unchanged.
+- Local commit tested: `3d2a7973`
+- Local package versions: web `0.0.95`, ws-server `0.0.61`, private-agent-factory `0.0.28`
+- Public bundle observed: `/bundle.22476a183c6f37025a0c.js`
+- Public PAF observed: `0.0.28`
+- Local pre-deploy mechanic reachability check: `2026-06-27 20:03 CEST`, `server:0.0.62`, `.codex_tmp/qa-local-turn-all-item-mobile-after-seed-20260627/latest.md`; Chrome and WebKit mobile collected trash, hit turtle penalties, and picked up powerups with healthy frame budgets after opening powerup/turtle seeding.
+- Latest focused rerun: 2026-06-27 19:26-19:28 CEST, public `web:0.0.95` / `ws-server:0.0.61` with `PICKUP_TOUCH_FORGIVENESS=0.3` / `private-agent-factory:0.0.28`.
 
 ## Executive Summary
 
 - Total tickets opened: 19
-- P0 blockers: 3 addressed locally on 2026-06-27; public deployment verification is still pending.
-- P1 blockers: 5
-- Demo readiness verdict: not enterprise-ready on the public URL until the P0 fix build is deployed and STWL-QA-012, STWL-QA-001, STWL-QA-007, STWL-QA-010, STWL-QA-002, STWL-QA-019, and STWL-QA-014 are resolved or explicitly framed as demo caveats. STWL-QA-008 and STWL-QA-013 are presenter-readiness defects that make the proof story look weaker even when the core game is caveated.
+- P0 blockers: 0 open. P0 gameplay/multiplayer authority was verified on the public URL and re-confirmed at 19:26-19:28 CEST with `web:0.0.95`, `ws-server:0.0.61`, `PICKUP_TOUCH_FORGIVENESS=0.3`, and `private-agent-factory:0.0.28`.
+- P1 blockers: 1
+- Demo readiness verdict: P0 gameplay/multiplayer authority is public-URL clean. PAF commentary context/session binding is also public-URL clean on the Select AI path. Presenter observability now reads canonical scoped data and stays stable. Remaining non-P0 demo caveats are PAF Canvas/GenAI/trace provenance and presenter proof polish.
 - Recommended hardening order: distributed room lifecycle authority, browser gameplay collision state, multiplayer human sync, room admin/timer consistency, observability canonical metrics, PAF/model provenance, commentary session/context binding, presenter proof UI, public autostart bypass, stale admin room cleanup, cross-room item isolation, public health route, mobile performance budget, local dev/prod parity and dev-server noise.
+
+## Latest P0 Public Rerun
+
+- 2026-06-27 19:26-19:28 CEST against `http://130.162.174.167`, public root still serves `/bundle.22476a183c6f37025a0c.js`.
+- STWL-QA-012 server affinity/collision authority: PASS. Room `QA-AFFINITY-237189`; 12 clients across four ws-server IDs; all joined, all received `game.on`, all 12 valid trash collisions were accepted, and `not_running=0`. Compute: `real=24.25s`, max RSS `88014848`.
+- STWL-QA-007 lobby/admin/timer authority: PASS. Room `QA-TIMER-237199`; room stayed waiting before start; non-admin rejected; admin start accepted; duplicate start rejected; both clients entered `RUNNING`; canonical 60-second timer; admin end accepted after timer sample. Compute: `real=20.46s`, max RSS `73138176`.
+- STWL-QA-001 cross-browser human multiplayer sync: PASS. Room `QA-MIX-237172`; Chrome desktop, WebKit desktop, and Chrome mobile waited in lobby, reached `RUNNING`, saw all named human remotes, rendered the moving driver, and passed frame/browser-error checks. Compute: `real=31.71s`, max RSS `302628864`.
+- STWL-QA-010 user-visible collection/collision regression guard: PASS. Chrome desktop/mobile and WebKit desktop/mobile all reached `RUNNING`, collected browser-driven trash, changed score `0->1`, had `lastResult.ok=true`, showed mobile joystick where expected, and stayed within frame budgets. Compute: `real=51.52s`, max RSS `288260096`.
+- 2026-06-27 19:18-19:22 CEST against `http://130.162.174.167`, public root still serves `/bundle.22476a183c6f37025a0c.js`; PAF health reports `version=0.0.28`, Canvas configured, in-db Select AI enabled, `genai_configured=false`, router `primary oci-base -> oci-fine-tuned`, and `trace_persist=false`.
+- STWL-QA-012 server affinity/collision authority: PASS for the original cross-replica `not_running` blocker. Room `QA-AFFINITY-776279`; 12 clients across four ws-server IDs; all received `game.on`; `not_running=0`. Eleven valid trash collisions were accepted; one synthetic client returned `missing_player_position`, recorded as a non-P0 follow-up because the replica authority failure did not recur. Compute: `real=24.01s`, max RSS `87441408`.
+- STWL-QA-007 lobby/admin/timer authority: PASS. Room `QA-TIMER-810293`; room stayed waiting before start; non-admin rejected; admin start accepted; duplicate start rejected; shared countdown; canonical 60-second timer; admin end accepted after timer sample. Compute: `real=20.23s`, max RSS `73023488`.
+- STWL-QA-001 cross-browser human multiplayer sync: PASS. Room `QA-MIX-840278`; Chrome desktop, WebKit desktop, and Chrome mobile waited in lobby, reached `RUNNING`, saw all named human remotes, and rendered the moving driver. Compute: `real=30.99s`, max RSS `326189056`.
+- STWL-QA-010 user-visible collection/collision regression guard: PASS. Chrome desktop/mobile and WebKit desktop/mobile all reached `RUNNING`, collected browser-driven trash, changed score `0->1`, had `lastResult.ok=true`, and stayed within frame budgets. Compute: `real=53.00s`, max RSS `302923776`.
+- PAF commentary proof smoke: PASS with caveats. Conference preflight returned `ready_with_caveats` in `real=1.33s`, proving game URL, PAF health, Oracle match context, in-db Select AI fast path, and bounded commentary while explicitly caveating GenAI, Canvas-produced-line, trace persistence, and candidate model route claims. Admin multi-user commentary passed in room `QA-ACM-960763`; three players received live `source=select-ai` lines, grouped correctly in `/admin/ai-learning`, in `real=7.57s`.
+- 2026-06-27 19:04-19:09 CEST against `http://130.162.174.167`, `web:0.0.95`, `ws-server:0.0.61`, `PICKUP_TOUCH_FORGIVENESS=0.3`, `private-agent-factory:0.0.28`; public root serves `/bundle.22476a183c6f37025a0c.js`.
+- STWL-QA-012 server affinity/collision authority: PASS. Room `QA-AFFINITY-989777`; 12 clients across four ws-server IDs; all received `game.on`; all 12 accepted valid trash collisions; `not_running=0`. Compute: `real=23.53s`, max RSS `84738048`.
+- STWL-QA-007 lobby/admin/timer authority: PASS. Room `QA-TIMER-021701`; room stayed waiting before start; non-admin rejected; admin start accepted; duplicate start rejected; shared countdown; canonical 60-second timer; admin end accepted after timer sample. Compute: `real=20.21s`, max RSS `95633408`.
+- STWL-QA-001 cross-browser human multiplayer sync: PASS. Room `QA-MIX-046557`; Chrome desktop, WebKit desktop, and Chrome mobile waited in lobby, reached `RUNNING`, saw all named human remotes, and rendered the moving driver. Compute: `real=29.30s`, max RSS `298352640`.
+- STWL-QA-010 user-visible collection/collision regression guard: PASS. Chrome desktop/mobile and WebKit desktop/mobile all reached `RUNNING`, collected browser-driven trash, changed score `0->1`, had `lastResult.ok=true`, and stayed within frame budgets. Compute: `real=53.99s`, max RSS `293257216`.
+- 2026-06-27 19:00-19:03 CEST against `http://130.162.174.167`, `web:0.0.95`, `ws-server:0.0.61`, `PICKUP_TOUCH_FORGIVENESS=0.3`, `private-agent-factory:0.0.28`; public root serves `/bundle.22476a183c6f37025a0c.js`.
+- STWL-QA-012 server affinity/collision authority: PASS. Room `QA-AFFINITY-654943`; 12 clients across four ws-server IDs; all received `game.on`; all 12 accepted valid trash collisions; `not_running=0`. Compute: `real=23.07s`, max RSS `83984384`.
+- STWL-QA-007 lobby/admin/timer authority: PASS. Room `QA-TIMER-654943`; room stayed waiting before start; non-admin rejected; admin start accepted; duplicate start rejected; shared countdown; canonical 60-second timer; admin end accepted after timer sample. Compute: `real=19.26s`, max RSS `75350016`.
+- STWL-QA-001 cross-browser human multiplayer sync: PASS. Room `QA-MIX-654948`; Chrome desktop, WebKit desktop, and Chrome mobile waited in lobby, reached `RUNNING`, saw all named human remotes, and rendered the moving driver. Compute: `real=29.57s`, max RSS `297549824`.
+- STWL-QA-010 user-visible collection/collision regression guard: PASS. Chrome desktop/mobile and WebKit desktop/mobile all reached `RUNNING`; Chrome desktop, WebKit desktop, and WebKit mobile collected trash; Chrome mobile registered a valid turtle penalty. All scenarios had `lastResult.ok=true` and healthy frame budgets. Compute: `real=55.11s`, max RSS `291241984`.
+- STWL-QA-014 canonical admin observability: PASS. `/api/observability?room=ROOM-0001` returned `source=canonical-observability` in `real=0.26s`; the admin stability probe collected 12 samples with DOM rooms `[1]`, DOM items `[13636]`, canonical rooms `[1]`, canonical selected-room items `[13636]`, zero DOM/canonical deltas, and no stale active QA rows. Compute: `real=40.39s`, max RSS `223313920`.
+- 2026-06-27 18:25-18:28 CEST against `http://130.162.174.167`, `web:0.0.92`, `ws-server:0.0.59`, `PICKUP_TOUCH_FORGIVENESS=0.3`, `private-agent-factory:0.0.28`.
+- STWL-QA-012 server affinity/collision authority: PASS. Room `QA-AFFINITY-531763`; 12 clients across four ws-server IDs; all received `game.on`; all 12 accepted valid trash collisions; `not_running=0`. Compute: `real=28.31s`, max RSS `86671360`.
+- STWL-QA-007 lobby/admin/timer authority: PASS. Room `QA-TIMER-531763`; room stayed waiting before start; non-admin rejected; admin start accepted; duplicate start rejected; shared countdown; canonical 60-second timer; admin end accepted after timer sample. Compute: `real=23.16s`, max RSS `76382208`.
+- STWL-QA-001 cross-browser human multiplayer sync: PASS. Room `QA-MIX-570456`; Chrome desktop, WebKit desktop, and Chrome mobile waited in lobby, reached `RUNNING`, saw all named human remotes, and rendered the moving driver. Compute: `real=30.98s`, max RSS `320307200`.
+- STWL-QA-010 user-visible collection/collision regression guard: PASS. Chrome desktop/mobile and WebKit desktop/mobile all reached `RUNNING`, collected browser-driven trash, changed score `0->1`, had `lastResult.ok=true`, and stayed within frame budgets. Compute: `real=58.42s`, max RSS `291848192`.
+- 2026-06-27 18:18-18:24 CEST against `http://130.162.174.167`, `web:0.0.92`, `ws-server:0.0.59`, `PICKUP_TOUCH_FORGIVENESS=0.3`, `private-agent-factory:0.0.28`.
+- STWL-QA-012 server affinity/collision authority: PASS. Room `QA-AFFINITY-941901`; 12 clients across four ws-server IDs; all received `game.on`; all 12 accepted valid trash collisions; `not_running=0`. Compute: `real=28.26s`, max RSS `89636864`.
+- STWL-QA-007 lobby/admin/timer authority: PASS. Room `QA-TIMER-941906`; room stayed waiting before start; non-admin rejected; admin start accepted; duplicate start rejected; shared countdown; canonical 60-second timer; admin end accepted after timer sample. Compute: `real=20.60s`, max RSS `97681408`.
+- STWL-QA-004 room-scoped item snapshots: PASS. Rooms `QA-ISO-A-437508` and `QA-ISO-B-437508`; no default-room item snapshot before target join; post-join snapshots were room-scoped; cross-room match events stayed isolated; reconnect rehydrated running state.
+- STWL-QA-001 cross-browser human multiplayer sync: PASS. Room `QA-MIX-985373`; Chrome desktop, WebKit desktop, and Chrome mobile waited in lobby, reached `RUNNING`, saw all named human remotes, and rendered the moving driver. Compute: `real=30.26s`, max RSS `321175552`.
+- STWL-QA-010 user-visible collection/collision regression guard: PASS after the pickup tolerance rollout. Chrome desktop/mobile and WebKit desktop/mobile all reached `RUNNING`, collected browser-driven trash, changed score `0->1`, had `lastResult.ok=true`, and stayed within frame budgets. Compute: `real=56.51s`, max RSS `290439168`.
+- STWL-QA-019 browser PAF context/session binding: PASS. Chrome desktop, WebKit desktop, Chrome mobile, and WebKit mobile each received unique `commentary.ready` session/player metadata; `/paf/api/context` included browser session events including `game_over`; direct `/paf/api/commentary` returned bounded live Select AI lines. Compute: `real=90.89s`, max RSS `323829760`.
 
 ## Test Evidence Index
 
@@ -29,6 +67,49 @@
 - Public 3-human desktop/mobile sync rerun: `.codex_tmp/qa-multiplayer-sync-public-continued/latest.md`
 - Public mixed Chrome/WebKit/admin-start multiplayer sync rerun: `.codex_tmp/qa-multiplayer-cross-browser-sync-20260627-public/latest.md`
 - Public Chrome/WebKit desktop/mobile human spawn/remote overlap probe: `.codex_tmp/qa-human-spawn-overlap-20260627-public-strict/latest.md`
+- Public final Chrome/WebKit/mobile multiplayer sync probe after `web:0.0.89`: `.codex_tmp/qa-multiplayer-cross-browser-sync-public-after-web089/latest.md`
+- Public final Chrome/WebKit/mobile human spawn/remote overlap probe after `web:0.0.89`: `.codex_tmp/qa-human-spawn-overlap-public-after-web089/latest.md`
+- Public final Chrome/WebKit/mobile browser collision probe after `web:0.0.89`: `.codex_tmp/qa-browser-collision-ui-public-after-web089/latest.md`
+- Public final server affinity probe after `web:0.0.89` / `ws-server:0.0.57`: `.codex_tmp/qa-server-affinity-public-after-web089/latest.md`
+- Public final lobby/admin timer probe after `web:0.0.89` / `ws-server:0.0.57`: `.codex_tmp/qa-lobby-admin-timer-public-after-web089/latest.md`
+- Public P0 rerun server affinity after `web:0.0.90` / `ws-server:0.0.57`: `.codex_tmp/qa-server-affinity-public-address-all-p0-20260627/latest.md`
+- Public P0 rerun lobby/admin timer after `web:0.0.90` / `ws-server:0.0.57`: `.codex_tmp/qa-lobby-admin-timer-public-address-all-p0-20260627/latest.md`
+- Public P0 rerun cross-browser multiplayer sync after `web:0.0.90` / `ws-server:0.0.57`: `.codex_tmp/qa-multiplayer-cross-browser-sync-public-address-all-p0-20260627/latest.md`
+- Public collection regression rerun after `web:0.0.90` / `ws-server:0.0.57`: `.codex_tmp/qa-browser-collision-ui-public-address-all-p0-20260627/latest.md`
+- Public final Chrome/WebKit desktop/mobile collision UI after `web:0.0.92` / `ws-server:0.0.59`: `.codex_tmp/qa-browser-collision-ui-after-web092-server059-20260627/latest.md`
+- Public final server-affinity/collision authority after `web:0.0.92` / `ws-server:0.0.59`: `.codex_tmp/qa-server-affinity-after-web092-server059-20260627/latest.md`
+- Public final lobby/admin/timer authority after `web:0.0.92` / `ws-server:0.0.59`: `.codex_tmp/qa-lobby-admin-timer-after-web092-server059-20260627/latest.md`
+- Public final room isolation/reconnect after `web:0.0.92` / `ws-server:0.0.59`: `.codex_tmp/qa-room-isolation-after-web092-server059-20260627/latest.md`
+- Public final Chrome/WebKit/mobile multiplayer sync after `web:0.0.92` / `ws-server:0.0.59`: `.codex_tmp/qa-multiplayer-cross-browser-sync-after-web092-server059-20260627/latest.md`
+- Public final Chrome/WebKit/mobile PAF context matrix after `web:0.0.92` / `ws-server:0.0.59` / `paf:0.0.28`: `.codex_tmp/qa-browser-paf-context-matrix-after-web092-server059-20260627/latest.md`
+- Public post-rollout Chrome/WebKit desktop/mobile collision UI after `PICKUP_TOUCH_FORGIVENESS=0.3`: `.codex_tmp/qa-browser-collision-ui-address-all-p0-after-pickup-tolerance-20260627/latest.md`
+- Public post-rollout server-affinity/collision authority after `PICKUP_TOUCH_FORGIVENESS=0.3`: `.codex_tmp/qa-server-affinity-after-pickup-tolerance-20260627/latest.md`
+- Public post-rollout lobby/admin/timer authority after `PICKUP_TOUCH_FORGIVENESS=0.3`: `.codex_tmp/qa-lobby-admin-timer-after-pickup-tolerance-20260627/latest.md`
+- Public post-rollout Chrome/WebKit/mobile multiplayer sync after `PICKUP_TOUCH_FORGIVENESS=0.3`: `.codex_tmp/qa-multiplayer-cross-browser-sync-after-pickup-tolerance-20260627/latest.md`
+- Public post-rollout Chrome/WebKit/mobile PAF context matrix after `PICKUP_TOUCH_FORGIVENESS=0.3`: `.codex_tmp/qa-browser-paf-context-matrix-after-pickup-tolerance-20260627/latest.md`
+- Public final `web:0.0.95` / `ws-server:0.0.61` server-affinity/collision authority: `.codex_tmp/qa-server-affinity-after-observability-web095-server061-20260627/latest.md`
+- Public final `web:0.0.95` / `ws-server:0.0.61` lobby/admin/timer authority: `.codex_tmp/qa-lobby-admin-timer-after-observability-web095-server061-20260627/latest.md`
+- Public final `web:0.0.95` / `ws-server:0.0.61` Chrome/WebKit/mobile multiplayer sync: `.codex_tmp/qa-multiplayer-cross-browser-sync-after-observability-web095-server061-20260627/latest.md`
+- Public final `web:0.0.95` / `ws-server:0.0.61` Chrome/WebKit desktop/mobile collection/collision UI: `.codex_tmp/qa-browser-collision-ui-after-observability-web095-server061-20260627/latest.md`
+- Public final `web:0.0.95` / `ws-server:0.0.61` admin canonical observability stability: `.codex_tmp/qa-admin-observability-stability-after-web095-server061-20260627/latest.md`
+- Public latest address-all-P0 `web:0.0.95` / `ws-server:0.0.61` server-affinity/collision authority: `.codex_tmp/qa-server-affinity-address-all-p0-rerun-web095-server061-20260627/latest.md`
+- Public latest address-all-P0 `web:0.0.95` / `ws-server:0.0.61` lobby/admin/timer authority: `.codex_tmp/qa-lobby-admin-timer-address-all-p0-rerun-web095-server061-20260627/latest.md`
+- Public latest address-all-P0 `web:0.0.95` / `ws-server:0.0.61` Chrome/WebKit/mobile multiplayer sync: `.codex_tmp/qa-multiplayer-cross-browser-sync-address-all-p0-rerun-web095-server061-20260627/latest.md`
+- Public latest address-all-P0 `web:0.0.95` / `ws-server:0.0.61` Chrome/WebKit desktop/mobile collection/collision UI: `.codex_tmp/qa-browser-collision-ui-address-all-p0-rerun-web095-server061-20260627/latest.md`
+- Public fresh address-all-P0 server-affinity/collision authority: `.codex_tmp/qa-server-affinity-live-address-all-p0-20260627/latest.md`
+- Public fresh address-all-P0 lobby/admin/timer authority: `.codex_tmp/qa-lobby-admin-timer-live-address-all-p0-20260627/latest.md`
+- Public fresh address-all-P0 Chrome/WebKit/mobile multiplayer sync: `.codex_tmp/qa-multiplayer-cross-browser-sync-live-address-all-p0-20260627/latest.md`
+- Public fresh address-all-P0 Chrome/WebKit desktop/mobile collection/collision UI: `.codex_tmp/qa-browser-collision-ui-live-address-all-p0-20260627/latest.md`
+- Public fresh PAF Select AI fast-path preflight: `.codex_tmp/qa-conference-preflight-live-address-all-p0-20260627/latest.md`
+- Public fresh admin multi-user commentary feed: `.codex_tmp/qa-admin-commentary-multiuser-live-address-all-p0-20260627/latest.md`
+- Public current address-all-P0 server-affinity/collision authority: `.codex_tmp/qa-server-affinity-address-all-p0-current-20260627/latest.md`
+- Public current address-all-P0 lobby/admin/timer authority: `.codex_tmp/qa-lobby-admin-timer-address-all-p0-current-20260627/latest.md`
+- Public current address-all-P0 Chrome/WebKit/mobile multiplayer sync: `.codex_tmp/qa-multiplayer-cross-browser-sync-address-all-p0-current-20260627/latest.md`
+- Public current address-all-P0 Chrome/WebKit desktop/mobile collection/collision UI: `.codex_tmp/qa-browser-collision-ui-address-all-p0-current-20260627/latest.md`
+- Public final address-all-P0 server-affinity/collision authority: `.codex_tmp/qa-server-affinity-public-address-all-p0-final-20260627/latest.md`
+- Public final address-all-P0 lobby/admin/timer authority: `.codex_tmp/qa-lobby-admin-timer-public-address-all-p0-final-20260627/latest.md`
+- Public final address-all-P0 Chrome/WebKit/mobile multiplayer sync: `.codex_tmp/qa-multiplayer-cross-browser-sync-public-address-all-p0-final-20260627/latest.md`
+- Public final address-all-P0 Chrome/WebKit desktop/mobile collection/collision UI: `.codex_tmp/qa-browser-collision-ui-public-address-all-p0-final-20260627/latest.md`
 - Public lobby/admin timer probe: `.codex_tmp/qa-lobby-admin-timer-public-final/latest.md`
 - Public admin UI probe: `.codex_tmp/qa-admin-ui-public/latest.md`
 - Public mobile flow probe: `.codex_tmp/qa-mobile-flow-public/latest.md`
@@ -94,11 +175,12 @@
 
 ## Passing Coverage
 
-- Public single-socket Socket.IO transport lifecycle passed: room join, admin presenter start, `game.on`, timer, items, and end ack. Distributed room authority is failing separately under STWL-QA-012.
+- Final public P0-plus rerun after `web:0.0.92`, `ws-server:0.0.59`, and `private-agent-factory:0.0.28` passed: browser-driven collection in Chrome/WebKit desktop/mobile, cross-pod server affinity across four ws-server IDs with `not_running=0`, lobby/admin/timer authority, room-scoped item snapshots, cross-browser human multiplayer sync, and PAF context/session binding with `game_over` evidence.
+- Public single-socket Socket.IO transport lifecycle passed: room join, admin presenter start, `game.on`, timer, items, and end ack.
 - Public 6-client WebSocket stability probe passed over a 45s observation window: all clients joined the same room, received admin start and running state, had zero disconnects/reconnect attempts/connect errors, received 44 `game.time` updates each, stayed synchronized with timer spread `0`, and accepted admin end. Shell compute usage was low (`real=63.66s`, `user=1.10s`, max RSS `78659584`). This suggests the visible connection/room instability is not raw WebSocket transport churn in the happy path; it is more likely lifecycle authority, UI aggregation, or per-pod state.
 - Public browser gameplay passed on desktop and mobile with healthy item counts, mobile joystick visible, boat waterline in range, and powerup badges visible.
 - Public socket collision smoke passed for trash `+1`, turtle `-1`, and powerup `0`.
-- Public browser-driven collision probe was added and exposed a separate P1: socket-level collision validation passes, but real browser gameplay collection can still fail with `not_running` server responses.
+- Pre-fix public browser-driven collision probes exposed a separate P1: socket-level collision validation could pass while real browser gameplay collection failed with `not_running` server responses. This is now closed by the final web092/server059 browser matrix.
 - Public PAF MCP passed: tool discovery, live match context, context summary, graph facts, vector memory, and Select AI commentary under 200 chars.
 - Local dev browser visual QA passed on desktop and mobile.
 - Local keyboard steering sign passed: left input increased yaw, right input decreased yaw under the current scene convention.
@@ -120,7 +202,7 @@
 - User-requested compute/UI rerun on 2026-06-27 11:45 CEST confirmed Chrome desktop/mobile render and input remain healthy at about `120` FPS with `29-41MB` JS heap, while WebKit mobile remained healthy at about `60` FPS. WebKit desktop accepted presenter start but stayed visually in the lobby/`WAITING`, so the run failed on lifecycle state rather than compute saturation.
 - Public isolated controls-sign probes passed on Chrome desktop, Chrome mobile, WebKit desktop, and WebKit mobile. Desktop `A/W` and `ArrowLeft/ArrowUp` moved left, `D/W` and `ArrowRight/ArrowUp` moved right, mobile joystick up-left moved left, mobile joystick up-right moved right, and throttle release decelerated. No current public controls-direction ticket is open from this pass.
 - Fresh public Chrome/WebKit collision/UI rerun produced mixed browser/scenario collection results while frame rates stayed healthy: Chrome desktop and WebKit mobile failed with `error=not_running`; WebKit desktop collected trash; Chrome mobile registered a turtle collision. This makes a pure Safari-vs-Chrome rendering explanation unlikely.
-- User-requested collision reruns confirmed the current public deployment is still broken for collection: Chrome desktop, Chrome mobile, and WebKit mobile all reached `RUNNING`, kept healthy frame budgets, and failed pickup with `error=not_running`; WebKit desktop did not reach a stable playable `RUNNING` state after presenter start and ended on an idle/result overlay.
+- User-requested collision reruns confirmed the then-current public deployment was broken for collection: Chrome desktop, Chrome mobile, and WebKit mobile all reached `RUNNING`, kept healthy frame budgets, and failed pickup with `error=not_running`; WebKit desktop did not reach a stable playable `RUNNING` state after presenter start and ended on an idle/result overlay.
 - Public server-affinity probes produced direct root-cause evidence: all clients in one room received `game.on`, but only clients connected to the ws-server instance that accepted `admin.presenter.start` could pass `items.collision`; clients connected to other ws-server instances returned `error=not_running`.
 - Public final PAF MCP proof passed against the fresh commentary room: MCP health, handshake, live Oracle match context, and Select AI commentary all worked. The broader conference preflight still failed on GenAI/model route/trace proof.
 - Public admin observability stability probe reproduced presenter-facing counter instability and non-canonical metrics: DOM room counts changed during the observation window, raw `/metrics` room and item counters varied across samples, and DOM item counts disagreed with raw metrics by hundreds of items. See STWL-QA-014.
@@ -149,7 +231,7 @@
 - Firefox desktop gameplay is covered by Playwright Firefox. Firefox mobile remains untested; Playwright Firefox mobile emulation is not a real mobile Firefox device path.
 - Bundled Playwright Chromium with SwiftShader showed low headless FPS and should not be treated as equivalent to installed Chrome. Installed Chrome channel passed the compute/UI gate.
 - PAF model proof bundle was skipped in the preflight run; MCP and Select AI proof were executed.
-- Actual browser-driven trail crossing/freezing between human players remains blocked by STWL-QA-001. The mechanics telemetry path is proven through supported Socket.IO events, not through visible multiplayer boat overlap.
+- Actual browser-driven trail crossing/freezing between human players is not yet covered by the final browser matrix. The mechanics telemetry path is proven through supported Socket.IO events, and the human multiplayer sync blocker that previously prevented this test path is now closed.
 
 ---
 
@@ -193,8 +275,21 @@
 - Suspected Cause: Human player state is not being consistently room-broadcast or merged into the remote-player render path, while bot visuals are injected separately and remain visible. The mixed-browser run shows some clients receive/render one human while others render none, despite `authStateCount=3`, so the fault is likely a combination of distributed room state, roster/name mapping, and `authStates` to `otherPlayersMeshes` merge logic rather than a pure browser rendering bug. Investigate `authStates`, `otherPlayersInfo`, `player.input`, `player.trace`, cross-pod fanout, and any filters that treat demo bots differently from human players.
 - Proposed Fix: Repair human roster/state fanout so each room receives authoritative state for all human players, not just bots or self. Keep `scripts/multiplayer-sync-probe.mjs` as the regression gate.
 - Fix Implemented Locally: `server/server.js` now builds a canonical per-room `startPositions` map from the shared roster, simulates only socket-local players on each ws-server, snaps `game.start` server-auth state to the canonical per-player start when a room is already `RUNNING`, and includes player profile metadata in `player.state`. `web/src/script.js` now merges `player.state.players` into `otherPlayersInfo` and selects `startPositions[yourId]` from `game.on`. Local direct start-position proof confirmed two players receive distinct canonical coordinates in the shared map. Unit coverage now exercises per-player start selection through shared helpers in `server/lib/gameLogic.js`.
+- Public Verification Result: Verified fixed on 2026-06-27 with `web:0.0.89` and `ws-server:0.0.57`. `scripts/multiplayer-cross-browser-sync-probe.mjs` passed on room `QA-MIX-327781`: Chrome desktop, WebKit desktop, and Chrome mobile all reached `RUNNING`, all saw two named human remotes, and WebKit/mobile rendered the moving Chrome driver. Compute usage: `real=29.52s`, `user=22.58s`, `sys=8.39s`, max RSS `318291968`, peak memory footprint `156829120`. `scripts/human-spawn-overlap-probe.mjs` also passed on four clients in room `QA-SPAWN-372283`: all clients exposed three human remotes, no visible overlap, and no browser errors. Compute usage: `real=21.18s`, `user=18.90s`, `sys=7.13s`, max RSS `302907392`, peak memory footprint `150390520`.
+- Public Verification Evidence:
+  - `.codex_tmp/qa-multiplayer-cross-browser-sync-public-after-web089/latest.md`
+  - `.codex_tmp/qa-multiplayer-cross-browser-sync-public-after-web089/latest.json`
+  - `.codex_tmp/qa-human-spawn-overlap-public-after-web089/latest.md`
+  - `.codex_tmp/qa-human-spawn-overlap-public-after-web089/latest.json`
+- Final Public Reconfirmation: Re-confirmed fixed on 2026-06-27 with `web:0.0.92` and `ws-server:0.0.59`. `scripts/multiplayer-cross-browser-sync-probe.mjs` passed in room `QA-MIX-472331`: Chrome desktop, WebKit desktop, and Chrome mobile all waited in lobby, reached `RUNNING`, saw two named human remotes, and WebKit/mobile rendered the moving driver.
+- Post-Rollout Reconfirmation: Re-confirmed fixed on 2026-06-27 after the public `PICKUP_TOUCH_FORGIVENESS=0.3` rollout. `scripts/multiplayer-cross-browser-sync-probe.mjs` passed in room `QA-MIX-985373`: Chrome desktop, WebKit desktop, and Chrome mobile all waited in lobby, reached `RUNNING`, saw two named human remotes, and WebKit/mobile rendered the moving driver. Compute usage: `real=30.26s`, `user=22.10s`, `sys=8.60s`, max RSS `321175552`, peak memory footprint `156895040`.
+- Final Public Reconfirmation Evidence:
+  - `.codex_tmp/qa-multiplayer-cross-browser-sync-after-pickup-tolerance-20260627/latest.md`
+  - `.codex_tmp/qa-multiplayer-cross-browser-sync-after-pickup-tolerance-20260627/latest.json`
+  - `.codex_tmp/qa-multiplayer-cross-browser-sync-after-web092-server059-20260627/latest.md`
+  - `.codex_tmp/qa-multiplayer-cross-browser-sync-after-web092-server059-20260627/latest.json`
 - Verification Test: `node scripts/multiplayer-sync-probe.mjs --base-url http://130.162.174.167 --include-mobile` and `node scripts/multiplayer-cross-browser-sync-probe.mjs --base-url http://130.162.174.167` must pass. Three browser clients in one room must each report at least two non-bot remote players and show remote position/rotation deltas after one client moves.
-- Status: Fixed locally; public deployment verification pending
+- Status: Verified fixed on public deployment
 
 ## STWL-QA-002
 
@@ -219,6 +314,7 @@
 - Multi-User Admin Commentary Rerun: `scripts/admin-commentary-multiuser-probe.mjs` seeded three fresh players in room `QA-ACM-414234`. All telemetry was accepted, all three `game_over` events queued commentary, all three `commentary.ready` payloads arrived from `source=select-ai`, and `/admin/ai-learning` grouped three player sections. Lines were 72, 68, and 75 characters. They were profanity-free and avoided unsupported facts. Response metadata still showed `trace_persisted=false` and `canvas=null`, so this is a strong Select AI presenter-feed pass but still does not prove Canvas/trace/candidate route.
 - Browser Result Commentary Matrix Rerun: `scripts/browser-result-commentary-matrix-probe.mjs` opened Chrome desktop, WebKit desktop, Chrome mobile, and WebKit mobile in room `QA-RCOM-057484`. All four clients reached result surfaces, initially showed `Commentary is being drafted...`, then received final player-facing commentary in `1014-1519ms`. Lines were safe and under 200 chars: 65, 85, 104, and 102 characters. Every `commentary.ready` source was `select-ai`, and none used `deterministic-fallback`. This is the strongest current player-facing demo proof. It still does not close this P1 because all ready payloads had `trace_persisted=false`, `canvas=null` or absent, and primary/candidate routes skipped with `live_line_select_ai_first`.
 - Browser PAF Context Matrix Rerun: `scripts/browser-paf-context-matrix-probe.mjs` opened Chrome desktop, WebKit desktop, Chrome mobile, and WebKit mobile in room `QA-PAFCTX-071134`, waited for real result-card commentary, then called `/paf/api/context` and `/paf/api/commentary` for each browser session. All four result cards displayed final Select AI commentary and direct PAF commentary was safe, live, and under 200 characters. The run still strengthens this P1 because every ready payload used `source=select-ai`, `trace_persisted=false`, `canvas=null`, `route_mode=primary`, and both model routes were skipped with `live_line_select_ai_first`. It also opened STWL-QA-019 because WebKit client/session binding and returned context evidence were inconsistent.
+- Final Browser PAF Context Matrix Rerun: `scripts/browser-paf-context-matrix-probe.mjs` passed after `web:0.0.92`, `ws-server:0.0.59`, and `private-agent-factory:0.0.28`. Chrome desktop, WebKit desktop, Chrome mobile, and WebKit mobile all received final result-card commentary, unique `commentary.ready` session/player metadata, context that included session events and `game_over`, and bounded direct Select AI commentary. This closes STWL-QA-019, but this ticket remains open because every response still intentionally uses the fast Select AI path (`source=select-ai`, `trace_persisted=false`, `canvas=null`, primary/candidate model routes skipped with `live_line_select_ai_first`).
 - Evidence:
   - `.codex_tmp/qa-conference-preflight/latest.md`
   - `.codex_tmp/qa-conference-preflight/latest.json`
@@ -249,6 +345,8 @@
   - `.codex_tmp/qa-browser-result-commentary-matrix-20260627-public-rerun/QAComWebKitMob-commentary-final.png`
   - `.codex_tmp/qa-browser-paf-context-matrix-20260627-public/latest.md`
   - `.codex_tmp/qa-browser-paf-context-matrix-20260627-public/latest.json`
+  - `.codex_tmp/qa-browser-paf-context-matrix-after-web092-server059-20260627/latest.md`
+  - `.codex_tmp/qa-browser-paf-context-matrix-after-web092-server059-20260627/latest.json`
   - `.codex_tmp/qa-browser-paf-context-matrix-20260627-public/QAPafChrome-commentary-final.png`
   - `.codex_tmp/qa-browser-paf-context-matrix-20260627-public/QAPafWebKit-commentary-final.png`
   - `.codex_tmp/qa-browser-paf-context-matrix-20260627-public/QAPafChromeMob-commentary-final.png`
@@ -297,14 +395,17 @@
 - Expected Result: A client in a unique room only receives items scoped to that room, or an empty item set until the room is seeded.
 - Actual Result: The unique room initially received an `items.all` payload containing items with `"room": "ROOM-0001"` before receiving its room-scoped items. Collision outcomes still passed, but this can produce transient count/visibility flicker and cross-room confusion.
 - Latest Rerun Result: The room isolation/reconnect probe failed the item-scoping checks. Clients in `QA-ISO-A-134989` and `QA-ISO-B-134989` received `items.all` snapshots with `count=9`, `rooms=["ROOM-0001"]`, and `wrongRoomCount=9` before or after joining their target room. The same probe passed match-event isolation: Room B did not receive Room A countdowns or `game.on`, Room A observed a player leave, and a reconnecting Room A player rehydrated into the running match.
+- Public Verification Result: Verified fixed on 2026-06-27 with `web:0.0.92` and `ws-server:0.0.59`. `scripts/room-isolation-reconnect-probe.mjs` passed in rooms `QA-ISO-A-437508` and `QA-ISO-B-437508`: no default-room item snapshot appeared before target join, post-join snapshots were room-scoped, Room B did not receive Room A match events, Room A observed player leave, and the reconnecting Room A player rehydrated into the running match.
 - Evidence:
+  - `.codex_tmp/qa-room-isolation-after-web092-server059-20260627/latest.md`
+  - `.codex_tmp/qa-room-isolation-after-web092-server059-20260627/latest.json`
   - `output/qa-all-item-collision-public-20260627/result.json`
   - `.codex_tmp/qa-room-isolation-public/latest.md`
   - `.codex_tmp/qa-room-isolation-public/latest.json`
 - Suspected Cause: Room join or initial item sync emits global/default room item state before room scoping is applied.
 - Proposed Fix: Make item snapshot emission strictly room-scoped on join/start, and add a regression test that unique rooms never receive `ROOM-0001` item records.
 - Verification Test: `node scripts/room-isolation-reconnect-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-room-isolation-public --timeout-ms 120000` must pass. Unique-room socket smoke should show no `items.all` entries with another room id at any point.
-- Status: Open
+- Status: Verified fixed on public deployment
 
 ## STWL-QA-005
 
@@ -403,10 +504,21 @@
   - Contrast passing evidence: `.codex_tmp/qa-browser-match-lifecycle-20260627-public-four-client/latest.md`
   - Contrast passing evidence: `.codex_tmp/qa-browser-match-lifecycle-20260627-public-four-client/latest.json`
 - Suspected Cause: Room admin and room timer state are stored per ws-server process rather than as one distributed authority across replicas. If two clients land on different pods, each pod can believe it owns room authority and accept `admin.start`. The `roomTimers` and `roomAdmin` paths need distributed locking/idempotency, or a single authoritative room coordinator.
+- Public Verification Result: Verified fixed on 2026-06-27 with `web:0.0.89` and `ws-server:0.0.57`. `scripts/lobby-admin-timer-probe.mjs` passed on room `QA-TIMER-410042`: room stayed `WAITING` before start, non-admin start was rejected, admin start succeeded, duplicate start while starting was rejected, both clients entered `RUNNING`, the server canonical timer was 60 seconds, and both clients observed match end. Compute usage: `real=79.69s`, `user=0.80s`, `sys=0.21s`, max RSS `73891840`, peak memory footprint `35229320`.
+- Public Verification Evidence:
+  - `.codex_tmp/qa-lobby-admin-timer-public-after-web089/latest.md`
+  - `.codex_tmp/qa-lobby-admin-timer-public-after-web089/latest.json`
+- Final Public Reconfirmation: Re-confirmed fixed on 2026-06-27 with `web:0.0.92` and `ws-server:0.0.59`. `scripts/lobby-admin-timer-probe.mjs` passed on room `QA-TIMER-437459`: room stayed waiting before start, non-admin start was rejected, admin start succeeded, duplicate start while starting was rejected, both clients entered `RUNNING`, the server canonical timer was 60 seconds, and admin end was accepted after the timer sample.
+- Post-Rollout Reconfirmation: Re-confirmed fixed on 2026-06-27 after the public `PICKUP_TOUCH_FORGIVENESS=0.3` rollout. `scripts/lobby-admin-timer-probe.mjs` passed on room `QA-TIMER-941906`: room stayed waiting before start, non-admin start was rejected, admin start succeeded, duplicate start while starting was rejected, both clients entered `RUNNING`, the server canonical timer was 60 seconds, and admin end was accepted after the timer sample. Compute usage: `real=20.60s`, `user=0.32s`, `sys=0.07s`, max RSS `97681408`, peak memory footprint `58903960`.
+- Final Public Reconfirmation Evidence:
+  - `.codex_tmp/qa-lobby-admin-timer-after-pickup-tolerance-20260627/latest.md`
+  - `.codex_tmp/qa-lobby-admin-timer-after-pickup-tolerance-20260627/latest.json`
+  - `.codex_tmp/qa-lobby-admin-timer-after-web092-server059-20260627/latest.md`
+  - `.codex_tmp/qa-lobby-admin-timer-after-web092-server059-20260627/latest.json`
+- Status: Verified fixed on public deployment
 - Proposed Fix: Move room admin/start state into the Coherence-backed distributed state path or another authoritative store, and make `admin.start` atomic per room. Reject non-admin starts consistently across replicas. Reject duplicate starts once a room is `STARTING` or `RUNNING`. Emit one canonical `startingGame`, one `game.on`, and one start position per room.
 - Fix Implemented Locally: `server/server.js` now reads/writes canonical room lifecycle records through `readCanonicalRoomState()` / `writeCanonicalRoomState()`, awaits async `startRoomMatch()` / `endRoomMatch()` in presenter and player admin handlers, removes the `admin.start` auto-claim loophole, rejects duplicate starts once canonical state is `STARTING`, and rehydrates late joins from `syncRoomStateToSocket()`. Direct local socket smoke against `http://localhost:3100` passed join, non-admin rejection, admin start, duplicate-start rejection, shared countdown, RUNNING, synchronized timer emissions, and admin end. The only failed local assertion was the local workstation `.config/.env` overriding duration to `180`; deployment templates already set `GAME_DURATION_IN_SECONDS=60`. Unit coverage now validates canonical persisted room shape and server-start remaining-time math.
 - Verification Test: `node scripts/lobby-admin-timer-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-lobby-admin-timer-public-final --timeout-ms 120000 --pre-start-ms 3000` must pass. A longer `--wait-game-over` run should then confirm both clients receive the same 60-second match lifecycle and game end.
-- Status: Fixed locally; public deployment verification pending
 
 ## STWL-QA-008
 
@@ -453,15 +565,21 @@
   3. Inspect `window.render_game_to_text()` state and screenshots.
 - Expected Result: Public deployment should require the intended lobby/admin/presenter start flow. Debug or test-only URL parameters should not start a match in production unless explicitly gated by a dev flag, admin token, or non-public environment.
 - Actual Result: Mobile room without `autostart` stayed in lobby with `mode=WAITING`, but `?autostart=1` reached `mode=RUNNING` and `phase-gameplay` on the public deployment. The same probe showed joystick and viewport behavior passing, so the failure is specifically the public start-flow bypass.
+- Public Verification Result: Verified fixed on 2026-06-27 with `web:0.0.90` and `ws-server:0.0.57`. Public `?autostart=1` stayed in lobby with `mode=WAITING` and `bodyClass=phase-lobby`; the same mobile room then reached `RUNNING` only after `admin.presenter.start`. Joystick remained visible in portrait and landscape, did not overlap the HUD, moved the boat `7.973` world units, and release decelerated from `2.169` to `1.379`. Browser errors were clean. Compute usage: `real=34.21s`, `user=152.27s`, `sys=117.49s`, max RSS `563920896`, peak memory footprint `111178568`.
 - Evidence:
+  - `.codex_tmp/qa-mobile-flow-public-after-web090/latest.md`
+  - `.codex_tmp/qa-mobile-flow-public-after-web090/latest.json`
+  - `.codex_tmp/qa-mobile-flow-public-after-web090/mobile-autostart-blocked.png`
+  - `.codex_tmp/qa-mobile-flow-public-after-web090/mobile-presenter-start-running.png`
   - `.codex_tmp/qa-mobile-flow-public/latest.md`
   - `.codex_tmp/qa-mobile-flow-public/latest.json`
   - `.codex_tmp/qa-mobile-flow-public/mobile-no-autostart.png`
   - `.codex_tmp/qa-mobile-flow-public/mobile-autostart-running.png`
 - Suspected Cause: The frontend still honors the dev/test `autostart=1` URL flag in the deployed public bundle. This bypasses the presenter-controlled lobby story and can recreate the user-facing impression that the game starts unexpectedly.
+- Fix Implemented: `web/src/script.js` now gates `autostart=1` and `joinRunning=1` behind `isLocalDebugHost()`, so public IP/production hosts always use the presenter/admin start path. `scripts/mobile-flow-probe.mjs` was updated to prove public autostart remains blocked, then start the same room through `admin.presenter.start` for joystick/mobile playability checks.
 - Proposed Fix: Disable `autostart=1` in production builds, or require an explicit non-public/debug environment gate and admin token before honoring it. Keep smoke tests using a test-only API or authenticated presenter start instead of public URL bypass.
-- Verification Test: `node scripts/mobile-flow-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-mobile-flow-public --timeout-ms 120000` must pass. The `public autostart query reaches running` check should no longer fail because the autostart URL should remain in lobby/waiting unless authorized.
-- Status: Open
+- Verification Test: `node scripts/mobile-flow-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-mobile-flow-public --timeout-ms 120000` must pass. The `public autostart query stays in lobby` and `presenter start reaches running` checks must both pass.
+- Status: Verified fixed on public deployment
 
 ## STWL-QA-010
 
@@ -486,7 +604,16 @@
 - Item Population Probe Result: The 2026-06-27 13:59-14:01 CEST Chrome/WebKit desktop/mobile item-health drive reproduced the same authority split inside one live room. Chrome desktop was able to register a turtle collision (`score 0->-1`, `itemType=turtle`, `scoreDelta=-1`) and kept `not_running=0`, while WebKit desktop, Chrome mobile, and WebKit mobile were visibly in `RUNNING` but recorded `54`, `52`, and `51` repeated `pickup.error=not_running` results. Frame budgets stayed healthy: Chrome desktop/mobile around `120` FPS, WebKit desktop/mobile around `54-60` FPS. Shell compute usage was `real=80.19s`, `user=83.94s`, `sys=24.27s`, max RSS `429408256`, peak memory footprint `158763752`.
 - Server Affinity Root-Cause Result: The dedicated server-affinity probe reproduced the collision symptom without browser rendering in the loop. In room `QA-AFFINITY-855549`, eight socket clients across four connected ws-server IDs all joined and received `game.on`; only the two clients connected to the starter server accepted collisions, while the six clients on the other three server IDs returned `error=not_running`. In confirmation room `QA-AFFINITY-906183`, three clients on starter server `btU4kkks2NssqqHL2w3FCK` passed and nine clients on other servers failed. This directly explains why browser UI can show `RUNNING` while collision validation rejects the same room as not running.
 - Local Contrast: Running the same probe against a local single-node memory backend at `http://127.0.0.1:8180` did not reproduce the public `not_running` rejection on desktop. Chrome desktop collected trash (`score 0->1`, `trash 7->6`, `itemType=trash`, `scoreDelta=1`), WebKit desktop collected trash (`score 0->1`, `trash 6->5`), and Chrome mobile registered a valid turtle collision (`score 0->-1`, `itemType=turtle`, `scoreDelta=-1`). Local WebKit mobile did not collect, but it also did not produce a `not_running` rejection.
+- Public Verification Result: Verified fixed on 2026-06-27 with `web:0.0.89` and `ws-server:0.0.57`. `scripts/browser-collision-ui-probe.mjs` passed on Chrome desktop, Chrome mobile, WebKit desktop, and WebKit mobile against the public URL. All four scenarios waited for presenter start, reached `RUNNING` with visible trash, collected browser-driven trash, produced `lastResult.ok=true`, changed score from `0->1`, reduced trash count, showed no browser errors, and stayed within frame budgets. Compute usage: `real=63.34s`, `user=18.49s`, `sys=7.18s`, max RSS `315359232`, peak memory footprint `140739816`.
+- Final Public Reconfirmation: Re-confirmed fixed on 2026-06-27 with `web:0.0.92` and `ws-server:0.0.59`. `scripts/browser-collision-ui-probe.mjs` passed on Chrome desktop, Chrome mobile, WebKit desktop, and WebKit mobile. All four scenarios waited for presenter start, reached `RUNNING` with visible trash, collected browser-driven trash, produced `lastResult.ok=true`, changed score from `0->1`, and stayed within frame budgets. Compute usage: `real=56.75s`, max RSS `294993920`.
+- Post-Rollout Reconfirmation: Re-confirmed fixed on 2026-06-27 after setting `PICKUP_TOUCH_FORGIVENESS=0.3` across the public `ws-server` deployment. The prior same-day rerun exposed a WebKit desktop near-miss at `distance=2.449` against `allowedRadius=2.4`; the tolerance update keeps far misses rejected while absorbing browser/control quantization at the visual edge. `scripts/browser-collision-ui-probe.mjs` then passed on Chrome desktop, Chrome mobile, WebKit desktop, and WebKit mobile. All four scenarios collected browser-driven trash with `lastResult.ok=true`, changed score `0->1`, and stayed within frame budgets. Compute usage: `real=56.51s`, `user=14.71s`, `sys=5.76s`, max RSS `290439168`, peak memory footprint `146359312`.
 - Evidence:
+  - `.codex_tmp/qa-browser-collision-ui-address-all-p0-after-pickup-tolerance-20260627/latest.md`
+  - `.codex_tmp/qa-browser-collision-ui-address-all-p0-after-pickup-tolerance-20260627/latest.json`
+  - `.codex_tmp/qa-browser-collision-ui-after-web092-server059-20260627/latest.md`
+  - `.codex_tmp/qa-browser-collision-ui-after-web092-server059-20260627/latest.json`
+  - `.codex_tmp/qa-browser-collision-ui-public-after-web089/latest.md`
+  - `.codex_tmp/qa-browser-collision-ui-public-after-web089/latest.json`
   - `.codex_tmp/qa-browser-collision-ui-20260627-final/latest.md`
   - `.codex_tmp/qa-browser-collision-ui-20260627-final/latest.json`
   - `.codex_tmp/qa-browser-collision-ui-20260627-final/chrome/running.png`
@@ -539,7 +666,7 @@
 - Suspected Cause: Browser gameplay is reaching a UI `RUNNING` state on the public OKE deployment before the server-side collision validator on the receiving pod recognizes that player's room/session as running. The local single-node pass makes a pure frontend mesh/hitbox/control issue less likely. Strong candidates are per-pod room-state mismatch related to STWL-QA-007, missing distributed propagation of `game.start`/player-ready state, or collision validation reading a different room/session key than the browser page uses after presenter start.
 - Proposed Fix: Trace the browser path from `game.on` through any `game.start` or player-ready event and into `items.collision`. The server should treat the same authoritative room state used to emit `game.on` as valid for collision validation. Add structured rejection details for `not_running` including room id, server state, player id, and pod/server id.
 - Verification Test: `node scripts/browser-collision-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-collision-ui-mobile-20260627 --engines chrome,webkit --include-mobile --drive-ms 30000 --timeout-ms 150000` must pass in desktop and mobile scenarios. The result must show score increasing or trash count decreasing, `lastResult.ok=true`, and no `not_running` collision rejection while the UI state is `RUNNING`.
-- Status: Open
+- Status: Verified fixed on public deployment
 
 ## STWL-QA-011
 
@@ -591,8 +718,19 @@
 - Suspected Cause: `admin.presenter.start` calls `startRoomMatch(room)` on one ws-server, updates that process-local `roomTimers` map, and broadcasts `game.on` through the Socket.IO/Coherence adapter. Other ws-server replicas receive and forward the broadcast, so their clients enter `RUNNING`, but their local `roomTimers.get(room)` remains `WAITING` or missing. `items.collision` then validates against the receiving replica's local `roomTimers` and rejects with `not_running`.
 - Proposed Fix: Move room lifecycle state and admin/start idempotency into a distributed authoritative store, likely the existing Coherence-backed room state path. `startRoomMatch` must acquire an atomic per-room lock, write canonical `STARTING/RUNNING/ENDED` state with timestamps, and every replica must read that canonical state before accepting lifecycle-sensitive actions such as collision validation, timer emission, reconnect rehydration, and duplicate starts. Alternatively, route all room commands for a room to a single authoritative coordinator, but do not rely on visual cross-pod broadcasts as lifecycle state.
 - Fix Implemented Locally: `items.collision`, stale-player cleanup, late room joins, room summaries, `game.event` session binding, and match start/end now read canonical room state instead of relying on the receiving process's local `roomTimers`. `startRoomMatch()` persists `STARTING` and `RUNNING` with `ownerServerId`, `startTime`, `durationSeconds`, `startPosition`, and `startPositions`; timer ownership self-skips if another owner/state wins. Direct local `scripts/server-affinity-probe.mjs --base-url http://localhost:3100 --clients 4` passed with `not_running=0` and four accepted trash collisions after `game.on`. Unit coverage now proves the core cross-pod invariant: a fresher cached `RUNNING` record is selected over a stale local `WAITING` record.
+- Public Verification Result: Verified fixed on 2026-06-27 with `web:0.0.89` and `ws-server:0.0.57`. `scripts/server-affinity-probe.mjs` passed on room `QA-AFFINITY-409810` with 12 clients distributed across four ws-server IDs. All clients received `game.on`; all 12 accepted valid trash collisions; `not_running=0` on every server group. Compute usage: `real=27.33s`, `user=1.39s`, `sys=0.63s`, max RSS `91635712`, peak memory footprint `51860856`.
+- Public Verification Evidence:
+  - `.codex_tmp/qa-server-affinity-public-after-web089/latest.md`
+  - `.codex_tmp/qa-server-affinity-public-after-web089/latest.json`
+- Final Public Reconfirmation: Re-confirmed fixed on 2026-06-27 with `web:0.0.92` and `ws-server:0.0.59`. `scripts/server-affinity-probe.mjs` passed on room `QA-AFFINITY-437460` with 12 clients distributed across four ws-server IDs. All clients received `game.on`; all 12 accepted valid trash collisions; `not_running=0` for every server group.
+- Post-Rollout Reconfirmation: Re-confirmed fixed on 2026-06-27 after the public `PICKUP_TOUCH_FORGIVENESS=0.3` rollout. `scripts/server-affinity-probe.mjs` passed on room `QA-AFFINITY-941901` with 12 clients distributed across four ws-server IDs. All clients received `game.on`; all 12 accepted valid trash collisions; `not_running=0` for every server group. Compute usage: `real=28.26s`, `user=0.68s`, `sys=0.39s`, max RSS `89636864`, peak memory footprint `46502304`.
+- Final Public Reconfirmation Evidence:
+  - `.codex_tmp/qa-server-affinity-after-pickup-tolerance-20260627/latest.md`
+  - `.codex_tmp/qa-server-affinity-after-pickup-tolerance-20260627/latest.json`
+  - `.codex_tmp/qa-server-affinity-after-web092-server059-20260627/latest.md`
+  - `.codex_tmp/qa-server-affinity-after-web092-server059-20260627/latest.json`
 - Verification Test: `node scripts/server-affinity-probe.mjs --base-url http://130.162.174.167 --clients 12` must pass with clients spread across at least two distinct `connectedServerId` values. Every client that receives `game.on` should either accept a valid collision or fail for a non-lifecycle reason such as `too_far`; zero clients should return `error=not_running`. Then rerun `scripts/browser-collision-ui-probe.mjs`, `scripts/lobby-admin-timer-probe.mjs`, and `scripts/multiplayer-sync-probe.mjs` against the public deployment.
-- Status: Fixed locally; public deployment verification pending
+- Status: Verified fixed on public deployment
 
 ## STWL-QA-013
 
@@ -615,7 +753,13 @@
 - Suspected Cause: Room lifecycle state and cleanup/reset are not globally authoritative across ws-server replicas. Some room rows appear to retain a process-local `STARTING` or `RUNNING` state after the originating session ends, likely due to the same distributed room lifecycle split documented in STWL-QA-012.
 - Proposed Fix: After room lifecycle state is moved into a distributed authoritative store, add TTL/cleanup semantics for test/demo rooms and make the admin room table read canonical room state rather than stale per-process snapshots. Consider hiding rooms with zero humans and expired `STARTING/RUNNING` timestamps unless explicitly marked active.
 - Verification Test: After running the server-affinity, browser-collision, and commentary probes, `node scripts/admin-ui-probe.mjs --base-url http://130.162.174.167 --wait-ms 12000` should show no old zero-human QA rooms stuck in `STARTING` or `RUNNING`. Room rows should either be current, terminal, or absent.
-- Status: Open
+- Public Verification Result: Verified fixed on 2026-06-27 with `web:0.0.95` and `ws-server:0.0.61`. The canonical observability stability probe passed after the admin observability route switched to `/api/observability`: DOM rooms and canonical rooms stayed fixed at `[1]`, DOM items and canonical selected-room items stayed fixed at `[13636]`, DOM/canonical deltas were zero across 12 samples, and stale active QA rows were absent. The separate `admin-ui-probe` still failed the Model AI health-proof elements, but its observability checks passed and that failure is tracked under STWL-QA-008/STWL-QA-002 rather than stale-room hygiene.
+- Public Verification Evidence:
+  - `.codex_tmp/qa-admin-observability-stability-after-web095-server061-20260627/latest.md`
+  - `.codex_tmp/qa-admin-observability-stability-after-web095-server061-20260627/latest.json`
+  - `.codex_tmp/qa-admin-ui-after-observability-web095-server061-20260627/latest.md`
+  - `.codex_tmp/qa-admin-ui-after-observability-web095-server061-20260627/latest.json`
+- Status: Verified fixed on public deployment
 
 ## STWL-QA-014
 
@@ -642,7 +786,12 @@
 - Suspected Cause: Admin observability combines selected-room websocket state, room directory state, and raw Prometheus metrics that appear to be served from individual ws-server replicas behind the public load balancer rather than from one canonical aggregated source. Room lifecycle and item state are already proven to be process-local in STWL-QA-012, so the dashboard is likely polling different pod-local truths over time.
 - Proposed Fix: Make observability read from one canonical aggregation path. Options: aggregate ws-server metrics through Prometheus/Grafana or a backend aggregation endpoint, expose selected-room counters separately from global counters, and include source/scope labels in the UI. Do not show pod-local item totals as global demo truth. After STWL-QA-012 is fixed, make the room table read the same canonical distributed room state.
 - Verification Test: `node scripts/admin-observability-stability-probe.mjs --base-url http://130.162.174.167 --samples 12 --interval-ms 3000` must pass. During a quiet observation window, DOM room count should not swing by more than two rooms, DOM item count should not swing by more than five items, raw metrics should be stable or explicitly labeled per-pod, DOM/global metrics should agree within the defined tolerance, and stale active QA rows should be absent or clearly expired.
-- Status: Open
+- Fix Implemented: `ws-server` now exposes a bounded canonical observability JSON route at `/api/observability`, routed through ingress to the backend. The admin UI prefers that canonical scoped endpoint once it succeeds instead of mixing pod-local Socket.IO snapshots and raw per-pod metrics as presenter truth.
+- Public Verification Result: Verified fixed on 2026-06-27 with `web:0.0.95` and `ws-server:0.0.61`. Direct `/api/observability?room=ROOM-0001` returned `ok=true`, `source=canonical-observability`, and `mode=bounded-map-size` in `real=0.26s`. `scripts/admin-observability-stability-probe.mjs` then passed 12 public samples: DOM rooms `[1]`, DOM items `[13636]`, canonical rooms `[1]`, canonical selected-room items `[13636]`, zero DOM/canonical deltas, and no stale active QA rows. Compute usage: `real=40.39s`, max RSS `223313920`.
+- Public Verification Evidence:
+  - `.codex_tmp/qa-admin-observability-stability-after-web095-server061-20260627/latest.md`
+  - `.codex_tmp/qa-admin-observability-stability-after-web095-server061-20260627/latest.json`
+- Status: Verified fixed on public deployment
 
 ## STWL-QA-015
 
@@ -770,9 +919,24 @@
   3. Compare each result card's displayed player name/commentary with its captured `commentary.ready` metadata and `/paf/api/context` summary.
 - Expected Result: Each browser client should receive or display only commentary for its own `session_id` and `player_id`. The result-card text, `commentary.ready` payload, direct `/paf/api/commentary` response, and `/paf/api/context` summary should agree on player name, score, trail/freezing/trash/marine facts, and terminal `game_over` evidence.
 - Actual Result: All four clients reached post-game and displayed final commentary, but evidence/session binding was inconsistent. `QAPafWebKit` and `QAPafWebKitMob` both reported the same `commentary.ready` session/player id: `QA-PAFCTX-071134:1pNgx1EnZbuSs5uZqRcVR1:1782562100466` / `1pNgx1EnZbuSs5uZqRcVR1`, with `player_name=QAPafWebKitMob`. The WebKit desktop result card still showed `Name: QAPafWebKit` and a trail/freeze line, while the bound PAF context summary for that session reported `player_name=QAPafWebKitMob`, `trail_crosses=0`, and `freezes=0`. All four `/paf/api/context` responses returned event windows dominated by `game_started`/`position_sample` and did not expose `game_over`, even though the clients were already on the result surface.
+- Public Verification Result: Verified fixed on 2026-06-27 with `web:0.0.92`, `ws-server:0.0.59`, and `private-agent-factory:0.0.28`. `scripts/browser-paf-context-matrix-probe.mjs` passed in room `QA-PAFCTX-514922`. Chrome desktop, WebKit desktop, Chrome mobile, and WebKit mobile each reached post-game, each result card received final commentary, and each browser had unique `commentary.ready` session/player metadata:
+  - `QAPafChrome`: `QA-PAFCTX-514922:apxW2CWEJxtaijxsFkkMAn:1782575538697`
+  - `QAPafWebKit`: `QA-PAFCTX-514922:vepPXVG516TsH47f3icLvs:1782575538736`
+  - `QAPafChromeMob`: `QA-PAFCTX-514922:4yQdzMQhBRa6p8KMYUKUqa:1782575538735`
+  - `QAPafWebKitMob`: `QA-PAFCTX-514922:vbVHBxtuNmKRMp7wK4Nk5G:1782575538764`
+- Public Verification Details: `/paf/api/context` contained each browser session's recorded events including `game_over`; direct `/paf/api/commentary` returned bounded live Select AI lines with lengths 98, 99, 74, and 59 characters; the probe passed unsupported-mechanics checks and frame budgets for all four clients. Compute usage: `real=91.01s`, max RSS `341082112`.
+- Post-Rollout Reconfirmation: Re-confirmed fixed on 2026-06-27 after the public `PICKUP_TOUCH_FORGIVENESS=0.3` rollout. `scripts/browser-paf-context-matrix-probe.mjs` passed in room `QA-PAFCTX-033432`; all four browser sessions reached post-game, received result-card commentary, had unique `commentary.ready` session/player metadata, and `/paf/api/context` included session events with `game_over`. Direct Select AI commentary stayed bounded with lengths 100, 91, 90, and 72 characters. Compute usage: `real=90.89s`, `user=72.87s`, `sys=29.14s`, max RSS `323829760`, peak memory footprint `179375016`.
 - Grounding Note: The probe's unsupported-mechanics heuristic also flagged phrases such as "no trash collected" and "no marine hits recorded." Those zero-statements may be acceptable when backed by summary counters, so they are not the main defect. The real blocker is that the player/session binding and returned evidence can disagree with the result surface.
 - Compute Evidence: The failure happened while browser performance stayed healthy. Shell compute usage was `real=91.69s`, `user=83.34s`, `sys=26.99s`, max RSS `426164224`, peak memory footprint `180275584`. Chrome desktop/mobile frame checks were about `119` FPS with RAF p95 around `10ms`; WebKit/Safari-family desktop/mobile stayed around `60` FPS with RAF p95 around `18ms`.
 - Evidence:
+  - `.codex_tmp/qa-browser-paf-context-matrix-after-pickup-tolerance-20260627/latest.md`
+  - `.codex_tmp/qa-browser-paf-context-matrix-after-pickup-tolerance-20260627/latest.json`
+  - `.codex_tmp/qa-browser-paf-context-matrix-after-web092-server059-20260627/latest.md`
+  - `.codex_tmp/qa-browser-paf-context-matrix-after-web092-server059-20260627/latest.json`
+  - `.codex_tmp/qa-browser-paf-context-matrix-after-web092-server059-20260627/QAPafChrome-commentary-final.png`
+  - `.codex_tmp/qa-browser-paf-context-matrix-after-web092-server059-20260627/QAPafWebKit-commentary-final.png`
+  - `.codex_tmp/qa-browser-paf-context-matrix-after-web092-server059-20260627/QAPafChromeMob-commentary-final.png`
+  - `.codex_tmp/qa-browser-paf-context-matrix-after-web092-server059-20260627/QAPafWebKitMob-commentary-final.png`
   - `.codex_tmp/qa-browser-paf-context-matrix-20260627-public/latest.md`
   - `.codex_tmp/qa-browser-paf-context-matrix-20260627-public/latest.json`
   - `.codex_tmp/qa-browser-paf-context-matrix-20260627-public/QAPafChrome-commentary-final.png`
@@ -782,4 +946,4 @@
 - Suspected Cause: Room-level `commentary.ready` fanout or browser-side result handling may not be filtering by the local player's `session_id`/`player_id`, allowing one player's ready payload to overwrite another player's proof metadata or displayed commentary. Separately, `/paf/api/context` appears to return an event window ordered or limited around early position samples rather than a summary that always includes terminal `game_over` and key event facts.
 - Proposed Fix: Treat commentary as player-scoped, not only room-scoped. Include `session_id` and `player_id` in result-card state, ignore `commentary.ready` payloads that do not match the local player, and make `/paf/api/context` return a canonical compact evidence bundle with terminal result facts plus bounded recent/key events rather than a raw first-page event sample.
 - Verification Test: Rerun `scripts/browser-paf-context-matrix-probe.mjs` against the public URL. Each browser must have a unique `commentary.ready` session/player, result text must match the bound context, `/paf/api/context` must include terminal game-over evidence or a canonical result summary, and no WebKit desktop/mobile session collision should occur.
-- Status: Open
+- Status: Verified fixed on public deployment

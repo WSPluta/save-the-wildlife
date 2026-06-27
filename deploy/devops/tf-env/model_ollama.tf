@@ -121,8 +121,19 @@ resource "oci_core_instance" "model_ollama" {
   launch_options {
     firmware                            = "UEFI_64"
     is_consistent_volume_naming_enabled = true
-    network_type                        = "VFIO"
+    network_type                        = "PARAVIRTUALIZED"
     remote_data_volume_type             = "PARAVIRTUALIZED"
+  }
+
+  agent_config {
+    are_all_plugins_disabled = false
+    is_management_disabled   = false
+    is_monitoring_disabled   = false
+
+    plugins_config {
+      name          = "Compute Instance Run Command"
+      desired_state = "ENABLED"
+    }
   }
 
   dynamic "shape_config" {

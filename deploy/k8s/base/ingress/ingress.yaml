@@ -41,6 +41,13 @@ spec:
             name: replay
             port:
               number: 8082
+      - path: /api/observability
+        pathType: Prefix
+        backend:
+          service:
+            name: ws-server
+            port:
+              number: 3000
       - path: /api
         pathType: Prefix
         backend:

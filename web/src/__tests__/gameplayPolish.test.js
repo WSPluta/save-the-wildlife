@@ -11,14 +11,38 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/function generatePlayerId\(\)/);
     expect(script).toMatch(/typeof globalThis\.crypto\.randomUUID === "function"/);
     expect(script).toMatch(/typeof globalThis\.crypto\.getRandomValues === "function"/);
-    expect(script).toMatch(/localStorage\.setItem\("yourId", generatePlayerId\(\)\);/);
+    expect(script).toMatch(/function getOrCreatePlayerId\(\)/);
+    expect(script).toMatch(/function urlHasExplicitJoinIdentity\(\)/);
+    expect(script).toMatch(/sessionStorage\.setItem\(PLAYER_TAB_ID_STORAGE_KEY, next\)/);
+    expect(script).toMatch(/localStorage\.setItem\(PLAYER_ID_STORAGE_KEY, next\)/);
     expect(script).not.toMatch(/generateShortUuid\(\)/);
+  });
+
+  it("exposes local player and gameplay session identity in render_game_to_text", () => {
+    expect(script).toMatch(/playerId:\s*yourId/);
+    expect(script).toMatch(/playerName:\s*currentDisplayName\(\)/);
+    expect(script).toMatch(/roomId:\s*roomId \|\| null/);
+    expect(script).toMatch(/clientSessionId/);
+    expect(script).toMatch(/gameplaySessionId:\s*currentSessionId \|\| null/);
+  });
+
+  it("starts gameplay telemetry when game.on follows an early RUNNING state", () => {
+    expect(script).toMatch(/const shouldStartGameplayTelemetry = gameState !== "RUNNING" \|\| !currentSessionId;/);
+    expect(script).toMatch(/if \(shouldStartGameplayTelemetry\) \{[\s\S]{0,180}resetGameplayTelemetry\(\);[\s\S]{0,120}emitGameplayEvent\("game_started"/);
   });
 
   it("uses the presenter start path for dev/test autostart", () => {
     expect(script).toMatch(/function requestAutoStartMatch\(\)/);
     expect(script).toMatch(/type: "admin\.presenter\.start"/);
     expect(script).not.toMatch(/autoStartMatch[\s\S]{0,180}admin\.claim/);
+  });
+
+  it("does not honor debug URL start flags on public hosts", () => {
+    expect(script).toMatch(/function isLocalDebugHost\(hostname = window\.location\.hostname\)/);
+    expect(script).toMatch(/const localDebugUrlFlagsAllowed = isLocalDebugHost\(url\.hostname\);/);
+    expect(script).toMatch(/localDebugUrlFlagsAllowed && url\.searchParams\.get\("autostart"\) === "1"/);
+    expect(script).toMatch(/localDebugUrlFlagsAllowed && url\.searchParams\.get\("joinRunning"\) === "1"/);
+    expect(script).toMatch(/Public demos must[\s\S]{0,80}presenter\/admin start path/);
   });
 
   it("keeps normal public room entry in the lobby until the presenter countdown", () => {
@@ -77,6 +101,8 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/botRenderMode: BOT_RENDER_MODE,/);
     expect(script).toMatch(/const botProfileEvidence = new Map\(\);/);
     expect(script).toMatch(/function mergeBotProfileEvidence\(id, profile = \{\}\)/);
+    expect(script).toMatch(/function mergePlayerProfileEvidence\(id, profile = \{\}\)/);
+    expect(script).toMatch(/function isMeaningfulPlayerName\(name, id\)/);
     expect(script).toMatch(/function getBotPolicyForPlayer\(id\)/);
     expect(script).toMatch(/rememberBotProfileEvidence\(key, \{/);
     expect(script).toMatch(/botPolicy: traceData\.botPolicy,/);
@@ -150,12 +176,23 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/Object\.entries\(authStates\)\.forEach\(\(\[id, state\]\) =>/);
     expect(script).toMatch(/ensureRemotePlayerVisualForScene\(id, state\);/);
     expect(script).toMatch(/let authStateSeenAt = \{\};/);
+    expect(script).toMatch(/state\.name \|\| state\.isBot \|\| state\.teacher \|\| state\.botPolicy/);
+    expect(script).toMatch(/otherPlayersInfo\[id\] = mergePlayerProfileEvidence\(id,/);
+    expect(script).toMatch(/isMeaningfulPlayerName\(incomingName, playerId\)/);
+    expect(script).toMatch(/isMeaningfulPlayerName\(existingName, playerId\)/);
+    expect(script).toMatch(/refreshNameTagForPlayer\(id\);/);
     expect(script).toMatch(/authStates\[id\] = state;/);
     expect(script).toMatch(/authStateSeenAt\[id\] = receivedAt;/);
     expect(script).toMatch(/REMOTE_AUTH_STATE_STALE_MS = 3000/);
     expect(script).toMatch(/const REMOTE_PLAYER_POSITION_SMOOTHING = 7\.5;/);
     expect(script).toMatch(/const REMOTE_PLAYER_ROTATION_SMOOTHING = 8\.5;/);
     expect(script).toMatch(/const REMOTE_PLAYER_FROZEN_SMOOTHING = 3\.5;/);
+    expect(script).toMatch(/const REMOTE_PLAYER_LOCAL_SUPPRESSION_RADIUS = 1\.45;/);
+    expect(script).toMatch(/function remoteDistanceToLocal2d\(x, z\)/);
+    expect(script).toMatch(/function shouldSuppressRemoteNearLocal\(id, positionLike\)/);
+    expect(script).toMatch(/function setRemoteLocalSuppression\(group, suppressed, distance = null\)/);
+    expect(script).toMatch(/setRemoteLocalSuppression\(m, suppressNearLocal, suppressionDistance\);/);
+    expect(script).toMatch(/if \(!suppressNearLocal\) addTrailPoint\(id, m\.position\);/);
     expect(script).toMatch(/const CANONICAL_BOAT_ACCELERATION = 6;/);
     expect(script).toMatch(/const CANONICAL_BOAT_BRAKE = 1\.8;/);
     expect(script).toMatch(/const CANONICAL_BOAT_MAX_SPEED = 3;/);
@@ -206,6 +243,11 @@ describe("gameplay polish regressions", () => {
 
   it("replaces stale room items when authoritative items arrive", () => {
     expect(script).toMatch(/function syncAuthoritativeItems\(nextItems = \{\}\)/);
+    expect(script).toMatch(/function normalizeAuthoritativeItemsPayload\(nextItems = \{\}\)/);
+    expect(script).toMatch(/const currentRoom = normalizeRoomId\(roomId\);/);
+    expect(script).toMatch(/if \(payloadRoom && currentRoom && payloadRoom !== currentRoom\) return;/);
+    expect(script).toMatch(/if \(!payloadRoom && currentRoom && itemRooms\.size > 0 && !itemRooms\.has\(currentRoom\)\)/);
+    expect(script).toMatch(/if \(currentRoom && itemRoom && itemRoom !== currentRoom\) continue;/);
     expect(script).toMatch(/const nextIds = new Set\(Object\.keys\(scopedItems\)\);/);
     expect(script).toMatch(/for \(const itemId of Object\.keys\(items \|\| \{\}\)\)/);
     expect(script).toMatch(/removeItemFromScene\(itemId\);/);
@@ -242,8 +284,11 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/object3d\.userData\.floatAmplitude = TURTLE_BOB_AMPLITUDE_MIN \+ Math\.random\(\) \* \(TURTLE_BOB_AMPLITUDE_MAX - TURTLE_BOB_AMPLITUDE_MIN\);/);
     expect(script).toMatch(/resetTurtleFloatState\(group\);/);
     expect(script).toMatch(/resetTurtleFloatState\(mesh\);/);
-    expect(script).toMatch(/turtleSamples = Object\.values\(itemMeshes \|\| \{\}\)/);
-    expect(script).toMatch(/turtlesVisible: turtleSamples\.length,/);
+    expect(script).toMatch(/const turtleWorldMeshes = Object\.values\(itemMeshes \|\| \{\}\)/);
+    expect(script).toMatch(/const turtleCameraVisibleCount = turtleWorldMeshes/);
+    expect(script).toMatch(/cameraVisible: mesh\.visible !== false,/);
+    expect(script).toMatch(/turtlesVisible: turtleWorldMeshes\.length,/);
+    expect(script).toMatch(/turtlesCameraVisible: turtleCameraVisibleCount,/);
     expect(script).toMatch(/waterColor: ARCADE_ENVIRONMENT\.waterColor,/);
   });
 
@@ -287,6 +332,19 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/pickups: latestPickupDebug,/);
     expect(script).toMatch(/if \(key === yourId\) \{/);
     expect(script).toMatch(/try \{ disableReflectionForSprite\(sprite\); \} catch \(_\) \{\}/);
+    expect(script).toMatch(/const remotePlayerEntriesHumanFirst = remotePlayerEntries[\s\S]{0,180}Number\(isBotPlayerId\(a\)\) - Number\(isBotPlayerId\(b\)\)/);
+    expect(script).toMatch(/const authRemoteSamples = Object\.entries\(authStates \|\| \{\}\)/);
+    expect(script).toMatch(/const buildRemoteSample = \(\{ id, name, x, y = 0, z, rotY = 0, isBot = false, mesh = null, source \}\) =>/);
+    expect(script).toMatch(/visualSuppressed,/);
+    expect(script).toMatch(/distanceToLocal:/);
+    expect(script).toMatch(/source: "auth",/);
+    expect(script).toMatch(/const remotePlayerSamples = \[\.\.\.authRemoteSamples, \.\.\.meshRemoteSamples\]\.slice\(0, 8\);/);
+  });
+
+  it("skips optional engine audio on Safari-family WebKit without noisy decode warnings", () => {
+    expect(script).toMatch(/const skipEngineAudio = \/AppleWebKit\/i\.test\(ua\) && !\/\(Chrome\|CriOS\|Chromium\|Edg\|OPR\|Firefox\)\/i\.test\(ua\);/);
+    expect(script).toContain('audioLoader.loadAsync("/assets/mixkit-motorboat-on-the-sea-1183.m4v")');
+    expect(script).not.toContain("Audio load failed; continuing without engine sound");
   });
 
   it("uses a mobile-aware follow camera without changing the gameplay root", () => {
@@ -315,12 +373,22 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/powerupBadge\.position\.set\(0, layout\.powerupY, 0\);/);
     expect(script).toMatch(/statusBadge\.scale\.set\(layout\.statusScale, layout\.statusScale, 1\);/);
     expect(script).toMatch(/sprite\.userData\.text = text \|\| "";/);
-    expect(script).toMatch(/const maxWidth = size \* 0\.84;/);
-    expect(script).toMatch(/while \(fontSize >= 24\)/);
-    expect(script).toMatch(/measuredWidth = ctx\.measureText\(text\)\.width;\s*sprite\.userData\.fontSize = fontSize;/);
+    expect(script).toMatch(/const EMOJI_BADGE_TEXTURE_SIZE = 192;/);
+    expect(script).toMatch(/const EMOJI_BADGE_SAFE_WIDTH_RATIO = 0\.68;/);
+    expect(script).toMatch(/const EMOJI_BADGE_COMPACT_MIN_COUNT = 3;/);
+    expect(script).toMatch(/canvas\.width = EMOJI_BADGE_TEXTURE_SIZE;/);
+    expect(script).toMatch(/function splitBadgeGraphemes\(text\)/);
+    expect(script).toMatch(/function compactBadgeText\(text, ctx, maxWidth, fontSize\)/);
+    expect(script).toMatch(/const compact = `\$\{first\}\+\$\{graphemes\.length - 1\}`;/);
+    expect(script).toMatch(/const maxWidth = size \* EMOJI_BADGE_SAFE_WIDTH_RATIO;/);
+    expect(script).toMatch(/while \(fontSize >= minFontSize\)/);
+    expect(script).toMatch(/measuredWidth = ctx\.measureText\(displayText\)\.width;/);
+    expect(script).toMatch(/displayText = compactBadgeText\(text, ctx, maxWidth, Math\.max\(fontSize, minFontSize\)\);/);
+    expect(script).toMatch(/sprite\.userData\.renderedText = displayText;/);
     expect(script).toMatch(/sprite\.userData\.fontSize = fontSize;/);
     expect(script).toMatch(/sprite\.userData\.textWidthRatio = measuredWidth > 0 \? measuredWidth \/ size : 0;/);
     expect(script).toMatch(/function getBadgeDebug\(sprite\)/);
+    expect(script).toMatch(/renderedText: String\(sprite\.userData\?\.renderedText \|\| ""\),/);
     expect(script).toMatch(/textWidthRatio: Number\(\(sprite\.userData\?\.textWidthRatio \|\| 0\)\.toFixed\(3\)\),/);
     expect(script).toMatch(/function setVisualQaBadge\(sprite, text\)/);
     expect(script).toMatch(/function refreshVisualQaBadges\(\)/);

@@ -1489,3 +1489,131 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - `/usr/bin/time -lp node scripts/lobby-admin-timer-probe.mjs --base-url http://localhost:3100 --output-dir .codex_tmp/qa-lobby-admin-timer-local-direct-current --timeout-ms 120000 --pre-start-ms 3000 --wait-game-over` passed non-admin rejection, duplicate-start rejection, one shared countdown, canonical 60s timer, and synchronized game end; max RSS 84344832.
   - Bumped deploy image versions for the P0 rollout: web `0.0.85`, ws-server `0.0.53`.
   - Next required step remains production deployment through OCI DevOps, followed by public compute/socket/browser verification against `http://130.162.174.167`.
+
+2026-06-27 public P0 closure:
+  - Deployed final public images: `web:0.0.89` and `ws-server:0.0.57`. Public root serves `bundle.4af934ba7cb5e05c530b.js`. Confirmed no active temporary `codex-temp-ocir-push` IAM policies remain after OCIR pushes.
+  - Web changes after the first `web:0.0.87` rollout:
+    - Added sticky human profile merging in `web/src/script.js` so later `player.state` packets carrying raw ids cannot overwrite friendly player names. This fixed the browser sync probe where auth states existed but remotes could not be matched by name.
+    - Corrected keyboard steering sign so A/left steers left and D/right steers right while leaving mobile joystick right as positive steer.
+    - Updated QA probes to ignore generic browser console duplicates of known optional replay-service 500s while still failing concrete non-replay HTTP 5xx responses.
+  - Local validation:
+    - `node --check web/src/script.js` passed.
+    - `npm --prefix web run test:unit` passed: 10 files, 64 tests.
+    - `npm --prefix web run build` passed with existing asset-size warnings; final bundle `bundle.4af934ba7cb5e05c530b.js`.
+  - Public P0 verification:
+    - STWL-QA-012 cross-pod lifecycle/collision authority passed: `/usr/bin/time -lp node scripts/server-affinity-probe.mjs --base-url http://130.162.174.167 --clients 12 --output-dir .codex_tmp/qa-server-affinity-public-after-web089 --timeout-ms 120000`. Room `QA-AFFINITY-409810`, 12 clients across four ws-server IDs, all received `game.on`, all accepted trash collisions, `not_running=0`. Compute: `real=27.33s`, `user=1.39s`, `sys=0.63s`, max RSS `91635712`, peak memory footprint `51860856`.
+    - STWL-QA-007 admin/start/timer authority passed: `/usr/bin/time -lp node scripts/lobby-admin-timer-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-lobby-admin-timer-public-after-web089 --timeout-ms 130000 --pre-start-ms 3000 --wait-game-over`. Room `QA-TIMER-410042`, non-admin rejected, duplicate start rejected, canonical 60s timer, both clients observed match end. Compute: `real=79.69s`, `user=0.80s`, `sys=0.21s`, max RSS `73891840`, peak memory footprint `35229320`.
+    - STWL-QA-001 human multiplayer sync passed: `/usr/bin/time -lp node scripts/multiplayer-cross-browser-sync-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-multiplayer-cross-browser-sync-public-after-web089 --drive-ms 3500 --timeout-ms 150000`. Room `QA-MIX-327781`, Chrome desktop/WebKit desktop/Chrome mobile all saw named human remotes, WebKit/mobile rendered moving Chrome driver, frame budgets passed. Compute: `real=29.52s`, `user=22.58s`, `sys=8.39s`, max RSS `318291968`, peak memory footprint `156829120`.
+    - Strict human spawn/overlap passed: `/usr/bin/time -lp node scripts/human-spawn-overlap-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-human-spawn-overlap-public-after-web089 --timeout-ms 130000 --sample-ms 5000`. Room `QA-SPAWN-372283`, four Chrome/WebKit desktop/mobile clients exposed all expected human remotes, no visible overlap, no browser errors. Compute: `real=21.18s`, `user=18.90s`, `sys=7.13s`, max RSS `302907392`, peak memory footprint `150390520`.
+    - User-visible collision/collection path passed: `/usr/bin/time -lp node scripts/browser-collision-ui-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-browser-collision-ui-public-after-web089 --engines chrome,webkit --include-mobile --drive-ms 22000 --timeout-ms 180000`. Chrome desktop/mobile and WebKit desktop/mobile all waited for presenter start, reached `RUNNING`, collected browser-driven trash, changed score `0->1`, reduced trash count, showed `lastResult.ok=true`, had no browser errors, and stayed within frame budgets. Compute: `real=63.34s`, `user=18.49s`, `sys=7.18s`, max RSS `315359232`, peak memory footprint `140739816`.
+  - Updated `qa/hardening-tickets.md`: P0 blockers are now `0 open`; STWL-QA-001, STWL-QA-007, and STWL-QA-012 are `Verified fixed on public deployment`; STWL-QA-010 browser item interactions is also `Verified fixed on public deployment`.
+  - Remaining non-P0 caveats for demo readiness: PAF provenance/session context, observability canonicalization, stale-room dashboard hygiene, and presenter proof polish.
+
+2026-06-27 STWL-QA-009 public autostart hardening:
+  - Fixed frontend public start-flow bypass in `web/src/script.js`: `autostart=1` and `joinRunning=1` are now honored only on local/private debug hosts via `isLocalDebugHost()`. Public demos must use presenter/admin start.
+  - Updated `scripts/mobile-flow-probe.mjs`: it now proves public `autostart=1` stays in lobby, then starts the same room through `admin.presenter.start` to test mobile joystick portrait/landscape behavior.
+  - Validation before deploy:
+    - `/usr/bin/time -lp node --check web/src/script.js && node --check scripts/mobile-flow-probe.mjs` passed.
+    - `/usr/bin/time -lp npm --prefix web run test:unit -- --run src/__tests__/gameplayPolish.test.js src/__tests__/mobileControls.test.js` passed: 2 files, 23 tests.
+    - `/usr/bin/time -lp npm --prefix web run test:unit` passed: 10 files, 65 tests.
+    - `/usr/bin/time -lp npm --prefix web run build` passed with existing asset-size warnings; bundle `bundle.d7bcf02002c4d92bf99b.js`.
+  - Deployed `web:0.0.90` to public OKE; `ws-server` remains `0.0.57`. Public root serves `bundle.d7bcf02002c4d92bf99b.js`. Confirmed no active temporary `codex-temp-ocir-push` IAM policies remain.
+  - Public verification:
+    - `/usr/bin/time -lp node scripts/mobile-flow-probe.mjs --base-url http://130.162.174.167 --output-dir .codex_tmp/qa-mobile-flow-public-after-web090 --timeout-ms 150000` passed.
+    - Result: no-autostart room stayed `WAITING`; public `?autostart=1` also stayed `WAITING`; presenter start then reached `RUNNING`; joystick visible in portrait/landscape; joystick did not overlap HUD; mobile boat moved `7.973` world units; release decelerated from `2.169` to `1.379`; no browser errors.
+    - Compute usage: `real=34.21s`, `user=152.27s`, `sys=117.49s`, max RSS `563920896`, peak memory footprint `111178568`.
+    - Evidence: `.codex_tmp/qa-mobile-flow-public-after-web090/latest.md`, `.codex_tmp/qa-mobile-flow-public-after-web090/latest.json`, `.codex_tmp/qa-mobile-flow-public-after-web090/mobile-autostart-blocked.png`, and `.codex_tmp/qa-mobile-flow-public-after-web090/mobile-presenter-start-running.png`.
+  - Updated `qa/hardening-tickets.md`: STWL-QA-009 is now `Verified fixed on public deployment`; P1 blockers reduced to 3.
+
+2026-06-27 address-all-P0 public reconfirmation:
+  - Confirmed public deployment is serving `web:0.0.90` (`bundle.d7bcf02002c4d92bf99b.js`) and `ws-server:0.0.57`.
+  - Re-ran all P0 public gates against `http://130.162.174.167` with `/usr/bin/time -lp` compute evidence.
+  - STWL-QA-012 server affinity/collision authority passed: `.codex_tmp/qa-server-affinity-public-address-all-p0-20260627/latest.md`. Room `QA-AFFINITY-262579`, 12 clients across four ws-server IDs, all received `game.on`, all accepted valid trash collisions, `not_running=0`. Compute: `real=29.29s`, max RSS `90390528`.
+  - STWL-QA-007 lobby/admin/timer authority passed: `.codex_tmp/qa-lobby-admin-timer-public-address-all-p0-20260627/latest.md`. Room `QA-TIMER-300321`, non-admin rejected, admin start accepted, duplicate start rejected, canonical 60s timer, both clients observed match end. Compute: `real=76.20s`, max RSS `95158272`.
+  - STWL-QA-001 cross-browser human sync passed: `.codex_tmp/qa-multiplayer-cross-browser-sync-public-address-all-p0-20260627/latest.md`. Room `QA-MIX-386748`, Chrome desktop/WebKit desktop/Chrome mobile reached `RUNNING`, saw named human remotes, and rendered the moving driver. Compute: `real=30.06s`, max RSS `315506688`.
+  - Also re-ran user-visible browser collection regression guard: `.codex_tmp/qa-browser-collision-ui-public-address-all-p0-20260627/latest.md`. Chrome desktop/mobile and WebKit desktop/mobile all collected browser-driven trash with `lastResult.ok=true` and healthy frame budgets. Compute: `real=71.02s`, max RSS `319930368`.
+  - Updated `qa/hardening-tickets.md` top summary, latest P0 rerun section, and evidence index. Current P0 blocker count remains `0 open`.
+
+2026-06-27 final public P0-plus closure after web092/server059/paf028:
+  - Current public OKE images verified by `kubectl`: `web:0.0.92` ready `1/1`, `ws-server:0.0.59` ready `4/4`, `private-agent-factory:0.0.28` ready `4/4`.
+  - Public root serves `bundle.df83338cd086c323acc0.js`.
+  - No active temporary OCIR push policies remain; OCI IAM policy query returned `[]`.
+  - Final public browser collection matrix passed: `.codex_tmp/qa-browser-collision-ui-after-web092-server059-20260627/latest.md`. Chrome desktop/mobile and WebKit desktop/mobile all reached `RUNNING`, collected browser-driven trash, changed score `0->1`, had `lastResult.ok=true`, and stayed within frame budgets. Compute: `real=56.75s`, max RSS `294993920`.
+  - Final public server-affinity/collision authority passed: `.codex_tmp/qa-server-affinity-after-web092-server059-20260627/latest.md`. Room `QA-AFFINITY-437460`, 12 clients across four ws-server IDs, all received `game.on`, all accepted trash collisions, `not_running=0`.
+  - Final public lobby/admin/timer authority passed: `.codex_tmp/qa-lobby-admin-timer-after-web092-server059-20260627/latest.md`. Room `QA-TIMER-437459`, non-admin rejected, admin start accepted, duplicate rejected, canonical 60-second timer, admin end accepted.
+  - Final public room isolation/reconnect passed: `.codex_tmp/qa-room-isolation-after-web092-server059-20260627/latest.md`. No default-room item snapshots leaked before target join; post-join item snapshots were room-scoped; room events stayed isolated; reconnect rehydrated running state.
+  - Final public cross-browser multiplayer sync passed: `.codex_tmp/qa-multiplayer-cross-browser-sync-after-web092-server059-20260627/latest.md`. Chrome desktop, WebKit desktop, and Chrome mobile all saw named human remotes and rendered the moving driver.
+  - Final public PAF context/session matrix passed: `.codex_tmp/qa-browser-paf-context-matrix-after-web092-server059-20260627/latest.md`. Chrome desktop, WebKit desktop, Chrome mobile, and WebKit mobile each had unique `commentary.ready` session/player metadata; `/paf/api/context` included browser session events plus `game_over`; direct `/paf/api/commentary` returned bounded live Select AI lines. Compute: `real=91.01s`, max RSS `341082112`.
+  - Updated `qa/hardening-tickets.md`: P0 blockers remain `0 open`; STWL-QA-004 and STWL-QA-019 are now verified fixed on public deployment; P1 blockers are down to `2` (`STWL-QA-002` PAF Canvas/GenAI/trace provenance and `STWL-QA-014` observability canonicalization).
+
+2026-06-27 address-all-P0 post-rollout tolerance fix:
+  - Reconfirmed formal P0s were already marked public-verified, then found a demo-critical real-browser collision regression in a fresh Chrome/WebKit desktop/mobile run.
+  - Failure detail: WebKit desktop reached `RUNNING` and drove to a trash item, but server validation rejected with `too_far`, measured `distance=2.449` versus `allowedRadius=2.4`.
+  - Implemented conservative collision tolerance hardening:
+    - `server/lib/gameLogic.js`: `DEFAULT_PICKUP_TOUCH_FORGIVENESS` from `0.2` to `0.3`.
+    - `deploy/k8s/base/ws-server/env_server_template`: `PICKUP_TOUCH_FORGIVENESS=0.3`.
+    - `server/test/gameLogic.test.js`: regression now covers the observed `2.449` WebKit near-miss while still rejecting `2.75`.
+  - Local validation:
+    - `node --check server/server.js && node --check server/lib/gameLogic.js` passed.
+    - `/usr/bin/time -lp npm --prefix server run test:unit -- --run test/gameLogic.test.js test/metrics.test.js` passed: 50 tests; max RSS `127270912`.
+    - `/usr/bin/time -lp npm --prefix server run test:unit` passed: 80 tests; max RSS `139608064`.
+  - Public rollout:
+    - Applied `kubectl set env deployment/ws-server PICKUP_TOUCH_FORGIVENESS=0.3`.
+    - `kubectl rollout status deployment/ws-server --timeout=240s` succeeded; public deployment remained `ws-server:0.0.59`, ready `4/4`.
+    - Rollout compute: `real=140.38s`, max RSS `79216640`.
+  - Public verification after rollout:
+    - Browser collision matrix passed: `.codex_tmp/qa-browser-collision-ui-address-all-p0-after-pickup-tolerance-20260627/latest.md`. Chrome desktop/mobile and WebKit desktop/mobile all collected browser-driven trash with `lastResult.ok=true`, score `0->1`, and healthy frames. Compute: `real=56.51s`, max RSS `290439168`.
+    - STWL-QA-012 server affinity passed: `.codex_tmp/qa-server-affinity-after-pickup-tolerance-20260627/latest.md`. Room `QA-AFFINITY-941901`, 12 clients across four ws-server IDs, all accepted trash collisions, `not_running=0`. Compute: `real=28.26s`, max RSS `89636864`.
+    - STWL-QA-007 lobby/admin/timer passed: `.codex_tmp/qa-lobby-admin-timer-after-pickup-tolerance-20260627/latest.md`. Room `QA-TIMER-941906`, non-admin rejected, duplicate start rejected, canonical 60s timer. Compute: `real=20.60s`, max RSS `97681408`.
+    - STWL-QA-001 cross-browser multiplayer sync passed: `.codex_tmp/qa-multiplayer-cross-browser-sync-after-pickup-tolerance-20260627/latest.md`. Room `QA-MIX-985373`, Chrome desktop/WebKit desktop/Chrome mobile saw named human remotes and rendered the moving driver. Compute: `real=30.26s`, max RSS `321175552`.
+    - PAF/browser context matrix passed: `.codex_tmp/qa-browser-paf-context-matrix-after-pickup-tolerance-20260627/latest.md`. Four browser sessions reached post-game, received final commentary, had unique session/player metadata, context included `game_over`, and direct Select AI commentary stayed bounded. Compute: `real=90.89s`, max RSS `323829760`.
+  - Updated `qa/hardening-tickets.md`: latest public rerun now reflects `PICKUP_TOUCH_FORGIVENESS=0.3`; P0 blockers remain `0 open`.
+  - Remaining non-P0 caveats: STWL-QA-002 PAF Canvas/GenAI/trace provenance and STWL-QA-014 admin observability canonicalization.
+
+2026-06-27 final address-all-P0 public reconfirmation:
+  - Re-ran the public P0 gates against `http://130.162.174.167` after confirming deployed images `web:0.0.92`, `ws-server:0.0.59`, and `private-agent-factory:0.0.28`; `ws-server` still has `GAME_DURATION_IN_SECONDS=60`, `COLLISION_VALIDATE_RADIUS=3.6`, and `PICKUP_TOUCH_FORGIVENESS=0.3`.
+  - STWL-QA-012 passed: `.codex_tmp/qa-server-affinity-public-address-all-p0-final-20260627/latest.md`; room `QA-AFFINITY-531763`, 12 clients across four ws-server IDs, all accepted trash collisions, `not_running=0`. Compute: `real=28.31s`, max RSS `86671360`.
+  - STWL-QA-007 passed: `.codex_tmp/qa-lobby-admin-timer-public-address-all-p0-final-20260627/latest.md`; room `QA-TIMER-531763`, non-admin rejected, duplicate start rejected, canonical 60s timer. Compute: `real=23.16s`, max RSS `76382208`.
+  - STWL-QA-001 passed: `.codex_tmp/qa-multiplayer-cross-browser-sync-public-address-all-p0-final-20260627/latest.md`; room `QA-MIX-570456`, Chrome desktop/WebKit desktop/Chrome mobile all saw named human remotes and rendered the moving driver. Compute: `real=30.98s`, max RSS `320307200`.
+  - Browser collection/collision guard passed: `.codex_tmp/qa-browser-collision-ui-public-address-all-p0-final-20260627/latest.md`; Chrome desktop/mobile and WebKit desktop/mobile collected trash with score `0->1`, `lastResult.ok=true`, joystick visible on mobile, and healthy frame budgets. Compute: `real=58.42s`, max RSS `291848192`.
+  - Updated `qa/hardening-tickets.md`: latest focused rerun now reflects 18:25-18:28 CEST; P0 blocker count remains `0 open`.
+
+2026-06-27 final web095/server061 P0 and observability closure:
+  - Public deployment current state: `web:0.0.95`, `ws-server:0.0.61`, `private-agent-factory:0.0.28`; public root serves `bundle.22476a183c6f37025a0c.js`.
+  - Confirmed no active temporary OCIR push policies remain; corrected tenancy OCID query returned `[]`.
+  - P0 gates stayed green on the public URL after the observability rollout:
+    - STWL-QA-012 server affinity/collision authority passed: `.codex_tmp/qa-server-affinity-after-observability-web095-server061-20260627/latest.md`; room `QA-AFFINITY-654943`, 12 clients across four ws-server IDs, all accepted trash collisions, `not_running=0`. Compute: `real=23.07s`, max RSS `83984384`.
+    - STWL-QA-007 lobby/admin/timer authority passed: `.codex_tmp/qa-lobby-admin-timer-after-observability-web095-server061-20260627/latest.md`; room `QA-TIMER-654943`, non-admin rejected, duplicate start rejected, canonical 60s timer. Compute: `real=19.26s`, max RSS `75350016`.
+    - STWL-QA-001 Chrome/WebKit/mobile multiplayer sync passed: `.codex_tmp/qa-multiplayer-cross-browser-sync-after-observability-web095-server061-20260627/latest.md`; room `QA-MIX-654948`, all clients saw named human remotes and rendered the moving driver. Compute: `real=29.57s`, max RSS `297549824`.
+    - STWL-QA-010 browser collection/collision guard passed: `.codex_tmp/qa-browser-collision-ui-after-observability-web095-server061-20260627/latest.md`; Chrome desktop/mobile and WebKit desktop/mobile reached `RUNNING`, produced `lastResult.ok=true`, and stayed within frame budgets. Compute: `real=55.11s`, max RSS `291241984`.
+  - Canonical observability is now public-verified:
+    - Direct `/api/observability?room=ROOM-0001` returned `ok=true`, `source=canonical-observability`, and `mode=bounded-map-size` in `real=0.26s`.
+    - Admin stability probe passed: `.codex_tmp/qa-admin-observability-stability-after-web095-server061-20260627/latest.md`; DOM rooms `[1]`, DOM items `[13636]`, canonical rooms `[1]`, canonical selected-room items `[13636]`, zero DOM/canonical deltas, and no stale active QA rooms. Compute: `real=40.39s`, max RSS `223313920`.
+    - `qa/hardening-tickets.md` now marks STWL-QA-013 and STWL-QA-014 verified fixed on public deployment.
+  - Non-P0 caveat still open: `scripts/admin-ui-probe.mjs` failed only the Model AI health-proof elements (`adminAiRuntime`, `adminAiHandoff`, `adminAiProofGate`; PAF health had `canvasConfigured=true`, `indbAgentEnabled=true`, `genaiConfigured=false`). Keep this under STWL-QA-008/STWL-QA-002, not under gameplay P0.
+
+2026-06-27 address-all-P0 fresh public rerun:
+  - Re-ran all public P0 gates again at 19:04-19:09 CEST against `http://130.162.174.167` on `web:0.0.95` / `ws-server:0.0.61`.
+  - STWL-QA-012 passed: `.codex_tmp/qa-server-affinity-address-all-p0-rerun-web095-server061-20260627/latest.md`; room `QA-AFFINITY-989777`, 12 clients across four ws-server IDs, all accepted trash collisions, `not_running=0`. Compute: `real=23.53s`, max RSS `84738048`.
+  - STWL-QA-007 passed: `.codex_tmp/qa-lobby-admin-timer-address-all-p0-rerun-web095-server061-20260627/latest.md`; room `QA-TIMER-021701`, non-admin rejected, duplicate start rejected, canonical 60s timer. Compute: `real=20.21s`, max RSS `95633408`.
+  - STWL-QA-001 passed: `.codex_tmp/qa-multiplayer-cross-browser-sync-address-all-p0-rerun-web095-server061-20260627/latest.md`; room `QA-MIX-046557`, Chrome desktop/WebKit desktop/Chrome mobile all saw named human remotes and rendered the moving driver. Compute: `real=29.30s`, max RSS `298352640`.
+  - STWL-QA-010 passed: `.codex_tmp/qa-browser-collision-ui-address-all-p0-rerun-web095-server061-20260627/latest.md`; Chrome desktop/mobile and WebKit desktop/mobile all collected trash, score changed `0->1`, `lastResult.ok=true`, and frame budgets passed. Compute: `real=53.99s`, max RSS `293257216`.
+  - Scoped `git diff --check -- qa/hardening-tickets.md progress.md` passed after updating the ledger.
+
+2026-06-27 address-all-P0 live public reconfirmation plus PAF boundary:
+  - Removed leftover temporary OCI IAM push policy `codex-temp-ocir-push-web096-20260627191647`; follow-up policy query returned `[]`.
+  - Public root still serves `bundle.22476a183c6f37025a0c.js`; PAF `/paf/healthz` reports `0.0.28`, Canvas configured, in-db Select AI enabled, `genai_configured=false`, route mode `primary`, and trace persistence off.
+  - STWL-QA-012 passed for the original cross-replica `not_running` blocker: `.codex_tmp/qa-server-affinity-live-address-all-p0-20260627/latest.md`; room `QA-AFFINITY-776279`, 12 clients across four ws-server IDs, all received `game.on`, `not_running=0`. Eleven synthetic collisions accepted; one returned `missing_player_position`, tracked as non-P0 because real browser collection passed. Compute: `real=24.01s`, max RSS `87441408`.
+  - STWL-QA-007 passed: `.codex_tmp/qa-lobby-admin-timer-live-address-all-p0-20260627/latest.md`; room `QA-TIMER-810293`, non-admin rejected, duplicate start rejected, canonical 60s timer. Compute: `real=20.23s`, max RSS `73023488`.
+  - STWL-QA-001 passed: `.codex_tmp/qa-multiplayer-cross-browser-sync-live-address-all-p0-20260627/latest.md`; room `QA-MIX-840278`, Chrome desktop/WebKit desktop/Chrome mobile all saw named human remotes and rendered the moving driver. Compute: `real=30.99s`, max RSS `326189056`.
+  - STWL-QA-010 browser collection/collision guard passed: `.codex_tmp/qa-browser-collision-ui-live-address-all-p0-20260627/latest.md`; Chrome desktop/mobile and WebKit desktop/mobile collected trash, score changed `0->1`, `lastResult.ok=true`, and frame budgets passed. Compute: `real=53.00s`, max RSS `302923776`.
+  - PAF commentary smoke is live but still caveated: `.codex_tmp/qa-conference-preflight-live-address-all-p0-20260627/latest.md` returned `ready_with_caveats` in `real=1.33s`; `.codex_tmp/qa-admin-commentary-multiuser-live-address-all-p0-20260627/latest.md` passed in room `QA-ACM-960763`, grouped three live `source=select-ai` lines in `/admin/ai-learning`, and avoided deterministic fallback. Compute: `real=7.57s`, max RSS `244826112`.
+  - Updated `qa/hardening-tickets.md`: latest focused rerun now reflects 19:18-19:22 CEST; P0 blockers remain `0 open`; STWL-QA-002 remains an honest P1 caveat for Canvas-produced-line, GenAI/candidate route, and trace persistence proof.
+
+2026-06-27 address-all-P0 current public rerun:
+  - Re-ran the four public P0 gates against `http://130.162.174.167` at 19:26-19:28 CEST. Public root still serves `bundle.22476a183c6f37025a0c.js`; no code deployment was needed for this rerun.
+  - STWL-QA-012 passed: `.codex_tmp/qa-server-affinity-address-all-p0-current-20260627/latest.md`; room `QA-AFFINITY-237189`, 12 clients across four ws-server IDs, all accepted valid trash collisions, `not_running=0`. Compute: `real=24.25s`, max RSS `88014848`.
+  - STWL-QA-007 passed: `.codex_tmp/qa-lobby-admin-timer-address-all-p0-current-20260627/latest.md`; room `QA-TIMER-237199`, non-admin rejected, duplicate start rejected, canonical 60-second timer. Compute: `real=20.46s`, max RSS `73138176`.
+  - STWL-QA-001 passed: `.codex_tmp/qa-multiplayer-cross-browser-sync-address-all-p0-current-20260627/latest.md`; room `QA-MIX-237172`, Chrome desktop/WebKit desktop/Chrome mobile reached `RUNNING`, saw named human remotes, rendered moving driver, and passed browser/frame checks. Compute: `real=31.71s`, max RSS `302628864`.
+  - STWL-QA-010 passed: `.codex_tmp/qa-browser-collision-ui-address-all-p0-current-20260627/latest.md`; Chrome desktop/mobile and WebKit desktop/mobile all collected browser-driven trash, score changed `0->1`, `lastResult.ok=true`, mobile joystick visible where expected, and frame budgets passed. Compute: `real=51.52s`, max RSS `288260096`.
+  - Updated `qa/hardening-tickets.md`: latest focused rerun now reflects 19:26-19:28 CEST; P0 blockers remain `0 open`.

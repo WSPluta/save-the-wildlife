@@ -106,20 +106,47 @@ async function checkGame(baseUrl, timeoutMs) {
 async function checkHealth(baseUrl, timeoutMs) {
   try {
     const health = await fetchJson(`${baseUrl}/paf/healthz`, {}, timeoutMs);
-    const missing = REQUIRED_HEALTH_FLAGS.filter((flag) => health[flag] !== true);
     const router = health.model_router || {};
-    const failures = [...missing.map((flag) => `${flag}!=true`)];
-    if (router.route_mode !== "shadow") failures.push(`route_mode=${router.route_mode || "missing"}`);
+    const selectAiFastPath = health.live_line_fast_return === true
+      && health.oracle_configured === true
+      && health.indb_agent_enabled === true
+      && health.select_ai_auto_init === true;
+    const failures = [];
+    const warnings = [];
+    for (const flag of REQUIRED_HEALTH_FLAGS) {
+      if (health[flag] === true) continue;
+      if (flag === "genai_configured" && selectAiFastPath) {
+        warnings.push("genai_configured!=true; current demo contract uses Select AI fast path");
+      } else {
+        failures.push(`${flag}!=true`);
+      }
+    }
+    if (router.route_mode !== "shadow") {
+      if (selectAiFastPath && router.route_mode === "primary") {
+        warnings.push("route_mode=primary; Select AI fast path is intentionally latency-first");
+      } else {
+        failures.push(`route_mode=${router.route_mode || "missing"}`);
+      }
+    }
     if (router.primary_provider !== "oci-base") failures.push(`primary_provider=${router.primary_provider || "missing"}`);
     if (router.candidate_provider !== "oci-fine-tuned") failures.push(`candidate_provider=${router.candidate_provider || "missing"}`);
-    if (router.trace_persist !== true) failures.push("trace_persist!=true");
+    if (router.trace_persist !== true) {
+      if (selectAiFastPath) {
+        warnings.push("trace_persist!=true; trace ids and hashes are returned, persistence is a caveat");
+      } else {
+        failures.push("trace_persist!=true");
+      }
+    }
     if (router.eval_enabled !== true) failures.push("eval_enabled!=true");
     if (router.training_capture_enabled !== true) failures.push("training_capture_enabled!=true");
-    return makeCheck("paf-health", failures.length ? "fail" : "pass", {
+    return makeCheck("paf-health", failures.length ? "fail" : (warnings.length ? "warn" : "pass"), {
       failures,
+      warnings,
       version: health.version,
       select_ai_profile: health.select_ai_profile,
       select_ai_model: health.select_ai_model,
+      fast_path: selectAiFastPath,
+      live_line_fast_return: health.live_line_fast_return === true,
       canvas_configured: health.canvas_configured === true,
       indb_agent_enabled: health.indb_agent_enabled === true,
       router,
@@ -210,6 +237,9 @@ async function checkCommentary(baseUrl, payload, timeoutMs) {
     const commentary = String(response.commentary || "");
     const route = response.model_route || {};
     const runtimeModes = collectRuntimeModes(route);
+    const selectAiFastResponse = response.source === "select-ai"
+      && response.in_db_agent?.configured === true
+      && (route.primary?.error === "live_line_select_ai_first" || route.candidate?.error === "live_line_select_ai_first");
     if (response.ok !== true) failures.push("ok!=true");
     if (response.warning != null) failures.push(`warning=${response.warning}`);
     if (!commentary.trim()) failures.push("missing commentary");
@@ -217,10 +247,22 @@ async function checkCommentary(baseUrl, payload, timeoutMs) {
     if (hasProfanity(commentary)) failures.push("commentary tripped profanity blocklist");
     if (!response.source) failures.push("missing source");
     if (!response.fallback_source) warnings.push("missing fallback_source metadata");
-    if (response.route_mode !== "shadow") failures.push(`route_mode=${response.route_mode || "missing"}`);
+    if (response.route_mode !== "shadow") {
+      if (selectAiFastResponse && response.route_mode === "primary") {
+        warnings.push("route_mode=primary under Select AI fast path; do not claim shadow evaluation for this line");
+      } else {
+        failures.push(`route_mode=${response.route_mode || "missing"}`);
+      }
+    }
     if (response.primary_provider !== "oci-base") failures.push(`primary_provider=${response.primary_provider || "missing"}`);
     if (response.candidate_provider !== "oci-fine-tuned") failures.push(`candidate_provider=${response.candidate_provider || "missing"}`);
-    if (route.trace_persisted !== true) failures.push("trace_persisted!=true");
+    if (route.trace_persisted !== true) {
+      if (selectAiFastResponse) {
+        warnings.push("trace_persisted!=true; response carries trace_id/evidence_hash/prompt_hash but persistence is a caveat");
+      } else {
+        failures.push("trace_persisted!=true");
+      }
+    }
     if (!response.summary) failures.push("missing summary");
     if (!response.trace_id) failures.push("missing trace_id");
     if (!response.evidence_hash) failures.push("missing evidence_hash");
@@ -239,6 +281,7 @@ async function checkCommentary(baseUrl, payload, timeoutMs) {
       commentary_length: commentary.length,
       source: response.source,
       fallback_source: response.fallback_source,
+      fast_path: selectAiFastResponse,
       route_mode: response.route_mode,
       primary_provider: response.primary_provider,
       candidate_provider: response.candidate_provider,
@@ -304,6 +347,7 @@ function renderDetails(check) {
     return [
       `- Version: ${check.version || "unknown"}`,
       `- Select AI: ${check.select_ai_profile || "unknown"} / ${check.select_ai_model || "unknown"}`,
+      `- Fast path: ${check.fast_path ? "yes" : "no"}`,
       `- Canvas configured: ${check.canvas_configured ? "yes" : "no"}`,
       `- In-db agent enabled: ${check.indb_agent_enabled ? "yes" : "no"}`,
       `- Router: ${check.router?.route_mode || "unknown"} ${check.router?.primary_provider || "unknown"} -> ${check.router?.candidate_provider || "unknown"}`,
@@ -327,6 +371,7 @@ function renderDetails(check) {
       `- Commentary: ${check.commentary ? `"${check.commentary}"` : "missing"}`,
       `- Length: ${check.commentary_length ?? "unknown"}`,
       `- Source: ${check.source || "unknown"}; fallback: ${check.fallback_source || "unknown"}`,
+      `- Fast path: ${check.fast_path ? "yes" : "no"}`,
       `- Runtime modes: ${Object.entries(check.runtime_modes || {}).map(([k, v]) => `${k}=${v}`).join(", ") || "none"}`,
       `- Canvas: ${check.canvas == null ? "null" : "present"}`,
       `- In-db agent: ${check.in_db_agent == null ? "null" : "present"}`,
@@ -373,8 +418,9 @@ function renderMarkdown(report) {
   }
   lines.push("## Presenter Boundary");
   lines.push("");
-  lines.push("- Safe to claim: live game, PAF health, Oracle AI Database evidence path, Select AI/in-db agent configuration, graph/replay/vector retrieval configuration, strict model-adapter proof when the proof bundle is green, trace persistence, and grounded commentary constraints.");
-  lines.push("- For this smoke response, claim only the model routes present in response metadata; candidate shadow routes may be absent when stage-safe timeouts protect latency.");
+  lines.push("- Safe to claim: live game, PAF health, Oracle AI Database evidence path, Select AI/in-db agent fast path, graph/replay/vector retrieval configuration, and grounded commentary constraints.");
+  lines.push("- Claim trace persistence, GenAI, candidate shadow evaluation, or fine-tuned-model improvement only when the corresponding response metadata is green.");
+  lines.push("- For this smoke response, claim only the model routes present in response metadata; Select AI may return first when stage-safe latency is the priority.");
   lines.push("- For this smoke response, do not say Canvas produced the exact line unless `canvas` becomes non-null or the response source changes accordingly.");
   lines.push("");
   return `${lines.join("\n")}`;

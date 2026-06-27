@@ -13,9 +13,19 @@ function isAdapterUnavailable(adapter) {
   return false;
 }
 
+function routeModeText(value) {
+  const mode = String(value || "").trim();
+  return mode ? `${mode} route` : "route unknown";
+}
+
 export function summarizeAiAdapterHealth(health = {}) {
   const adapters = Array.isArray(health.model_adapters) ? health.model_adapters : [];
   const summary = health.model_adapter_summary || {};
+  const router = health.model_router || {};
+  const selectAiFastPath = health.live_line_fast_return === true && health.indb_agent_enabled === true;
+  const canvasText = health.canvas_configured ? "Canvas configured" : "Canvas not configured";
+  const inDbText = health.indb_agent_enabled ? "in-db Select AI enabled" : "in-db agent off";
+  const traceText = router.trace_persist === true ? "trace on" : "trace off";
   const generationProbeKnown = adapters.some((adapter) => Object.prototype.hasOwnProperty.call(adapter || {}, "generation_ready"))
     || Object.prototype.hasOwnProperty.call(summary, "generation_ready");
   const readyProviders = adapters
@@ -55,12 +65,26 @@ export function summarizeAiAdapterHealth(health = {}) {
   const degradedRuntimeText = generationDegraded
     ? `${readyProviders.join(", ")} ready; ${degradedProviders.join(", ")} degraded`
     : formatHealthCountMap(runtimes);
+  const routeText = routeModeText(router.route_mode);
+  const runtimeText = selectAiFastPath
+    ? `Select AI fast path; ${ready ? "model proof ready" : degradedRuntimeText}`
+    : (ready ? "upstream-llm" : degradedRuntimeText);
+  const handoffText = `${canvasText}; ${inDbText}; ${routeText}`;
+  const gateText = ready
+    ? `Ready; ${traceText}`
+    : (generationDegraded
+      ? `Stage-safe; ${traceText}; candidate degraded`
+      : (generationProbeKnown && !generationReady ? `Generation check failed; ${traceText}` : `Check route; ${traceText}`));
+  const verdictText = ready
+    ? "Generation ready"
+    : (selectAiFastPath ? "Fast path live" : (generationDegraded ? "Base ready" : (generationProbeKnown ? "Generation not proven" : "Route configured")));
   return {
     ready,
     degraded: generationDegraded,
-    runtimeText: ready ? "upstream-llm" : degradedRuntimeText,
-    handoffText: `upstream formats ${formatHealthCountMap(formats)}`,
-    gateText: ready ? "Ready" : (generationDegraded ? "Base ready; candidate degraded" : (generationProbeKnown && !generationReady ? "Generation check failed" : "Check route")),
-    verdictText: ready ? "Generation ready" : (generationDegraded ? "Base ready" : (generationProbeKnown ? "Generation not proven" : "Route configured")),
+    runtimeText,
+    handoffText,
+    gateText,
+    verdictText,
+    formatsText: `upstream formats ${formatHealthCountMap(formats)}`,
   };
 }

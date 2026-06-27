@@ -33,6 +33,7 @@ module.exports = merge(commonConfiguration, {
     proxy: [
       { context: ["/socket.io"], target: `http://localhost:${WS_PORT}`, ws: true },
       { context: ["/metrics"], target: `http://localhost:${WS_PORT}` },
+      { context: ["/api/observability"], target: `http://localhost:${WS_PORT}` },
       { context: ["/api"], target: `http://localhost:${SCORE_PORT}`, ws: true }
     ],
     open: true,
@@ -43,6 +44,10 @@ module.exports = merge(commonConfiguration, {
       if (devServer && devServer.app) {
         devServer.app.get("/some/path", function (req, res) {
           res.json({ custom: "response" });
+        });
+        devServer.app.get("/healthz", function (req, res) {
+          res.setHeader("Cache-Control", "no-store");
+          res.json({ ok: true, service: "web-dev" });
         });
 
         // Dev-only fallback to suppress noisy proxy ECONNREFUSED when Score service is disabled
