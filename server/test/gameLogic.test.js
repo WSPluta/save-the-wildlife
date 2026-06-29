@@ -449,6 +449,16 @@ describe("authoritative multiplayer lifecycle", () => {
     expect(server).toMatch(/broadcastRoomState\(room, 'ENDED', \{[\s\S]{0,160}remaining: 0/);
   });
 
+  it("enriches gameplay events with canonical room scores before persistence", () => {
+    const server = readFileSync("server.js", "utf8");
+    expect(server).toMatch(/async function roomScoreForPlayer\(room, playerId/);
+    expect(server).toMatch(/async function withCanonicalGameEventScore\(payload = \{\}, \{ room, playerId \} = \{\}\)/);
+    expect(server).toMatch(/eventType === "game_over"[\s\S]{0,220}final_score: authoritative\.score/);
+    expect(server).toMatch(/const eventPayload = await withCanonicalGameEventScore\(payload, \{/);
+    expect(server).toMatch(/const result = await recordGameEvent\(eventPayload, \{/);
+    expect(server).toMatch(/type: "powerup_collected"[\s\S]{0,180}score: powerupScore\?\.score/);
+  });
+
   it("builds separated player starts and sends them to clients", () => {
     const server = readFileSync("server.js", "utf8");
     const script = readFileSync("../web/src/script.js", "utf8");

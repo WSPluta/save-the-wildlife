@@ -43,7 +43,7 @@ describe("game event telemetry", () => {
     expect(() => normalizeGameEvent({ type: "made_up", playerId: "P1" })).toThrow(/unsupported_event_type/);
   });
 
-  it("keeps missing non-terminal scores unknown instead of coercing them to zero", () => {
+  it("keeps missing scores unknown instead of coercing them to zero", () => {
     const collected = normalizeGameEvent({
       type: "powerup_collected",
       sessionId: "S-SCORE-GAP",
@@ -60,7 +60,7 @@ describe("game event telemetry", () => {
     });
 
     expect(collected.score).toBeNull();
-    expect(ended.score).toBe(0);
+    expect(ended.score).toBeNull();
   });
 
   it("captures trail crossing and freeze events with coordinates and related players", () => {
@@ -189,8 +189,9 @@ describe("game event telemetry", () => {
     expect(ddl).toMatch(/metadata_json\s+CLOB\s+CHECK\s*\(\s*metadata_json\s+IS\s+JSON\s*\)/i);
     expect(ddl).toMatch(/CREATE\s+TABLE\s+stwl_player_sessions/i);
     expect(ddl).toMatch(/sessions_json\s+CLOB\s+CHECK\s*\(\s*sessions_json\s+IS\s+JSON\s*\)/i);
-    expect(ddl).toMatch(/event_type\s*=\s*'game_over'[\s\S]{0,120}THEN score/i);
-    expect(runtime).toMatch(/eventType === "game_over"[\s\S]{0,160}payload\.final_score[\s\S]{0,120}payload\.score/i);
+    expect(ddl).toMatch(/score_source'\), JSON_VALUE\(metadata_json, '\$\.scoreSource'\)\) = 'server_room_state'/i);
+    expect(ddl).toMatch(/event_type <> 'game_over' AND score IS NOT NULL/i);
+    expect(runtime).toMatch(/score: finiteNumber\(rawScore, null\)/);
     const playerSessionDdl = runtime.match(/CREATE TABLE stwl_player_sessions \(([\s\S]*?)\)`;/)?.[1] || "";
     expect(playerSessionDdl.match(/\broom_id\s+VARCHAR2\(64\)/gi)).toHaveLength(1);
   });
@@ -222,6 +223,16 @@ describe("game event telemetry", () => {
     expect(event.score).toBe(14);
     expect(summarizeSession(sessionId, "P-FINAL").score).toBe(14);
     expect((await buildCommentary(sessionId, "P-FINAL")).summary.score).toBe(14);
+  });
+
+  it("does not let a scoreless game_over erase the latest recorded score", async () => {
+    const sessionId = `S-MISSING-FINAL-${Date.now()}-${Math.random()}`;
+    await recordGameEvent({ type: "game_started", sessionId, roomId: "ROOM-FINAL", playerId: "P-GAP", playerName: "Gap" });
+    await recordGameEvent({ type: "trash_collected", sessionId, roomId: "ROOM-FINAL", playerId: "P-GAP", score: 3 });
+    await recordGameEvent({ type: "game_over", sessionId, roomId: "ROOM-FINAL", playerId: "P-GAP", score: null });
+
+    expect(summarizeSession(sessionId, "P-GAP").score).toBe(3);
+    expect((await buildCommentary(sessionId, "P-GAP")).summary.score).toBe(3);
   });
 
   it("summarizes powerups, freezes, and game over events for commentary", async () => {

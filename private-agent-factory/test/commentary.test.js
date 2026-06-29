@@ -2536,8 +2536,9 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(packageSql, /oracle-ai-database-deterministic/i);
   assert.match(packageSql, /\bhistory\s+AS\s*\(/i);
   assert.doesNotMatch(packageSql, /\bprior\s+AS\s*\(/i);
-  assert.match(packageSql, /event_type\s*=\s*'game_over'[\s\S]{0,160}THEN e\.score/i);
-  assert.match(packageSql, /COALESCE\([\s\S]{0,260}DENSE_RANK LAST ORDER BY CASE WHEN e\.event_type = 'game_over'/i);
+  assert.match(packageSql, /score_source'\), JSON_VALUE\(e\.metadata_json, '\$\.scoreSource'\)\) = 'server_room_state'/i);
+  assert.match(packageSql, /event_type <> 'game_over' AND e\.score IS NOT NULL/i);
+  assert.match(packageSql, /DENSE_RANK LAST ORDER BY CASE WHEN e\.event_type <> 'game_over' AND e\.score IS NOT NULL THEN e\.occurred_at/i);
   assert.match(packageSql, /TO_CLOB\('\{\}'\)/i);
   assert.doesNotMatch(packageSql, /RETURN\s+JSON_OBJECT\([\s\S]*?RETURNING\s+CLOB[\s\S]*?\);/i);
 

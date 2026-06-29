@@ -491,7 +491,10 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/localScore = finalScore;/);
     expect(script).toMatch(/emitGameplayEvent\("game_over", \{[\s\S]{0,160}final_score: finalScore,[\s\S]{0,80}score: finalScore,/);
     expect(script).toMatch(/updateResultsScore\(finalScore\);/);
-    expect(script).toMatch(/endGame\(\{ remaining: 0, timeRemaining: 0 \}\);/);
+    expect(script).toMatch(/function waitForAuthoritativeEndPayload\(\)/);
+    expect(script).toMatch(/case "game\.end":[\s\S]{0,260}endGame\(body \|\| \{\}\);/);
+    expect(script).toMatch(/incomingState === "ENDED"[\s\S]{0,260}waitForAuthoritativeEndPayload\(\)/);
+    expect(script).not.toMatch(/endGame\(\{ remaining: 0, timeRemaining: 0 \}\);/);
   });
 
   it("keeps the visible timer pinned after post-game instead of resetting to duration", () => {

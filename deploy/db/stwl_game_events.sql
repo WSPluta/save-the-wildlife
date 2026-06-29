@@ -71,8 +71,19 @@ SELECT
   MIN(occurred_at) AS started_at,
   MAX(occurred_at) AS ended_at,
   COALESCE(
+    MAX(CASE
+      WHEN event_type = 'game_over'
+       AND COALESCE(JSON_VALUE(metadata_json, '$.score_source'), JSON_VALUE(metadata_json, '$.scoreSource')) = 'server_room_state'
+      THEN score
+    END) KEEP (DENSE_RANK LAST ORDER BY CASE
+      WHEN event_type = 'game_over'
+       AND COALESCE(JSON_VALUE(metadata_json, '$.score_source'), JSON_VALUE(metadata_json, '$.scoreSource')) = 'server_room_state'
+      THEN occurred_at
+    END NULLS FIRST),
+    MAX(CASE WHEN event_type <> 'game_over' AND score IS NOT NULL THEN score END)
+      KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type <> 'game_over' AND score IS NOT NULL THEN occurred_at END NULLS FIRST),
     MAX(CASE WHEN event_type = 'game_over' THEN score END)
-      KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type = 'game_over' THEN occurred_at END NULLS FIRST),
+      KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type = 'game_over' AND score IS NOT NULL THEN occurred_at END NULLS FIRST),
     MAX(score) KEEP (DENSE_RANK LAST ORDER BY occurred_at)
   ) AS final_score,
   SUM(CASE WHEN event_type = 'trash_collected' THEN 1 ELSE 0 END) AS trash_collected,

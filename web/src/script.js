@@ -128,6 +128,7 @@ let otherPlayersInfo = {};
 
 // Game flags and UI
 let gameOverFlag = false;
+let pendingAuthoritativeEndTimer = null;
 let sounds;
 let speedElement;
 
@@ -1474,6 +1475,9 @@ let lastObservabilityMetricsFetchAt = 0;
 let lastCanonicalObservabilityAt = 0;
 let latestGlobalObservabilityMetrics = null;
 let latestRoomObservabilityMetrics = null;
+const liveObservabilityPlayers = new Map();
+let liveObservabilityItemCount = null;
+let liveObservabilityRoomState = null;
 const adminCommentaryEntries = [];
 const adminCommentaryKeys = new Set();
 const ADMIN_COMMENTARY_LIMIT = 80;
@@ -1723,24 +1727,19 @@ function updateObservabilityMetrics(m = {}) {
   }
   const roomPayload = latestRoomObservabilityMetrics || {};
   const globalPayload = latestGlobalObservabilityMetrics || {};
-  const players = selectedRoom?.players || (
-    hasObservabilityPlayerValues(roomPayload.players)
-      ? roomPayload.players
-      : {}
-  );
+  const roomMetricPlayers = hasObservabilityPlayerValues(roomPayload.players)
+    ? roomPayload.players
+    : {};
+  const players = strongestObservabilityPlayers(selectedRoom?.players || {}, roomMetricPlayers);
   const sockets = globalPayload.sockets || roomPayload.sockets || {};
   const rooms = deriveStableObservabilityRooms(globalPayload.rooms || {});
   const items = roomPayload.items || null;
-  const totalItems = items
-    ? (Number(items.trash) || 0) +
-      (Number(items.marine) || 0) +
-      (Number(items.powerups) || 0)
-    : null;
+  const totalItems = strongestObservabilityItemCount(items);
   setTextById("obs-connections", formatCount(players.total ?? sockets.connections));
   setTextById("obs-humans", formatCount(players.humans));
   setTextById("obs-bots", formatCount(players.bots));
   setTextById("obs-rooms", formatCount(rooms.active));
-  setTextById("obs-running", selectedRoom?.state || formatCount(rooms.running));
+  setTextById("obs-running", currentAdminStateLabel() || liveObservabilityRoomState || selectedRoom?.state || formatCount(rooms.running));
   if (totalItems != null) {
     setTextById("obs-items", formatCount(totalItems));
   }
@@ -1755,6 +1754,59 @@ function hasObservabilityPlayerValues(players = {}) {
   return Number.isFinite(Number(players.humans)) ||
     Number.isFinite(Number(players.bots)) ||
     Number.isFinite(Number(players.total));
+}
+
+function positiveCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function observabilityLivePlayerCounts() {
+  let humans = 0;
+  let bots = 0;
+  for (const entry of liveObservabilityPlayers.values()) {
+    if (entry?.isBot === true) bots += 1;
+    else humans += 1;
+  }
+  return { humans, bots, total: humans + bots };
+}
+
+function rememberObservabilityPlayer(id, profile = {}) {
+  if (!IS_OBSERVABILITY_VIEW) return;
+  const key = String(id || profile.id || "").trim();
+  if (!key || key === yourId) return;
+  const name = String(profile.name || profile.playerName || key).trim();
+  const isBot = profile.isBot === true || profile.bot === true || /^bot\b/i.test(name);
+  liveObservabilityPlayers.set(key, { id: key, name, isBot, at: Date.now() });
+}
+
+function rememberObservabilityPlayersFromState(body = {}) {
+  if (!IS_OBSERVABILITY_VIEW) return;
+  const states = body?.states && typeof body.states === "object" ? body.states : {};
+  const profiles = body?.players && typeof body.players === "object" ? body.players : {};
+  for (const [id, state] of Object.entries(states)) {
+    rememberObservabilityPlayer(id, { ...(profiles[id] || {}), ...(state || {}) });
+  }
+}
+
+function strongestObservabilityPlayers(primary = {}, fallback = {}) {
+  const live = observabilityLivePlayerCounts();
+  const candidates = [primary, fallback, live].filter(Boolean);
+  return candidates.reduce((best, next) => (
+    positiveCount(next.total) > positiveCount(best.total) ? next : best
+  ), {});
+}
+
+function strongestObservabilityItemCount(roomItems = null) {
+  const roomTotal = roomItems
+    ? (Number(roomItems.trash) || 0) +
+      (Number(roomItems.marine) || 0) +
+      (Number(roomItems.powerups) || 0)
+    : null;
+  if (Number.isFinite(liveObservabilityItemCount) && liveObservabilityItemCount > positiveCount(roomTotal)) {
+    return liveObservabilityItemCount;
+  }
+  return roomTotal;
 }
 
 function selectedObservabilityRoom(configuredRoom = "") {
@@ -1806,6 +1858,12 @@ function updateObservabilityNetwork() {
   const traffic = `${Number(networkStats.upKbps || 0).toFixed(1)} up / ${Number(networkStats.downKbps || 0).toFixed(1)} down`;
   setTextById("obs-rtt", rtt);
   setTextById("obs-traffic", traffic);
+}
+
+function currentAdminStateLabel() {
+  if (!IS_OBSERVABILITY_VIEW) return "";
+  const text = String(document.getElementById("admin-state")?.textContent || "").trim().toUpperCase();
+  return ["WAITING", "STARTING", "RUNNING", "ENDED"].includes(text) ? text : "";
 }
 
 function renderObservabilityTraces() {
@@ -1872,6 +1930,8 @@ function setObservabilityLatestCommentary(payload = {}) {
 function observeWorkerEvent(type, body = {}) {
   if (!IS_OBSERVABILITY_VIEW) return;
   if (type === "game.on") {
+    liveObservabilityRoomState = "RUNNING";
+    setTextById("obs-running", liveObservabilityRoomState);
     rememberObservabilityTrace("Match started", getConfiguredAdminRoom());
     return;
   }
@@ -1882,11 +1942,38 @@ function observeWorkerEvent(type, body = {}) {
     case "room.joined":
       rememberObservabilityTrace("Room joined", body?.id || getConfiguredAdminRoom());
       break;
+    case "startingGame":
+      liveObservabilityRoomState = "STARTING";
+      setTextById("obs-running", liveObservabilityRoomState);
+      rememberObservabilityTrace("Countdown started", getConfiguredAdminRoom());
+      break;
+    case "game.state": {
+      const nextState = String(body?.state || body?.roomState || "").trim().toUpperCase();
+      if (nextState) {
+        liveObservabilityRoomState = nextState;
+        setTextById("obs-running", liveObservabilityRoomState);
+      }
+      break;
+    }
+    case "admin.end.confirmed":
+    case "admin.presenter.end.confirmed":
+      liveObservabilityRoomState = "ENDED";
+      setTextById("obs-running", liveObservabilityRoomState);
+      rememberObservabilityTrace("Match ended", getConfiguredAdminRoom());
+      break;
     case "player.info.joined":
+      rememberObservabilityPlayer(body?.id || body?.playerId || body?.name, body || {});
+      updateObservabilityMetrics(latestRoomObservabilityMetrics || {});
       rememberObservabilityTrace("Player connected", body?.name || body?.id || "Player");
+      break;
+    case "player.state":
+      rememberObservabilityPlayersFromState(body || {});
+      updateObservabilityMetrics(latestRoomObservabilityMetrics || {});
       break;
     case "items.all":
       setTextById("obs-item-event", "authoritative item map received");
+      liveObservabilityItemCount = Object.keys(body || {}).length;
+      updateObservabilityMetrics(latestRoomObservabilityMetrics || {});
       rememberObservabilityTrace("Item map received", `${Object.keys(body || {}).length} items`);
       break;
     case "item.new": {
@@ -1898,6 +1985,10 @@ function observeWorkerEvent(type, body = {}) {
     case "item.destroy": {
       const payload = normalizeItemDestroyPayload(body);
       setTextById("obs-item-event", `${payload.itemType || "item"} collected`);
+      if (Number.isFinite(liveObservabilityItemCount)) {
+        liveObservabilityItemCount = Math.max(0, liveObservabilityItemCount - 1);
+        updateObservabilityMetrics(latestRoomObservabilityMetrics || {});
+      }
       rememberObservabilityTrace("Item collected", `${payload.playerName || "player"} · ${payload.itemType || "item"}`);
       break;
     }
@@ -3901,8 +3992,12 @@ async function init() {
         } else if (incomingState === "ENDED") {
           gameState = incomingState;
           stopLocalTimeTicker();
-          endGame({ remaining: 0, timeRemaining: 0 });
-          setPhase("POST_GAME");
+          renderTimeValue(0);
+          if (gameOverFlag) {
+            setPhase("POST_GAME");
+            break;
+          }
+          waitForAuthoritativeEndPayload();
         }
         if (typeof updateControls === "function") updateControls();
         break;
@@ -6505,6 +6600,25 @@ function finalScoreFromEndPayload(endPayload = {}) {
   });
 }
 
+function clearPendingAuthoritativeEnd() {
+  if (!pendingAuthoritativeEndTimer) return;
+  try { clearTimeout(pendingAuthoritativeEndTimer); } catch (_) {}
+  pendingAuthoritativeEndTimer = null;
+}
+
+function waitForAuthoritativeEndPayload() {
+  clearPendingAuthoritativeEnd();
+  pendingAuthoritativeEndTimer = setTimeout(() => {
+    pendingAuthoritativeEndTimer = null;
+    if (gameOverFlag || gameState !== "ENDED") return;
+    endGame({
+      remaining: 0,
+      timeRemaining: 0,
+      scoreSource: "client_state_fallback",
+    });
+  }, 2000);
+}
+
 function updateResultsScore(finalScore) {
   const rn = document.getElementById("results-name");
   if (rn) rn.textContent = "Name: " + (playerName || "Default");
@@ -6513,6 +6627,7 @@ function updateResultsScore(finalScore) {
 }
 
 function endGame(endPayload = {}) {
+  clearPendingAuthoritativeEnd();
   const finalScore = finalScoreFromEndPayload(endPayload);
   const remainingFromServer = finitePayloadNumber(endPayload?.remaining, endPayload?.timeRemaining);
   localScore = finalScore;

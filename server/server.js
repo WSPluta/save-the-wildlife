@@ -1168,6 +1168,52 @@ export async function start(
     });
     return nextScore;
   }
+  async function roomScoreForPlayer(room, playerId, { includeZeroForActiveRoom = false } = {}) {
+    const safePlayerId = String(playerId || "").trim();
+    if (!safePlayerId) return null;
+    const safeRoom = canonicalRoomId(room);
+    const latest = await readCanonicalRoomState(safeRoom);
+    if (!latest) return null;
+    const scores = normalizeRoomScores(latest.scores || latest.scoreByPlayer || latest.finalScores);
+    const score = Number(scores[safePlayerId]);
+    if (Number.isFinite(score)) {
+      return { score, source: "server_room_state" };
+    }
+    const activeState = ["RUNNING", "ENDED"].includes(String(latest.state || ""));
+    if (includeZeroForActiveRoom && activeState) {
+      return { score: 0, source: "server_room_state" };
+    }
+    return null;
+  }
+  async function withCanonicalGameEventScore(payload = {}, { room, playerId } = {}) {
+    if (!payload || typeof payload !== "object") return payload;
+    const eventType = String(payload.event_type || payload.eventType || payload.type || "");
+    const safePlayerId = String(payload.player_id || payload.playerId || playerId || "").trim();
+    const authoritative = await roomScoreForPlayer(room, safePlayerId, {
+      includeZeroForActiveRoom: eventType === "game_over",
+    });
+    if (!authoritative || !Number.isFinite(authoritative.score)) return payload;
+
+    const metadata = {
+      ...(payload.metadata || {}),
+      score_source: authoritative.source,
+    };
+    if (eventType === "game_over") {
+      metadata.final_score = authoritative.score;
+      return {
+        ...payload,
+        score: authoritative.score,
+        final_score: authoritative.score,
+        finalScore: authoritative.score,
+        metadata,
+      };
+    }
+    return {
+      ...payload,
+      score: authoritative.score,
+      metadata,
+    };
+  }
   function getLocalSocketsForRoom(room) {
     const wanted = canonicalRoomId(room);
     const sockets = [];
@@ -2271,9 +2317,13 @@ function scheduleRoomRefill(room, delayMs = 0) {
             ? String(info[playerIdForSocket].name)
             : undefined;
         } catch (_) {}
-        const result = await recordGameEvent(payload, {
+        const eventPayload = await withCanonicalGameEventScore(payload, {
+          room,
+          playerId: payload.player_id || payload.playerId || playerIdForSocket,
+        });
+        const result = await recordGameEvent(eventPayload, {
           roomId: room,
-          sessionId: payload.session_id || payload.sessionId || await sessionIdForRoomAsync(room),
+          sessionId: eventPayload.session_id || eventPayload.sessionId || await sessionIdForRoomAsync(room),
           playerId: playerIdForSocket,
           playerName: canonicalPlayerName,
         });
@@ -2515,14 +2565,16 @@ function scheduleRoomRefill(room, delayMs = 0) {
             }
             playersState.set(playerId, st);
           }
+          const powerupScore = await roomScoreForPlayer(room, playerId, { includeZeroForActiveRoom: true });
           await recordGameEvent({
             type: "powerup_collected",
             playerId,
             playerName,
             itemId,
+            score: powerupScore?.score,
             position: itemSnapshot?.position,
             powerupType: itemSnapshot?.type,
-            metadata: { item_type: itemSnapshot?.type },
+            metadata: { item_type: itemSnapshot?.type, score_source: powerupScore?.source || null },
           }, { roomId: room, sessionId: await sessionIdForRoomAsync(room) });
         }
       } catch (e) {
@@ -2763,11 +2815,12 @@ function scheduleRoomRefill(room, delayMs = 0) {
           if (remaining <= 0) {
             clearInterval(gameTimer);
             gameState = 'ENDED';
+            const endPayload = buildRoomEndPayload(GLOBAL_ROOM, { remaining: 0, timeRemaining: 0 });
             io.to(GLOBAL_ROOM).emit("game.state", gameState);
-            io.to(GLOBAL_ROOM).emit("game.end");
+            io.to(GLOBAL_ROOM).emit("game.end", endPayload);
             Object.keys(mapPlayerSockets).forEach(async (playerId) => {
               const socket = mapPlayerSockets[playerId];
-              socket.emit("game.end", { playerId });
+              socket.emit("game.end", { ...endPayload, playerId });
               io.to(playerRooms.get(playerId) || GLOBAL_ROOM).emit("player.info.left", playerId);
               if (ENABLE_COHERENCE_BACKEND) {
                 await deleteCache(mapPlayersTraces, playerId);
@@ -2806,12 +2859,13 @@ function scheduleRoomRefill(room, delayMs = 0) {
       gameState = 'ENDED';
       difficultyLevel = 0;
       lastDifficultyAt = Date.now();
+      const endPayload = buildRoomEndPayload(GLOBAL_ROOM, { remaining: 0, timeRemaining: 0 });
       io.to(GLOBAL_ROOM).emit("game.state", gameState);
-      io.to(GLOBAL_ROOM).emit("game.end");
+      io.to(GLOBAL_ROOM).emit("game.end", endPayload);
       try { if (typeof ack === "function") ack({ ok: true, scope: "global" }); } catch (_) {}
       Object.keys(mapPlayerSockets).forEach(async (playerId) => {
         const socket = mapPlayerSockets[playerId];
-        socket.emit("game.end", { playerId });
+        socket.emit("game.end", { ...endPayload, playerId });
         io.to(playerRooms.get(playerId) || GLOBAL_ROOM).emit("player.info.left", playerId);
         if (ENABLE_COHERENCE_BACKEND) {
           await deleteCache(mapPlayersTraces, playerId);
