@@ -2029,4 +2029,38 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - full `server` Vitest suite: 7 files, 85 tests
     - full `private-agent-factory` node test suite: 42 tests
     - `web` production webpack build passed with the existing large-asset warnings.
-  - Deployment still pending for this hardening pass; next steps are version bump, authenticated push, OCI DevOps build/deploy, public smoke, then regenerate the 3-player + real observability recording.
+  - Deployment completed after authenticated CLI push:
+    - Build run: `ocid1.devopsbuildrun.oc1.uk-london-1.amaaaaaaeras5xiabb3cmr65n3kn4g7joywqggneuiggarleikcizwpiyopq`.
+    - Deployment: `ocid1.devopsdeployment.oc1.uk-london-1.amaaaaaaeras5xiajoxkd43sjhr5vrczg2mareihe56aj4prsdofd6itjuva`.
+    - Live readback: `web:0.0.102`, `ws-server/server:0.0.70`, `private-agent-factory:0.0.30`, `bots:0.0.8`, `score:0.0.8`, `replay:0.0.1`.
+    - Public health and observability verified on `http://130.162.174.167`; `/api/observability` reports `server.version=0.0.70`, `gameDuration=60`, and world `64 x 21`.
+  - Fresh public recording generated after the boundary/score deployment:
+    - Video: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-123949/save-the-wildlife-same-room-competition-commentary-proof.mp4`.
+    - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-123949/recording-report.md`.
+    - Room: `DEMO-STAGE-989468`; video duration `62.00s`; output `1920x1080` at `25 fps`; SHA-256 `64d5f45d9e2a789afb87493e4580f18d8186f74161ac21a25cc5a233779fbaf6`.
+    - Report status: `PASS`.
+    - Checks passed: same-room lobby, real observability browser, same-room item stream, presenter start, all clients RUNNING, each client sees other humans, server pickup/removal events, room ended before commentary request, `game_over` queued for all players, `commentary.ready` for all players, safe/different bounded commentary, and real observability commentary.
+    - Pickups proved: Alpha/trash, Bravo/turtle, Charlie/powerup_speed.
+    - Score consistency evidence: queued `game_over` events carry `score=0`, `metadata.final_score=0`, and commentary score `0` for all three demo players; result cards in the commentary frame also show `Score: 0`.
+    - Visual receipts inspected:
+      - Countdown: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-123949/proof-countdown-frame.png`.
+      - Gameplay: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-123949/proof-gameplay-frame.png`.
+      - Commentary: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-123949/proof-commentary-frame.png`.
+    - Visual inspection: buoy/rope boundary markers are visible in countdown/gameplay/commentary frames, with no recorder overlays. Observability remains the real `/admin/observability` page and shows room telemetry/traces/commentary readiness.
+  - Select AI provenance hardening:
+    - Initial post-deploy recording passed gameplay and score gates, but two commentary lines used the bounded `request-summary` path because the live PAF deployment overrode the ConfigMap with `INDB_AGENT_TIMEOUT_MS=4500` and `PAF_COMMENTARY_DEADLINE_MS=8000`.
+    - Patched repo manifest `deploy/k8s/base/private-agent-factory/private-agent-factory.yaml` to `INDB_AGENT_TIMEOUT_MS=12000`, `PAF_COMMENTARY_DEADLINE_MS=20000`, and `OCI_MODEL_ENDPOINT_TIMEOUT_MS=15000`; aligned `deploy/k8s/base/ws-server/.env_server` with the existing 75000 ms PAF caller timeout.
+    - Applied the same PAF timeout values directly to the live `private-agent-factory` deployment and waited for rollout.
+    - Direct public PAF API recheck returned `source=select-ai`, `in_db_agent.configured=true`, and no timeout warning.
+  - Fresh Select AI public recording generated:
+    - Video: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-124807-selectai/save-the-wildlife-same-room-competition-commentary-proof.mp4`.
+    - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-124807-selectai/recording-report.md`.
+    - Room: `DEMO-STAGE-487225`; video duration `66.96s`; output `1920x1080` at `25 fps`; SHA-256 `6178e1802d39c51dfbe6b553201765542c607d6e0b210da619d1d7b22d0379b0`.
+    - Report status: `PASS`.
+    - All three commentary lines came from `select-ai`.
+    - Score consistency evidence: queued `game_over` events carry `score=0`, `metadata.final_score=0`, and commentary score `0` for all three demo players; `ENDED` state reports `timeRemaining=0` for all players.
+    - Pickups proved: Alpha/trash, Bravo/turtle, Charlie/powerup_speed.
+    - Visual receipts inspected:
+      - Gameplay: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-124807-selectai/proof-gameplay-frame.png`.
+      - Commentary: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-124807-selectai/proof-commentary-frame.png`.
+    - Visual inspection: no recorder overlays; real observability quadrant shows `AI Job ready` and `select-ai`; boundary rope/buoys are visible; final result cards show matching score/commentary.

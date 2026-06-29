@@ -61,15 +61,15 @@ spec:
         - name: PAF_CONTEXT_TIMEOUT_MS
           value: "1500"
         - name: INDB_AGENT_TIMEOUT_MS
-          value: "4500"
+          value: "12000"
         - name: PAF_CANVAS_TIMEOUT_MS
           value: "750"
         - name: PAF_CANVAS_RETURN_RESERVE_MS
           value: "250"
         - name: PAF_COMMENTARY_DEADLINE_MS
-          value: "8000"
+          value: "20000"
         - name: OCI_MODEL_ENDPOINT_TIMEOUT_MS
-          value: "5000"
+          value: "15000"
         - name: PAF_TRACE_PERSIST
           value: "false"
         - name: PAF_LIVE_LINE_INDB_FIRST
