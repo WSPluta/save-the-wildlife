@@ -280,89 +280,60 @@
           <div class="admin-evidence-header">
             <div>
               <div class="admin-section-eyebrow">OCI Observability</div>
-              <h3>Live Operations</h3>
+              <h3>Room Telemetry</h3>
             </div>
             <div id="admin-observability-verdict" class="admin-evidence-verdict">Live</div>
           </div>
 
           <div class="admin-learning-frame">
-            <strong>Track live players, rooms, network, and scale signals during every demo run.</strong>
+            <strong>Room-scoped gameplay, network, item, and commentary signals.</strong>
           </div>
 
-          <div class="admin-evidence-metrics" aria-label="Live observability metrics">
-            <div class="admin-metric">
-              <span>Connections</span>
+          <div class="admin-observability-trace-grid" aria-label="Live observability traces">
+            <div class="admin-trace-card">
+              <span>Players</span>
               <strong id="obs-connections">-</strong>
+              <em><span id="obs-humans">-</span> humans · <span id="obs-bots">-</span> bots</em>
             </div>
-            <div class="admin-metric">
-              <span>Humans</span>
-              <strong id="obs-humans">-</strong>
-            </div>
-            <div class="admin-metric">
-              <span>Bots</span>
-              <strong id="obs-bots">-</strong>
-            </div>
-            <div class="admin-metric">
-              <span>Rooms</span>
-              <strong id="obs-rooms">-</strong>
-            </div>
-            <div class="admin-metric">
-              <span>Running</span>
+            <div class="admin-trace-card">
+              <span>State</span>
               <strong id="obs-running">-</strong>
+              <em><span id="obs-rooms">-</span> rooms</em>
             </div>
-            <div class="admin-metric">
+            <div class="admin-trace-card">
               <span>RTT</span>
               <strong id="obs-rtt">-</strong>
+              <em id="obs-traffic">-</em>
             </div>
-            <div class="admin-metric">
-              <span>Traffic</span>
-              <strong id="obs-traffic">-</strong>
-            </div>
-            <div class="admin-metric">
+            <div class="admin-trace-card">
               <span>Items</span>
               <strong id="obs-items">-</strong>
+              <em id="obs-item-event">waiting for item stream</em>
+            </div>
+            <div class="admin-trace-card">
+              <span>AI Job</span>
+              <strong id="obs-commentary-job">waiting</strong>
+              <em id="obs-commentary-source">no job yet</em>
+            </div>
+            <div class="admin-trace-card admin-trace-card-wide">
+              <span>Commentary</span>
+              <strong id="obs-commentary-line">waiting for line</strong>
+              <em id="obs-commentary-player">-</em>
             </div>
           </div>
 
-          <div class="admin-proof-receipts" aria-label="Observability proof receipts">
-            <div>
-              <span>Prometheus</span>
-              <strong>/metrics</strong>
-              <em>Scrapes stwl_players_total, stwl_socket_connections, room states, items, and scaling gauges.</em>
-            </div>
-            <div>
-              <span>OCI OKE</span>
-              <strong>HPA active</strong>
-              <em>ws-server, PAF, and score scale from Kubernetes CPU signals.</em>
-            </div>
-            <div>
-              <span>Grafana</span>
-              <strong>Prom-ready</strong>
-              <em>Dashboard uses stwl metrics and Kubernetes labels, without a duplicate data model.</em>
-            </div>
-            <div>
-              <span>Canary</span>
-              <strong>1000 passed</strong>
-              <em>Watch this view while the 500 and 1000-player tiers run.</em>
-            </div>
+          <div class="admin-live-traces" aria-label="Live trace stream">
+            <div class="admin-section-title">Traces</div>
+            <ol id="admin-observability-traces">
+              <li>Waiting for room telemetry.</li>
+            </ol>
           </div>
 
-          <div class="admin-run-table-wrap">
-            <table class="admin-run-table admin-observability-table">
-              <thead>
-                <tr>
-                  <th>Room</th>
-                  <th>State</th>
-                  <th>Humans</th>
-                  <th>Starts</th>
-                </tr>
-              </thead>
-              <tbody id="admin-observability-rooms">
-                <tr>
-                  <td colspan="4">Waiting for room metrics.</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="admin-room-strip" aria-label="Observed rooms">
+            <div class="admin-section-title">Room Snapshot</div>
+            <ul id="admin-observability-rooms">
+              <li>Waiting for room metrics.</li>
+            </ul>
           </div>
         </div>
 

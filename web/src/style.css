@@ -914,6 +914,8 @@ body.ai-learning-view #admin-load-evaluation {
 body.observability-view .admin-grid,
 body.observability-view .admin-actions,
 body.observability-view .admin-roster,
+body.observability-view .admin-tabs,
+body.observability-view #admin-status,
 body.ai-learning-view .admin-grid,
 body.ai-learning-view .admin-actions,
 body.ai-learning-view .admin-roster {
@@ -923,6 +925,50 @@ body.ai-learning-view .admin-roster {
 body.observability-view #admin-status,
 body.ai-learning-view #admin-status {
   margin: -4px 0 0;
+}
+
+body.observability-view #screen-admin.admin-panel {
+  width: min(1040px, calc(100vw - 28px));
+  gap: 10px;
+  justify-content: flex-start;
+  margin-top: 18px;
+}
+
+body.observability-view #overlay {
+  justify-content: flex-start;
+  align-items: center;
+  box-sizing: border-box;
+  padding-top: 12px;
+}
+
+body.observability-view .admin-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+body.observability-view .admin-header h2 {
+  font-size: 0;
+  margin: 0 0 4px;
+}
+
+body.observability-view .admin-header h2::after {
+  content: "Observability";
+  color: #ffffff;
+  font-size: 23px;
+  line-height: 1.1;
+}
+
+body.observability-view #admin-room-label {
+  min-height: 0;
+  padding: 7px 9px;
+  font-size: 15px;
+}
+
+body.observability-view .admin-state {
+  min-height: 38px;
+  min-width: 104px;
+  padding: 7px 10px;
+  font-size: 14px;
 }
 
 #screen-admin.admin-panel {
@@ -1563,12 +1609,193 @@ body.ai-learning-view .admin-commentary-feed {
   line-height: 1.35;
 }
 
-.admin-observability .admin-evidence-metrics {
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+.admin-observability {
+  gap: 9px;
 }
 
-.admin-observability-table {
-  min-width: 620px;
+.admin-observability-trace-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  padding: 0 10px;
+}
+
+.admin-trace-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(32, 213, 194, 0.18);
+  border-radius: 8px;
+  background: rgba(3, 17, 25, 0.54);
+}
+
+.admin-trace-card-wide {
+  grid-column: span 2;
+}
+
+.admin-trace-card span,
+.admin-live-traces .admin-section-title,
+.admin-room-strip .admin-section-title {
+  color: #a9d5e5;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.admin-trace-card strong {
+  color: #ffffff;
+  font-size: 20px;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+}
+
+.admin-trace-card em {
+  color: #9bc7d7;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.admin-live-traces,
+.admin-room-strip {
+  display: grid;
+  gap: 8px;
+  margin: 0 10px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.18);
+}
+
+body.observability-view .admin-room-strip {
+  display: none !important;
+}
+
+body.observability-view .admin-learning-frame {
+  margin: 0 10px;
+  padding: 8px 10px;
+}
+
+body.observability-view .admin-learning-frame strong {
+  font-size: 14px;
+}
+
+#admin-observability-traces,
+#admin-observability-rooms {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#admin-observability-traces li,
+#admin-observability-rooms li {
+  display: grid;
+  gap: 3px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  color: #f8fdff;
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+#admin-observability-traces li span,
+#admin-observability-rooms li span {
+  color: #20d5c2;
+  font-weight: 900;
+}
+
+#admin-observability-traces li em,
+#admin-observability-rooms li em {
+  color: #a9d5e5;
+  font-style: normal;
+}
+
+@media (max-height: 620px) and (min-width: 760px) {
+  body.observability-view #screen-admin.admin-panel {
+    width: min(940px, calc(100vw - 20px));
+    max-height: calc(100dvh - 16px);
+    padding: 8px;
+    gap: 7px;
+  }
+
+  body.observability-view .admin-header h2 {
+    font-size: 0;
+    margin-bottom: 3px;
+  }
+
+  body.observability-view .admin-header h2::after {
+    font-size: 18px;
+  }
+
+  body.observability-view .admin-state {
+    min-height: 34px;
+    min-width: 96px;
+    padding: 6px 10px;
+  }
+
+  body.observability-view .admin-tab {
+    min-height: 32px;
+    padding: 5px 9px;
+  }
+
+  body.observability-view .admin-tabs {
+    display: none;
+  }
+
+  body.observability-view #admin-status {
+    display: none;
+  }
+
+  body.observability-view .admin-evidence-header {
+    padding: 8px 10px;
+  }
+
+  body.observability-view .admin-evidence-header h3 {
+    font-size: 18px;
+  }
+
+  body.observability-view .admin-learning-frame {
+    display: none;
+  }
+
+  body.observability-view .admin-observability-trace-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 0 8px;
+  }
+
+  body.observability-view .admin-trace-card {
+    padding: 8px;
+  }
+
+  body.observability-view .admin-trace-card strong {
+    font-size: 16px;
+  }
+
+  body.observability-view .admin-trace-card em,
+  body.observability-view #admin-observability-traces li,
+  body.observability-view #admin-observability-rooms li {
+    font-size: 11px;
+  }
+
+  body.observability-view .admin-live-traces,
+  body.observability-view .admin-room-strip {
+    margin: 0 8px;
+    padding: 8px;
+    gap: 6px;
+  }
+
+  body.observability-view .admin-room-strip {
+    display: none;
+  }
 }
 
 @media (max-width: 720px) {

@@ -47,6 +47,12 @@ describe("observability metrics", () => {
     expect(serverSource).toMatch(/mode: "bounded-map-size"/);
     expect(serverSource).toMatch(/scopeLabels: \{/);
     expect(serverSource).toMatch(/countAllItemsCanonical/);
+    expect(serverSource).toMatch(/async function countPlayersForRoomObservability\(room\)/);
+    expect(serverSource).toMatch(/selectedPlayerCounts/);
+    expect(serverSource).toMatch(/selectedItemCounts/);
+    expect(serverSource).toMatch(/countItemsForRoom\(selectedRoom\)/);
+    expect(serverSource).toMatch(/items: selectedItemCounts/);
+    expect(serverSource).toMatch(/globalItems: allItemCounts/);
     expect(serverSource).toMatch(/mapLike\.size/);
     expect(serverSource).toMatch(/operatorRoomsFromPayload/);
   });

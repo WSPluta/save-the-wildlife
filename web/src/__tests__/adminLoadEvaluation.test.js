@@ -187,18 +187,24 @@ describe("admin load evaluation view", () => {
 
   it("adds a compact OCI observability route for live user analytics", () => {
     expect(html).toContain('id="admin-observability"');
-    expect(html).toContain("Live Operations");
+    expect(html).toContain("Room Telemetry");
     expect(html).toContain('id="obs-connections"');
     expect(html).toContain('id="obs-humans"');
+    expect(html).toContain('id="obs-commentary-job"');
+    expect(html).toContain('id="obs-commentary-line"');
+    expect(html).toContain('id="admin-observability-traces"');
     expect(html).toContain('id="admin-observability-rooms"');
-    expect(html).toContain("stwl_socket_connections");
     expect(script).toMatch(/const IS_OBSERVABILITY_VIEW =/);
     expect(script).toMatch(/updateObservabilityMetrics/);
+    expect(script).toMatch(/observeWorkerEvent/);
+    expect(script).toMatch(/Commentary job received/);
+    expect(script).toMatch(/setObservabilityLatestCommentary/);
     expect(script).toMatch(/latestGlobalObservabilityMetrics/);
     expect(script).toMatch(/latestRoomObservabilityMetrics/);
     expect(script).toMatch(/function stableObservabilityRooms\(\)/);
     expect(script).toMatch(/function deriveStableObservabilityRooms\(globalRooms = \{\}\)/);
     expect(script).toMatch(/function hasFreshCanonicalObservability\(\)/);
+    expect(script).toMatch(/setTextById\("obs-connections", formatCount\(players\.total \?\? sockets\.connections\)\)/);
     expect(script).toMatch(/if \(!hasFreshCanonicalObservability\(\)\) \{\s*updateObservabilityMetrics\(body \|\| \{\}\);/);
     expect(script).toMatch(/if \(!hasFreshCanonicalObservability\(\)\) \{\s*roomsDirectory = body \|\| null;/);
     expect(script).not.toContain('items: { trash: 0, marine: 0, powerups: 0 }');
@@ -206,8 +212,12 @@ describe("admin load evaluation view", () => {
     expect(script).toMatch(/parsePrometheusMetrics/);
     expect(script).toMatch(/fetch\("\/metrics"/);
     expect(styles).toMatch(/body\.admin-view:not\(\.observability-view\) #admin-observability/);
+    expect(styles).toMatch(/\.admin-observability-trace-grid/);
+    expect(styles).toMatch(/#admin-observability-traces li/);
     expect(styles).toMatch(/body\.observability-view \.admin-grid/);
     expect(styles).toMatch(/body\.observability-view \.admin-roster/);
+    expect(styles).toMatch(/body\.observability-view \.admin-tabs/);
+    expect(styles).toMatch(/body\.observability-view \.admin-room-strip/);
   });
 
   it("keeps observability explanation text under 30 words", () => {

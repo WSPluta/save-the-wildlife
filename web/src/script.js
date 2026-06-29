@@ -1376,6 +1376,8 @@ let latestRoomObservabilityMetrics = null;
 const adminCommentaryEntries = [];
 const adminCommentaryKeys = new Set();
 const ADMIN_COMMENTARY_LIMIT = 80;
+const adminObservabilityTraces = [];
+const ADMIN_OBSERVABILITY_TRACE_LIMIT = 6;
 let visualQaBadgeOverride = null;
 
 async function updateAiLearningHealth() {
@@ -1633,11 +1635,11 @@ function updateObservabilityMetrics(m = {}) {
       (Number(items.marine) || 0) +
       (Number(items.powerups) || 0)
     : null;
-  setTextById("obs-connections", formatCount(sockets.connections ?? players.total));
+  setTextById("obs-connections", formatCount(players.total ?? sockets.connections));
   setTextById("obs-humans", formatCount(players.humans));
   setTextById("obs-bots", formatCount(players.bots));
   setTextById("obs-rooms", formatCount(rooms.active));
-  setTextById("obs-running", formatCount(rooms.running));
+  setTextById("obs-running", selectedRoom?.state || formatCount(rooms.running));
   if (totalItems != null) {
     setTextById("obs-items", formatCount(totalItems));
   }
@@ -1703,6 +1705,113 @@ function updateObservabilityNetwork() {
   const traffic = `${Number(networkStats.upKbps || 0).toFixed(1)} up / ${Number(networkStats.downKbps || 0).toFixed(1)} down`;
   setTextById("obs-rtt", rtt);
   setTextById("obs-traffic", traffic);
+}
+
+function renderObservabilityTraces() {
+  if (!IS_OBSERVABILITY_VIEW) return;
+  const list = document.getElementById("admin-observability-traces");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!adminObservabilityTraces.length) {
+    const item = document.createElement("li");
+    item.textContent = "Waiting for room telemetry.";
+    list.appendChild(item);
+    return;
+  }
+  adminObservabilityTraces.slice(0, ADMIN_OBSERVABILITY_TRACE_LIMIT).forEach((trace) => {
+    const item = document.createElement("li");
+    const title = document.createElement("span");
+    title.textContent = trace.title || "Trace";
+    const detail = document.createElement("em");
+    detail.textContent = trace.detail || "";
+    const at = document.createElement("em");
+    at.textContent = formatCommentaryTime(trace.at || Date.now());
+    item.appendChild(title);
+    if (trace.detail) item.appendChild(detail);
+    item.appendChild(at);
+    list.appendChild(item);
+  });
+}
+
+function rememberObservabilityTrace(title, detail = "") {
+  const normalizedTitle = String(title || "Trace").trim();
+  if (!normalizedTitle) return;
+  const normalizedDetail = String(detail || "").replace(/\s+/g, " ").trim();
+  const last = adminObservabilityTraces[0];
+  if (last && last.title === normalizedTitle && last.detail === normalizedDetail && Date.now() - last.at < 750) {
+    return;
+  }
+  adminObservabilityTraces.unshift({ title: normalizedTitle, detail: normalizedDetail, at: Date.now() });
+  while (adminObservabilityTraces.length > ADMIN_OBSERVABILITY_TRACE_LIMIT) adminObservabilityTraces.pop();
+  renderObservabilityTraces();
+}
+
+function setObservabilityCommentaryJob(payload = {}, state = "received") {
+  if (!IS_OBSERVABILITY_VIEW) return;
+  const playerName = normalizeCommentaryText(
+    payload.player_name ||
+    payload.playerName ||
+    payload.summary?.player_name ||
+    payload.summary?.playerName ||
+    "Player"
+  );
+  const source = normalizeCommentaryText(payload.source || payload.fallback_source || "commentary");
+  setTextById("obs-commentary-job", state === "ready" ? "ready" : "received");
+  setTextById("obs-commentary-source", `${playerName} · ${source}`);
+}
+
+function setObservabilityLatestCommentary(payload = {}) {
+  if (!IS_OBSERVABILITY_VIEW) return;
+  const entry = commentaryEntryFromPayload(payload);
+  if (!entry) return;
+  setTextById("obs-commentary-line", entry.commentary);
+  setTextById("obs-commentary-player", `${entry.playerName} · ${entry.source}`);
+}
+
+function observeWorkerEvent(type, body = {}) {
+  if (!IS_OBSERVABILITY_VIEW) return;
+  if (type === "game.on") {
+    rememberObservabilityTrace("Match started", getConfiguredAdminRoom());
+    return;
+  }
+  switch (type) {
+    case "connect":
+      rememberObservabilityTrace("Socket connected", "browser joined realtime gateway");
+      break;
+    case "room.joined":
+      rememberObservabilityTrace("Room joined", body?.id || getConfiguredAdminRoom());
+      break;
+    case "player.info.joined":
+      rememberObservabilityTrace("Player connected", body?.name || body?.id || "Player");
+      break;
+    case "items.all":
+      setTextById("obs-item-event", "authoritative item map received");
+      rememberObservabilityTrace("Item map received", `${Object.keys(body || {}).length} items`);
+      break;
+    case "item.new": {
+      const item = body?.data || body?.item || {};
+      setTextById("obs-item-event", `${item.type || "item"} spawned`);
+      rememberObservabilityTrace("Item spawned", item.type || body?.id || "item");
+      break;
+    }
+    case "item.destroy": {
+      const payload = normalizeItemDestroyPayload(body);
+      setTextById("obs-item-event", `${payload.itemType || "item"} collected`);
+      rememberObservabilityTrace("Item collected", `${payload.playerName || "player"} · ${payload.itemType || "item"}`);
+      break;
+    }
+    case "commentary.pending":
+      setObservabilityCommentaryJob(body || {}, "received");
+      rememberObservabilityTrace("Commentary job received", body?.player_name || body?.playerName || "Player");
+      break;
+    case "commentary.ready":
+      setObservabilityCommentaryJob(body || {}, "ready");
+      setObservabilityLatestCommentary(body || {});
+      rememberObservabilityTrace("Commentary ready", body?.player_name || body?.playerName || "Player");
+      break;
+    default:
+      break;
+  }
 }
 
 function parsePrometheusMetrics(text = "") {
@@ -1801,26 +1910,23 @@ function renderObservabilityRooms() {
   const rooms = stableObservabilityRooms();
   updateObservabilityRoomCardsFromDirectory(rooms);
   if (!rooms.length) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 4;
-    cell.textContent = "Waiting for room metrics.";
-    row.appendChild(cell);
-    body.appendChild(row);
+    const item = document.createElement("li");
+    item.textContent = "Waiting for room metrics.";
+    body.appendChild(item);
     return;
   }
   rooms
     .sort((a, b) => (Number(b.humans || 0) - Number(a.humans || 0)) || String(a.id || "").localeCompare(String(b.id || "")))
-    .slice(0, 8)
+    .slice(0, 3)
     .forEach((room) => {
-      const row = document.createElement("tr");
-      const startsAt = room.startsAt ? new Date(room.startsAt).toLocaleTimeString() : "-";
-      [room.id || "-", room.state || "WAITING", formatCount(room.humans), startsAt].forEach((value) => {
-        const cell = document.createElement("td");
-        cell.textContent = value;
-        row.appendChild(cell);
-      });
-      body.appendChild(row);
+      const item = document.createElement("li");
+      const title = document.createElement("span");
+      title.textContent = room.id || "-";
+      const detail = document.createElement("em");
+      detail.textContent = `${String(room.state || "WAITING").toUpperCase()} · ${formatCount(room.humans)} humans`;
+      item.appendChild(title);
+      item.appendChild(detail);
+      body.appendChild(item);
     });
 }
 
@@ -1831,12 +1937,15 @@ function updateObservabilityRoomCardsFromDirectory(rooms = stableObservabilityRo
   if (selected) {
     setTextById("obs-humans", formatCount(selected.humans));
     setTextById("obs-bots", formatCount(selected.bots));
+    setTextById("obs-running", String(selected.state || "WAITING").toUpperCase());
   }
   setTextById("obs-rooms", formatCount(rooms.length || 1));
-  setTextById(
-    "obs-running",
-    formatCount(rooms.filter((room) => String(room.state || "").toUpperCase() === "RUNNING").length)
-  );
+  if (!selected) {
+    setTextById(
+      "obs-running",
+      formatCount(rooms.filter((room) => String(room.state || "").toUpperCase() === "RUNNING").length)
+    );
+  }
 }
 
 async function copyAdminPlayerLink() {
@@ -3357,6 +3466,7 @@ async function init() {
 
   worker.onmessage = ({ data }) => {
     const { type, body, error } = data;
+    observeWorkerEvent(type, body || {});
     try {
       const interesting = ["rooms.update","room.joined","room.admin","game.state","startingGame","chat.message","log"];
       if (interesting.includes(type)) appendEventConsole(type, body);
@@ -5103,7 +5213,6 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   player.add(statusBadge);
   // Do not render status badge in water reflection pass
   try { disableReflectionForSprite(statusBadge); } catch (_) {}
-  // No local name tag (only show names above other boats)
   applyBoatBadgeLayout();
 
   // lights

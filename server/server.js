@@ -385,6 +385,7 @@ let gameStartTime = null;
 let gameStartingAt = null;
 let gameTimer = null;
 const roomTimers = new Map(); // roomId -> { state, startTime, startingAt, timerId, resetTimerId }
+const roomEndRebroadcastTimers = new Map(); // roomId -> timeout ids for terminal event delivery
 const GLOBAL_ROOM = "__global__";
 const pendingRoomRefills = new Map();
 const ROOM_COUNTDOWN_MS = parseInt(process.env.ROOM_COUNTDOWN_MS ?? "10000");
@@ -402,23 +403,79 @@ function normalizeRoom(r) {
   return cleaned || null;
 }
 
-function rememberRoomCommentary(room, payload = {}) {
+function commentaryHistoryEntryKey(entry = {}) {
+  return [
+    String(entry.room || ""),
+    String(entry.session_id || entry.sessionId || ""),
+    String(entry.player_id || entry.playerId || ""),
+    String(entry.commentary || entry.text || entry.script || ""),
+  ].join("|");
+}
+
+function mergeRoomCommentaryEntry(room, entry = {}) {
   const key = normalizeRoom(room) || DEFAULT_ROOM_ID;
-  const entry = {
-    ...payload,
-    room: key,
-    at: payload.at || new Date().toISOString(),
-  };
+  const entryKey = commentaryHistoryEntryKey({ ...entry, room: key });
   const list = roomCommentaryHistory.get(key) || [];
-  list.push(entry);
-  while (list.length > COMMENTARY_HISTORY_LIMIT) list.shift();
-  roomCommentaryHistory.set(key, list);
+  const next = list.filter((item) => commentaryHistoryEntryKey(item) !== entryKey);
+  next.push(entry);
+  next.sort((a, b) => new Date(a.at || 0).getTime() - new Date(b.at || 0).getTime());
+  while (next.length > COMMENTARY_HISTORY_LIMIT) next.shift();
+  roomCommentaryHistory.set(key, next);
   return entry;
 }
 
-function commentaryHistoryForRoom(room) {
+async function rememberRoomCommentary(room, payload = {}) {
   const key = normalizeRoom(room) || DEFAULT_ROOM_ID;
-  return [...(roomCommentaryHistory.get(key) || [])];
+  const entry = mergeRoomCommentaryEntry(key, {
+    ...payload,
+    room: key,
+    at: payload.at || new Date().toISOString(),
+  });
+  if (mapCommentaryHistory) {
+    const entryKey = `${key}::${commentaryHistoryEntryKey(entry)}`;
+    try {
+      if (ENABLE_COHERENCE_BACKEND) {
+        await writeCache(mapCommentaryHistory, entryKey, entry);
+      } else {
+        mapCommentaryHistory[entryKey] = entry;
+      }
+    } catch (error) {
+      logger.warn({
+        room: key,
+        error: error && error.message ? error.message : String(error),
+      }, "shared commentary history write failed");
+    }
+  }
+  return entry;
+}
+
+async function commentaryHistoryForRoom(room) {
+  const key = normalizeRoom(room) || DEFAULT_ROOM_ID;
+  const entriesByKey = new Map();
+  const add = (entry = {}) => {
+    const entryRoom = normalizeRoom(entry.room || entry.room_id || entry.roomId) || key;
+    if (entryRoom !== key) return;
+    const entryKey = commentaryHistoryEntryKey({ ...entry, room: key });
+    if (!entryKey.trim()) return;
+    entriesByKey.set(entryKey, { ...entry, room: key });
+  };
+  for (const entry of roomCommentaryHistory.get(key) || []) add(entry);
+  try {
+    const shared = ENABLE_COHERENCE_BACKEND && mapCommentaryHistory
+      ? await readCacheEntries(mapCommentaryHistory)
+      : (mapCommentaryHistory || {});
+    for (const entry of Object.values(shared || {})) add(entry);
+  } catch (error) {
+    logger.warn({
+      room: key,
+      error: error && error.message ? error.message : String(error),
+    }, "shared commentary history read failed");
+  }
+  const list = Array.from(entriesByKey.values())
+    .sort((a, b) => new Date(a.at || 0).getTime() - new Date(b.at || 0).getTime())
+    .slice(-COMMENTARY_HISTORY_LIMIT);
+  roomCommentaryHistory.set(key, list);
+  return [...list];
 }
 
 function commentaryTaskKey(sessionId, playerId) {
@@ -478,7 +535,7 @@ function queueGameOverCommentary(io, { room, event, playerName } = {}) {
     } finally {
       pendingCommentaryTasks.delete(key);
     }
-    const commentaryPayload = rememberRoomCommentary(safeRoom, {
+    const commentaryPayload = await rememberRoomCommentary(safeRoom, {
       status: "ready",
       session_id: event.session_id,
       player_id: event.player_id,
@@ -714,6 +771,7 @@ let mapTrash;
 let mapMarineLife;
 let mapPowerUps;
 let mapRooms;
+let mapCommentaryHistory;
 let mapPlayerSockets;
 const localPlayersInfo = {};
 const localPlayerTraces = {};
@@ -721,6 +779,7 @@ const localTrash = {};
 const localMarineLife = {};
 const localPowerUps = {};
 const localRooms = {};
+const localCommentaryHistory = {};
 const coherenceEntryReader = createCoherenceEntryReader({
   timeoutMs: COHERENCE_SCAN_TIMEOUT_MS,
   backoffMs: COHERENCE_SCAN_BACKOFF_MS,
@@ -906,6 +965,7 @@ export async function start(
     mapMarineLife = await cacheSession.getMap("marineLife");
     mapPowerUps = await cacheSession.getMap("powerUps");
     mapRooms = await cacheSession.getMap("rooms");
+    mapCommentaryHistory = await cacheSession.getMap("commentaryHistory");
     mapPlayerSockets = {};
   } else {
     mapPlayersTraces = {};
@@ -914,6 +974,7 @@ export async function start(
     mapMarineLife = {};
     mapPowerUps = {};
     mapRooms = {};
+    mapCommentaryHistory = {};
     mapPlayerSockets = {};
   }
 
@@ -1026,6 +1087,8 @@ export async function start(
         startTime: rs.startTime,
       });
       socket.emit("game.time", roomRemainingSeconds(rs));
+    } else if (state === "ENDED") {
+      socket.emit("game.end", { room: wanted, ...(playerId ? { playerId } : {}) });
     }
   }
 
@@ -1046,6 +1109,66 @@ export async function start(
   }
   function shouldSyncVisualItems(room) {
     return !isLoadCanaryRoom(room);
+  }
+  function getLocalSocketsForRoom(room) {
+    const wanted = canonicalRoomId(room);
+    const sockets = [];
+    const seen = new Set();
+    for (const [playerId, socket] of Object.entries(mapPlayerSockets || {})) {
+      if (!socket || typeof socket.emit !== "function") continue;
+      const socketRoom = canonicalRoomId(playerRooms.get(playerId) || getSocketRoom(socket));
+      if (socketRoom !== wanted) continue;
+      const socketKey = socket.id || playerId;
+      if (seen.has(socketKey)) continue;
+      seen.add(socketKey);
+      sockets.push({ playerId, socket });
+    }
+    return sockets;
+  }
+  function emitRoomEndToLocalSockets(room, endPayload = {}) {
+    for (const { playerId, socket } of getLocalSocketsForRoom(room)) {
+      try {
+        socket.emit("game.state", "ENDED");
+        socket.emit("game.end", { ...endPayload, playerId });
+      } catch (e) {
+        logger.warn({
+          room,
+          playerId,
+          error: e && e.message ? e.message : String(e),
+        }, "direct room end emit failed");
+      }
+    }
+  }
+  function emitRoomEndBroadcast(room, endPayload = {}) {
+    const wanted = canonicalRoomId(room);
+    io.to(wanted).emit("game.state", "ENDED");
+    io.to(wanted).emit("game.end", endPayload);
+    emitRoomEndToLocalSockets(wanted, endPayload);
+  }
+  function clearRoomEndRebroadcastTimers(room) {
+    const wanted = canonicalRoomId(room);
+    const timers = roomEndRebroadcastTimers.get(wanted) || [];
+    for (const timer of timers) {
+      try { clearTimeout(timer); } catch (_) {}
+    }
+    roomEndRebroadcastTimers.delete(wanted);
+  }
+  function scheduleRoomEndRebroadcast(room, endPayload = {}) {
+    const wanted = canonicalRoomId(room);
+    clearRoomEndRebroadcastTimers(wanted);
+    const delays = [250, 1000, 2500, 5000];
+    const timers = delays.map((delayMs, index) => setTimeout(() => runAsyncTask(`room.end.rebroadcast.${wanted}.${delayMs}`, async () => {
+      const latest = await readCanonicalRoomState(wanted);
+      if (latest?.state !== "ENDED") {
+        clearRoomEndRebroadcastTimers(wanted);
+        return;
+      }
+      emitRoomEndBroadcast(wanted, endPayload);
+      if (index === delays.length - 1) {
+        roomEndRebroadcastTimers.delete(wanted);
+      }
+    }), delayMs));
+    roomEndRebroadcastTimers.set(wanted, timers);
   }
   async function humansInRoom(room) {
     const info = await getPlayersInfoObject();
@@ -1327,6 +1450,7 @@ async function broadcastRoomState(room, state, extra = {}) {
   if (!room) return;
   const rs = roomTimers.get(room) || { state: 'WAITING', startTime: null, startingAt: null, timerId: null };
   rs.state = state;
+  if (state !== "ENDED") clearRoomEndRebroadcastTimers(room);
   if (state === "WAITING" || state === "ENDED") {
     rs.startTime = null;
     rs.startingAt = null;
@@ -1363,7 +1487,17 @@ async function broadcastRoomState(room, state, extra = {}) {
     });
   }
   if (extra.remaining) io.to(room).emit("game.time", extra.remaining);
-  if (extra.end) io.to(room).emit("game.end", extra.end);
+  if (state === "ENDED") {
+    const endPayload = {
+      ...(extra.end && typeof extra.end === "object" ? extra.end : {}),
+      room: canonicalRoomId(room),
+    };
+    io.to(room).emit("game.end", endPayload);
+    emitRoomEndToLocalSockets(room, endPayload);
+    scheduleRoomEndRebroadcast(room, endPayload);
+  } else if (extra.end) {
+    io.to(room).emit("game.end", extra.end);
+  }
 }
 
 function clearRoomResetTimer(room) {
@@ -1642,6 +1776,21 @@ function scheduleRoomRefill(room, delayMs = 0) {
     return { total, humans, bots };
   }
 
+  async function countPlayersForRoomObservability(room) {
+    const want = room || GLOBAL_ROOM;
+    const info = await getPlayersInfoObject();
+    let humans = 0;
+    let bots = 0;
+    for (const [id, profile] of Object.entries(info || {})) {
+      const profileRoom = profile && profile.room ? normalizeRoom(profile.room) : null;
+      const playerRoom = profileRoom || playerRooms.get(id) || GLOBAL_ROOM;
+      if (playerRoom !== want) continue;
+      if (isBotProfile(profile, id)) bots++;
+      else humans++;
+    }
+    return { total: humans + bots, humans, bots };
+  }
+
   function buildObservabilityMetricsFromCounts({
     players = { total: 0, humans: 0, bots: 0 },
     counts = { trash: 0, marine: 0, powerups: 0 },
@@ -1673,17 +1822,19 @@ function scheduleRoomRefill(room, delayMs = 0) {
 
   async function buildCanonicalObservabilitySnapshot({ room } = {}) {
     const selectedRoom = canonicalRoomId(room || DEFAULT_ROOM_ID);
-    const [selectedState, playerCounts, allItemCounts] = await Promise.all([
+    const [selectedState, playerCounts, selectedPlayerCounts, allItemCounts, selectedItemCounts] = await Promise.all([
       readRoomStateForObservability(selectedRoom),
       countPlayersForObservability(),
+      countPlayersForRoomObservability(selectedRoom),
       countAllItemsCanonical(),
+      countItemsForRoom(selectedRoom),
     ]);
     const selectedRoomEntry = {
       id: selectedRoom,
       default: selectedRoom === DEFAULT_ROOM_ID,
       state: selectedState?.state || "WAITING",
-      humans: playerCounts.humans,
-      bots: playerCounts.bots,
+      humans: selectedPlayerCounts.humans,
+      bots: selectedPlayerCounts.bots,
       capacity: null,
       startsAt: selectedState?.startingAt || null,
       startTime: selectedState?.startTime || null,
@@ -1707,8 +1858,8 @@ function scheduleRoomRefill(room, delayMs = 0) {
     });
     globalMetrics.scope = "global";
     const selectedMetrics = buildObservabilityMetricsFromCounts({
-      players: { total: selectedRoomEntry.humans + selectedRoomEntry.bots, humans: selectedRoomEntry.humans, bots: selectedRoomEntry.bots },
-      counts: allItemCounts,
+      players: selectedPlayerCounts,
+      counts: selectedItemCounts,
       targets: computeEffectiveTargets(selectedRoomEntry.humans),
       roomStats,
       sockets: globalMetrics.sockets,
@@ -1745,7 +1896,8 @@ function scheduleRoomRefill(room, delayMs = 0) {
         room: operatorRooms.find((entry) => normalizeRoom(entry?.id) === selectedRoom) || null,
         metrics: selectedMetrics,
         players: selectedMetrics.players,
-        items: allItemCounts,
+        items: selectedItemCounts,
+        globalItems: allItemCounts,
         targets: selectedMetrics.targets,
       },
     };
@@ -1820,7 +1972,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
           const r = getSocketRoom(socket);
           const hist = roomChats.get(r) || [];
           socket.emit("chat.history", hist);
-          socket.emit("commentary.history", commentaryHistoryForRoom(r));
+          socket.emit("commentary.history", await commentaryHistoryForRoom(r));
         } catch (_) {}
         // Broadcast updated lobby roster only to this room.
         await emitLobbyPlayersForRoom(currentRoom);
@@ -1925,7 +2077,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
         try {
           const hist = roomChats.get(wanted) || [];
           socket.emit("chat.history", hist);
-          socket.emit("commentary.history", commentaryHistoryForRoom(wanted));
+          socket.emit("commentary.history", await commentaryHistoryForRoom(wanted));
         } catch (_) {}
       } catch (e) {
         logger.error(`room.join error: ${e && e.message ? e.message : e}`);
@@ -3061,6 +3213,7 @@ async function writeCache(cache, id, value) {
     if (cache === mapMarineLife) localMarineLife[id] = value;
     if (cache === mapPowerUps) localPowerUps[id] = value;
     if (cache === mapRooms) localRooms[id] = value;
+    if (cache === mapCommentaryHistory) localCommentaryHistory[id] = value;
     await cache.set(id, value);
   } catch (error) {
     logger.error(
@@ -3088,6 +3241,7 @@ async function deleteCache(cache, id) {
     if (cache === mapMarineLife) delete localMarineLife[id];
     if (cache === mapPowerUps) delete localPowerUps[id];
     if (cache === mapRooms) delete localRooms[id];
+    if (cache === mapCommentaryHistory) delete localCommentaryHistory[id];
     await cache.delete(id);
   } catch (error) {
     logger.error(`Error deleting ${id}. ${error.message}`);
@@ -3101,6 +3255,7 @@ function localMirrorForCache(cache) {
   if (cache === mapMarineLife) return localMarineLife;
   if (cache === mapPowerUps) return localPowerUps;
   if (cache === mapRooms) return localRooms;
+  if (cache === mapCommentaryHistory) return localCommentaryHistory;
   return null;
 }
 
@@ -3111,6 +3266,7 @@ function cacheLabel(cache) {
   if (cache === mapMarineLife) return "marineLife";
   if (cache === mapPowerUps) return "powerUps";
   if (cache === mapRooms) return "rooms";
+  if (cache === mapCommentaryHistory) return "commentaryHistory";
   return "unknown";
 }
 
