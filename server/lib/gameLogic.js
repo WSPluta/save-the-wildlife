@@ -68,6 +68,19 @@ export function normalizeStartPositions(value = {}) {
   return Object.keys(positions).length ? positions : null;
 }
 
+export function normalizeRoomScores(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const scores = {};
+  for (const [playerId, score] of Object.entries(value)) {
+    const key = String(playerId || "").trim();
+    if (score === "") continue;
+    const parsed = Number(score);
+    if (!key || !Number.isFinite(parsed)) continue;
+    scores[key] = Math.round(parsed);
+  }
+  return scores;
+}
+
 export function normalizeRoomStateRecord(room, state = {}, {
   defaultRoom = "ROOM-0001",
   durationSeconds = 60,
@@ -90,6 +103,7 @@ export function normalizeRoomStateRecord(room, state = {}, {
     adminId,
     startPosition: normalizeStartPosition(state?.startPosition),
     startPositions: normalizeStartPositions(state?.startPositions),
+    scores: normalizeRoomScores(state?.scores || state?.scoreByPlayer || state?.finalScores || state?.score_by_player || state?.final_scores),
     ownerServerId: state?.ownerServerId || null,
     durationSeconds: Number.isFinite(Number(state?.durationSeconds))
       ? Math.max(1, Number(state.durationSeconds))
@@ -115,6 +129,7 @@ export function persistedRoomState(room, state = {}, options = {}) {
     adminId: normalized.adminId,
     startPosition: normalized.startPosition,
     startPositions: normalized.startPositions,
+    scores: normalized.scores,
     ownerServerId: normalized.ownerServerId,
     durationSeconds: normalized.durationSeconds,
     updatedAt: normalized.updatedAt,

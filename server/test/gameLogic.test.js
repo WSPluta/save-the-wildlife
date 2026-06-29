@@ -12,6 +12,7 @@ import {
   canonicalRoomId,
   resolveJoiningRoom,
   normalizePlayerName,
+  normalizeRoomScores,
   computeTargets,
   recomputeWorldSize,
   resolveAuthoritativeBoatTypes,
@@ -141,6 +142,7 @@ describe("canonical room state helpers", () => {
       adminId: "player-admin",
       startPosition: { x: 2, y: 0, z: 3 },
       startPositions: { p1: { x: 2, z: 3 }, p2: { x: 8, z: -4 } },
+      scores: { p1: 7, p2: "-2", ignored: "bad" },
       durationSeconds: 60,
       updatedAt: 5678,
     }, { defaultRoom: "ROOM-0001", durationSeconds: 60 });
@@ -155,12 +157,31 @@ describe("canonical room state helpers", () => {
         p1: { x: 2, y: 0, z: 3 },
         p2: { x: 8, y: 0, z: -4 },
       },
+      scores: { p1: 7, p2: -2 },
       ownerServerId: "server-a",
       durationSeconds: 60,
       updatedAt: 5678,
     });
     expect(persisted).not.toHaveProperty("timerId");
     expect(persisted).not.toHaveProperty("resetTimerId");
+  });
+
+  it("normalizes room score maps without dropping negative turtle penalties", () => {
+    expect(normalizeRoomScores({
+      p1: "9",
+      p2: -3.2,
+      empty: "",
+      bad: "nope",
+    })).toEqual({
+      p1: 9,
+      p2: -3,
+    });
+    const state = normalizeRoomStateRecord("room-score", {
+      state: "RUNNING",
+      scoreByPlayer: { p1: 4, p2: "-1" },
+      updatedAt: 10,
+    }, { defaultRoom: "ROOM-0001", durationSeconds: 60, now: 10 });
+    expect(state.scores).toEqual({ p1: 4, p2: -1 });
   });
 
   it("uses per-player start positions when present and falls back safely", () => {

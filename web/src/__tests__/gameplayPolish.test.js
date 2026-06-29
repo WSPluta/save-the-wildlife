@@ -26,6 +26,15 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/gameplaySessionId:\s*currentSessionId \|\| null/);
   });
 
+  it("keeps final score aligned to authoritative server scores or accepted local collisions", () => {
+    expect(script).toMatch(/import \{ finalScoreFromSources \} from "\.\/scoreIntegrity";/);
+    expect(script).toMatch(/function finalScoreFromEndPayload\(endPayload = \{\}\)/);
+    expect(script).toMatch(/finalScoreFromSources\(\{[\s\S]{0,160}playerId: yourId,[\s\S]{0,120}localScore,/);
+    expect(script).toMatch(/const finalScore = finalScoreFromEndPayload\(endPayload\);/);
+    expect(script).toMatch(/finitePayloadNumber\(payload\.score, payload\.serverScore\)/);
+    expect(script).not.toMatch(/Math\.max\(0,\s*Math\.round\(finalScoreFromEndPayload/);
+  });
+
   it("starts gameplay telemetry when game.on follows an early RUNNING state", () => {
     expect(script).toMatch(/const shouldStartGameplayTelemetry = gameState !== "RUNNING" \|\| !currentSessionId;/);
     expect(script).toMatch(/if \(shouldStartGameplayTelemetry\) \{[\s\S]{0,180}resetGameplayTelemetry\(\);[\s\S]{0,120}emitGameplayEvent\("game_started"/);
@@ -478,7 +487,7 @@ describe("gameplay polish regressions", () => {
 
   it("pins result commentary score to one final game-over score", () => {
     expect(script).toMatch(/function endGame\(endPayload = \{\}\)/);
-    expect(script).toMatch(/const finalScore = Math\.max\(0, Math\.round\(finalScoreFromEndPayload\(endPayload\)/);
+    expect(script).toMatch(/const finalScore = finalScoreFromEndPayload\(endPayload\);/);
     expect(script).toMatch(/localScore = finalScore;/);
     expect(script).toMatch(/emitGameplayEvent\("game_over", \{[\s\S]{0,160}final_score: finalScore,[\s\S]{0,80}score: finalScore,/);
     expect(script).toMatch(/updateResultsScore\(finalScore\);/);

@@ -25,6 +25,7 @@ import {
   worldBoundaryExtents,
 } from "./boundaries";
 import { summarizeAiAdapterHealth } from "./adminAiHealth";
+import { finalScoreFromSources } from "./scoreIntegrity";
 import "./style.css";
 import * as lobby from "./lobby";
 import { normalizeRoomId } from "./util";
@@ -2423,7 +2424,8 @@ function applyConfirmedCollisionOutcome(rawPayload, options = {}) {
   } else if (isMarineLife(itemType)) {
     const delta = Number.isFinite(payload.scoreDelta) ? Number(payload.scoreDelta) : -1;
     if (delta !== 0) {
-      localScore += delta;
+      const serverScore = finitePayloadNumber(payload.score, payload.serverScore);
+      localScore = Number.isFinite(serverScore) ? Math.round(serverScore) : localScore + delta;
       eventStats.marine_hit++;
       emitGameplayEvent("marine_hit", {
         itemId,
@@ -2441,7 +2443,8 @@ function applyConfirmedCollisionOutcome(rawPayload, options = {}) {
     }
   } else {
     const delta = Number.isFinite(payload.scoreDelta) ? Number(payload.scoreDelta) : 1;
-    localScore += delta;
+    const serverScore = finitePayloadNumber(payload.score, payload.serverScore);
+    localScore = Number.isFinite(serverScore) ? Math.round(serverScore) : localScore + delta;
     eventStats.trash_collected++;
     emitGameplayEvent("trash_collected", {
       itemId,
@@ -6494,17 +6497,12 @@ function finitePayloadNumber(...values) {
 }
 
 function finalScoreFromEndPayload(endPayload = {}) {
-  return finitePayloadNumber(
-    endPayload?.scores && endPayload.scores[yourId],
-    endPayload?.final_scores && endPayload.final_scores[yourId],
-    endPayload?.finalScores && endPayload.finalScores[yourId],
-    endPayload?.score_by_player && endPayload.score_by_player[yourId],
-    endPayload?.scoreByPlayer && endPayload.scoreByPlayer[yourId],
-    endPayload?.playerId === yourId ? endPayload?.final_score : null,
-    endPayload?.playerId === yourId ? endPayload?.finalScore : null,
-    endPayload?.playerId === yourId ? endPayload?.score : null,
-    localScore
-  );
+  return finalScoreFromSources({
+    endPayload,
+    playerId: yourId,
+    localScore,
+    fallbackScore: 0,
+  });
 }
 
 function updateResultsScore(finalScore) {
@@ -6515,7 +6513,7 @@ function updateResultsScore(finalScore) {
 }
 
 function endGame(endPayload = {}) {
-  const finalScore = Math.max(0, Math.round(finalScoreFromEndPayload(endPayload) ?? Number(localScore || 0)));
+  const finalScore = finalScoreFromEndPayload(endPayload);
   const remainingFromServer = finitePayloadNumber(endPayload?.remaining, endPayload?.timeRemaining);
   localScore = finalScore;
   updateLocalScoreDisplays();

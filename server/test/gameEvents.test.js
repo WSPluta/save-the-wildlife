@@ -43,6 +43,26 @@ describe("game event telemetry", () => {
     expect(() => normalizeGameEvent({ type: "made_up", playerId: "P1" })).toThrow(/unsupported_event_type/);
   });
 
+  it("keeps missing non-terminal scores unknown instead of coercing them to zero", () => {
+    const collected = normalizeGameEvent({
+      type: "powerup_collected",
+      sessionId: "S-SCORE-GAP",
+      roomId: "ROOM-1",
+      playerId: "P1",
+      score: null,
+    });
+    const ended = normalizeGameEvent({
+      type: "game_over",
+      sessionId: "S-SCORE-GAP",
+      roomId: "ROOM-1",
+      playerId: "P1",
+      score: null,
+    });
+
+    expect(collected.score).toBeNull();
+    expect(ended.score).toBe(0);
+  });
+
   it("captures trail crossing and freeze events with coordinates and related players", () => {
     const trailEvent = normalizeGameEvent({
       type: "trail_crossed",

@@ -32,6 +32,7 @@ import {
   isTrashBoxFootprintOverlap,
   softClampWorldPosition,
   normalizeRoomStateRecord as normalizeRoomStateRecordBase,
+  normalizeRoomScores,
   normalizeStartPosition,
   normalizeStartPositions,
   persistedRoomState as buildPersistedRoomState,
@@ -1113,6 +1114,18 @@ export async function start(
   }
   function buildRoomEndPayload(room, overrides = {}) {
     const source = overrides && typeof overrides === "object" ? overrides : {};
+    const state = roomTimers.get(canonicalRoomId(room)) || {};
+    const scores = normalizeRoomScores(
+      source.finalScores ||
+      source.final_scores ||
+      source.scoreByPlayer ||
+      source.score_by_player ||
+      source.scores ||
+      state.finalScores ||
+      state.scoreByPlayer ||
+      state.scores
+    );
+    const hasAuthoritativeScores = Object.keys(scores).length > 0;
     const durationSeconds = Number(source.durationSeconds ?? GAME_DURATION_IN_SECONDS);
     const remaining = Number(source.remaining ?? source.timeRemaining ?? 0);
     const safeRemaining = Number.isFinite(remaining) ? Math.max(0, Math.round(remaining)) : 0;
@@ -1123,7 +1136,37 @@ export async function start(
       timeRemaining: safeRemaining,
       durationSeconds: Number.isFinite(durationSeconds) ? Math.max(0, Math.round(durationSeconds)) : GAME_DURATION_IN_SECONDS,
       endedAt: source.endedAt || new Date().toISOString(),
+      scores,
+      scoreByPlayer: scores,
+      finalScores: scores,
+      authoritativeScores: hasAuthoritativeScores,
+      scoreSource: hasAuthoritativeScores ? "server_room_state" : (source.scoreSource || source.score_source || null),
     };
+  }
+
+  async function applyRoomScoreDelta(room, playerId, delta) {
+    const parsedDelta = Number(delta);
+    const safePlayerId = String(playerId || "").trim();
+    if (!safePlayerId || !Number.isFinite(parsedDelta) || parsedDelta === 0) return null;
+    const safeRoom = canonicalRoomId(room);
+    const latest = await readCanonicalRoomState(safeRoom) || {
+      room: safeRoom,
+      state: gameState || "WAITING",
+      durationSeconds: GAME_DURATION_IN_SECONDS,
+    };
+    const scores = normalizeRoomScores(latest.scores || latest.scoreByPlayer || latest.finalScores);
+    const current = Number(scores[safePlayerId]);
+    const nextScore = Math.round((Number.isFinite(current) ? current : 0) + parsedDelta);
+    const nextScores = { ...scores, [safePlayerId]: nextScore };
+    await writeCanonicalRoomState(safeRoom, {
+      ...latest,
+      scores: nextScores,
+      scoreByPlayer: nextScores,
+    }, {
+      timerId: latest.timerId || null,
+      resetTimerId: latest.resetTimerId || null,
+    });
+    return nextScore;
   }
   function getLocalSocketsForRoom(room) {
     const wanted = canonicalRoomId(room);
@@ -1552,6 +1595,8 @@ async function startRoomMatch(room) {
   existing.startTime = null;
   existing.startPosition = null;
   existing.startPositions = null;
+  existing.scores = {};
+  existing.scoreByPlayer = {};
   existing.ownerServerId = serverId;
   existing.durationSeconds = GAME_DURATION_IN_SECONDS;
   await persistRoomState(room, existing);
@@ -2360,7 +2405,9 @@ function scheduleRoomRefill(room, delayMs = 0) {
           }
         }
 
-        const acceptedPayload = (scoreDelta = 0) => ({
+        const acceptedPayload = (scoreDelta = 0, scoreTotal = null) => {
+          const safeScoreTotal = Number(scoreTotal);
+          return {
           ok: true,
           id: itemId,
           itemId,
@@ -2369,8 +2416,12 @@ function scheduleRoomRefill(room, delayMs = 0) {
           playerName,
           position: itemSnapshot?.position || null,
           scoreDelta,
+          score: Number.isFinite(safeScoreTotal) ? safeScoreTotal : null,
+          serverScore: Number.isFinite(safeScoreTotal) ? safeScoreTotal : null,
+          scoreSource: Number.isFinite(safeScoreTotal) ? "server_room_state" : null,
           powerupType: String(itemSnapshot?.type || "").startsWith("powerup_") ? itemSnapshot.type : null,
-        });
+          };
+        };
 
         // Remove the item, update score/effects accordingly
         if (itemType === "trash") {
@@ -2379,7 +2430,8 @@ function scheduleRoomRefill(room, delayMs = 0) {
           } else {
             delete mapTrash[itemId];
           }
-          const accepted = acceptedPayload(1);
+          const scoreTotal = await applyRoomScoreDelta(room, playerId, 1);
+          const accepted = acceptedPayload(1, scoreTotal);
           io.to(room).emit("item.destroy", accepted);
           safeAck(accepted);
           if (item) itemPool.returnObject(item);
@@ -2389,7 +2441,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
             playerId,
             playerName,
             itemId,
-            score: null,
+            score: scoreTotal,
             position: itemSnapshot?.position,
             metadata: { item_type: itemSnapshot?.type || "trash" },
           }, { roomId: room, sessionId: await sessionIdForRoomAsync(room) });
@@ -2401,7 +2453,9 @@ function scheduleRoomRefill(room, delayMs = 0) {
             delete mapMarineLife[itemId];
           }
           const shielded = !!(SERVER_AUTH_ENABLED && playersState.get(playerId)?.shield);
-          const accepted = acceptedPayload(shielded ? 0 : -1);
+          const scoreDelta = shielded ? 0 : -1;
+          const scoreTotal = !shielded ? await applyRoomScoreDelta(room, playerId, scoreDelta) : null;
+          const accepted = acceptedPayload(scoreDelta, scoreTotal);
           io.to(room).emit("item.destroy", accepted);
           safeAck(accepted);
           if (item) itemPool.returnObject(item);
@@ -2413,7 +2467,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
               playerId,
               playerName,
               itemId,
-              score: null,
+              score: scoreTotal,
               position: itemSnapshot?.position,
               metadata: { item_type: itemSnapshot?.type || "turtle" },
             }, { roomId: room, sessionId: await sessionIdForRoomAsync(room) });
