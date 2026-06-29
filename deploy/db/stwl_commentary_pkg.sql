@@ -36,7 +36,11 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
                MAX(e.room_id) KEEP (DENSE_RANK LAST ORDER BY e.occurred_at) AS room_id,
                e.player_id,
                MAX(e.player_name) KEEP (DENSE_RANK LAST ORDER BY e.occurred_at) AS player_name,
-               NVL(MAX(e.score) KEEP (DENSE_RANK LAST ORDER BY e.occurred_at), 0) AS score,
+               NVL(COALESCE(
+                 MAX(CASE WHEN e.event_type = 'game_over' THEN e.score END)
+                   KEEP (DENSE_RANK LAST ORDER BY CASE WHEN e.event_type = 'game_over' THEN e.occurred_at END NULLS FIRST),
+                 MAX(e.score) KEEP (DENSE_RANK LAST ORDER BY e.occurred_at)
+               ), 0) AS score,
                SUM(CASE WHEN e.event_type = 'trash_collected' THEN 1 ELSE 0 END) AS trash_collected,
                SUM(CASE WHEN e.event_type = 'marine_hit' THEN 1 ELSE 0 END) AS marine_hits,
                SUM(CASE WHEN e.event_type = 'trail_crossed' THEN 1 ELSE 0 END) AS trail_crosses,

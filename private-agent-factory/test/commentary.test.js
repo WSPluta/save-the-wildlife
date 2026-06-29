@@ -1455,9 +1455,9 @@ test("live-line fast return can select guarded Select AI output", async () => {
     );
 
     assert.equal(response.ok, true);
-    assert.equal(response.source, "select-ai");
+    assert.equal(response.source, "select-ai-guarded");
     assert.equal(response.commentary, "Score 0. Keep an eye on those coordinates!");
-    assert.equal(response.in_db_agent.source, "select-ai");
+    assert.equal(response.in_db_agent.source, "select-ai-guarded");
     assert.equal(response.model_route.primary.skipped, true);
     assert.match(response.warnings.join("; "), /select-ai:in_db_output_guarded/);
   });
@@ -2170,11 +2170,114 @@ test("rejects unsupported Select AI commentary before returning room live line",
       }
     );
 
-    assert.equal(response.source, "oracle-match-intelligence");
-    assert.equal(response.in_db_agent, null);
-    assert.equal(response.commentary, "Powerup run: speed boosted a 3 finish.");
+    assert.equal(response.source, "select-ai-guarded");
+    assert.equal(response.in_db_agent.source, "select-ai-guarded");
+    assert.equal(response.commentary, "Wojtek scored 3 after speed powerup.");
     assert.ok(!/trail/i.test(response.commentary));
-    assert.match(response.warnings.join("; "), /select-ai:in_db_output_rejected_unsupported_game_fact/);
+    assert.match(response.warnings.join("; "), /select-ai:in_db_output_guarded/);
+  });
+});
+
+test("rejects Select AI text that claims marine collection without marine evidence", async () => {
+  const oracleConnection = {
+    async execute(sql) {
+      if (/WHERE room_id = :roomId/i.test(sql)) {
+        return {
+          rows: [
+            {
+              SESSION_ID: "S-CLEAN",
+              ROOM_ID: "ROOM-CLEAN",
+              PLAYER_ID: "P-CLEAN",
+              PLAYER_NAME: "Clean Run",
+              SCORE: 12,
+              EVENT_COUNT: 4,
+            },
+          ],
+        };
+      }
+      if (/SUM\(CASE WHEN event_type = 'trash_collected'/i.test(sql)) {
+        return {
+          rows: [
+            {
+              SESSION_ID: "S-CLEAN",
+              ROOM_ID: "ROOM-CLEAN",
+              PLAYER_ID: "P-CLEAN",
+              PLAYER_NAME: "Clean Run",
+              SCORE: 12,
+              TRASH_COLLECTED: 1,
+              MARINE_HITS: 0,
+              TRAIL_CROSSES: 0,
+              FREEZES: 0,
+              LAST_X: 2.4,
+              LAST_Y: 0,
+              LAST_Z: -2.2,
+            },
+          ],
+        };
+      }
+      if (/event_type = 'powerup_collected'/i.test(sql)) {
+        return { rows: [{ METADATA_JSON: JSON.stringify({ powerup_type: "powerup_speed" }) }] };
+      }
+      if (/event_type = 'game_over'/i.test(sql)) return { rows: [{ PRIOR_BEST_SCORE: null }] };
+      if (/SELECT id, event_type/i.test(sql)) {
+        return {
+          rows: [
+            {
+              ID: 1,
+              EVENT_TYPE: "trash_collected",
+              OCCURRED_AT: "2026-06-21T15:57:00.000Z",
+              SCORE: 4,
+              X: 1.1,
+              Y: 0,
+              Z: -1.2,
+              RELATED_ITEM_ID: "TR-1",
+              METADATA_JSON: JSON.stringify({ item_type: "trash" }),
+            },
+          ],
+        };
+      }
+      if (/FROM STWL_REPLAY_CLIPS/i.test(sql)) return { rows: [] };
+      if (/FROM STWL_AGENT_MEMORIES/i.test(sql)) return { rows: [] };
+      if (/build_script_json/i.test(sql)) {
+        return {
+          outBinds: {
+            result: JSON.stringify({
+              ok: true,
+              source: "select-ai",
+              commentary: "Clean Run collects trash and marine life, scoring 12 with a powerup.",
+            }),
+          },
+        };
+      }
+      return { rows: [] };
+    },
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+    PAF_MODEL_ROUTE_MODE: "shadow",
+    PAF_MODEL_FAST_PATH_ENABLED: "true",
+    OCI_BASE_MODEL_ENDPOINT_URL: "https://model.example.test/base",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "true",
+    PAF_MATCH_INTELLIGENCE_AUTO_INIT: "false",
+    PAF_AGENT_MEMORY_PERSIST: "false",
+  }, async () => {
+    const response = await buildCommentary(
+      { roomId: "ROOM-CLEAN", format: "live_line" },
+      {
+        oracleConnection,
+        oracledb: { BIND_OUT: 3003, STRING: 2001 },
+      }
+    );
+
+    assert.equal(response.source, "select-ai-guarded");
+    assert.equal(response.in_db_agent.source, "select-ai-guarded");
+    assert.equal(response.commentary, "Clean Run scored 12 after speed powerup.");
+    assert.ok(!/marine/i.test(response.commentary));
+    assert.match(response.warnings.join("; "), /select-ai:in_db_output_guarded/);
   });
 });
 
@@ -2433,6 +2536,8 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(packageSql, /oracle-ai-database-deterministic/i);
   assert.match(packageSql, /\bhistory\s+AS\s*\(/i);
   assert.doesNotMatch(packageSql, /\bprior\s+AS\s*\(/i);
+  assert.match(packageSql, /event_type\s*=\s*'game_over'[\s\S]{0,160}THEN e\.score/i);
+  assert.match(packageSql, /COALESCE\([\s\S]{0,260}DENSE_RANK LAST ORDER BY CASE WHEN e\.event_type = 'game_over'/i);
   assert.match(packageSql, /TO_CLOB\('\{\}'\)/i);
   assert.doesNotMatch(packageSql, /RETURN\s+JSON_OBJECT\([\s\S]*?RETURNING\s+CLOB[\s\S]*?\);/i);
 

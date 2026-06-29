@@ -169,8 +169,39 @@ describe("game event telemetry", () => {
     expect(ddl).toMatch(/metadata_json\s+CLOB\s+CHECK\s*\(\s*metadata_json\s+IS\s+JSON\s*\)/i);
     expect(ddl).toMatch(/CREATE\s+TABLE\s+stwl_player_sessions/i);
     expect(ddl).toMatch(/sessions_json\s+CLOB\s+CHECK\s*\(\s*sessions_json\s+IS\s+JSON\s*\)/i);
+    expect(ddl).toMatch(/event_type\s*=\s*'game_over'[\s\S]{0,120}THEN score/i);
+    expect(runtime).toMatch(/eventType === "game_over"[\s\S]{0,160}payload\.final_score[\s\S]{0,120}payload\.score/i);
     const playerSessionDdl = runtime.match(/CREATE TABLE stwl_player_sessions \(([\s\S]*?)\)`;/)?.[1] || "";
     expect(playerSessionDdl.match(/\broom_id\s+VARCHAR2\(64\)/gi)).toHaveLength(1);
+  });
+
+  it("uses terminal game_over final score as commentary source of truth", async () => {
+    const sessionId = `S-FINAL-${Date.now()}-${Math.random()}`;
+    await recordGameEvent({ type: "game_started", sessionId, roomId: "ROOM-FINAL", playerId: "P-FINAL", playerName: "Finalist", score: 0 });
+    await recordGameEvent({ type: "trash_collected", sessionId, roomId: "ROOM-FINAL", playerId: "P-FINAL", score: 4 });
+    await recordGameEvent({ type: "position_sample", sessionId, roomId: "ROOM-FINAL", playerId: "P-FINAL", score: 99 });
+    await recordGameEvent({
+      type: "game_over",
+      sessionId,
+      roomId: "ROOM-FINAL",
+      playerId: "P-FINAL",
+      score: 4,
+      finalScore: 14,
+      metadata: { final_score: 14 },
+    });
+    await recordGameEvent({ type: "powerup_collected", sessionId, roomId: "ROOM-FINAL", playerId: "P-FINAL", score: 99, powerupType: "powerup_speed" });
+
+    const event = normalizeGameEvent({
+      type: "game_over",
+      sessionId: "S-RAW",
+      roomId: "ROOM-FINAL",
+      playerId: "P-FINAL",
+      score: 4,
+      final_score: 14,
+    });
+    expect(event.score).toBe(14);
+    expect(summarizeSession(sessionId, "P-FINAL").score).toBe(14);
+    expect((await buildCommentary(sessionId, "P-FINAL")).summary.score).toBe(14);
   });
 
   it("summarizes powerups, freezes, and game over events for commentary", async () => {

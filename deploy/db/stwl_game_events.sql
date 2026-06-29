@@ -70,7 +70,11 @@ SELECT
   MAX(player_name) AS player_name,
   MIN(occurred_at) AS started_at,
   MAX(occurred_at) AS ended_at,
-  MAX(score) KEEP (DENSE_RANK LAST ORDER BY occurred_at) AS final_score,
+  COALESCE(
+    MAX(CASE WHEN event_type = 'game_over' THEN score END)
+      KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type = 'game_over' THEN occurred_at END NULLS FIRST),
+    MAX(score) KEEP (DENSE_RANK LAST ORDER BY occurred_at)
+  ) AS final_score,
   SUM(CASE WHEN event_type = 'trash_collected' THEN 1 ELSE 0 END) AS trash_collected,
   SUM(CASE WHEN event_type = 'marine_hit' THEN 1 ELSE 0 END) AS marine_hits,
   SUM(CASE WHEN event_type = 'powerup_collected' THEN 1 ELSE 0 END) AS powerups_collected,

@@ -460,4 +460,28 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/try \{ disableReflectionForObject\(group\); \} catch \(_\) \{\}/);
     expect(script).toMatch(/environmentPropsVisible: environmentPropStats\.total \|\| 0,/);
   });
+
+  it("renders visible map boundaries and uses soft clamping instead of an invisible wall", () => {
+    expect(script).toMatch(/import \{[\s\S]{0,180}boundaryMarkerLayout,[\s\S]{0,140}softClampToWorldBoundary,[\s\S]{0,140}worldBoundaryExtents,[\s\S]{0,140}\} from "\.\/boundaries";/);
+    expect(script).toMatch(/let worldBoundaryGroup = null;/);
+    expect(script).toMatch(/function createBoundaryRopeSegment\(start, end\)/);
+    expect(script).toMatch(/function createWorldBoundaryMarkers\(isMobileViewport\)/);
+    expect(script).toMatch(/buoy\.userData\.boundaryMarker = true;/);
+    expect(script).toMatch(/rope\.userData\.boundaryRope = true;/);
+    expect(script).toMatch(/disableGameplayInteraction\(group\);/);
+    expect(script).toMatch(/function rebuildWorldBoundaryMarkers\(\)/);
+    expect(script).toMatch(/softClampToWorldBoundary\(player\.position, boundaries/);
+    expect(script).toMatch(/playerSpeed \*= WORLD_BOUNDARY_DEFAULTS\.speedDamping;/);
+    expect(script).not.toMatch(/player\.position\.copy\(lastPosition\)/);
+    expect(script).toMatch(/worldBoundary: worldBoundaryDebug,/);
+  });
+
+  it("pins result commentary score to one final game-over score", () => {
+    expect(script).toMatch(/function endGame\(endPayload = \{\}\)/);
+    expect(script).toMatch(/const finalScore = Math\.max\(0, Math\.round\(finalScoreFromEndPayload\(endPayload\)/);
+    expect(script).toMatch(/localScore = finalScore;/);
+    expect(script).toMatch(/emitGameplayEvent\("game_over", \{[\s\S]{0,160}final_score: finalScore,[\s\S]{0,80}score: finalScore,/);
+    expect(script).toMatch(/updateResultsScore\(finalScore\);/);
+    expect(script).toMatch(/endGame\(\{ remaining: 0, timeRemaining: 0 \}\);/);
+  });
 });

@@ -30,6 +30,7 @@ import {
   resolvePickupTouchForgiveness,
   resolveServerAuthSpeedLimit,
   isTrashBoxFootprintOverlap,
+  softClampWorldPosition,
   normalizeRoomStateRecord as normalizeRoomStateRecordBase,
   normalizeStartPosition,
   normalizeStartPositions,
@@ -1088,7 +1089,7 @@ export async function start(
       });
       socket.emit("game.time", roomRemainingSeconds(rs));
     } else if (state === "ENDED") {
-      socket.emit("game.end", { room: wanted, ...(playerId ? { playerId } : {}) });
+      socket.emit("game.end", buildRoomEndPayload(wanted, playerId ? { playerId } : {}));
     }
   }
 
@@ -1109,6 +1110,20 @@ export async function start(
   }
   function shouldSyncVisualItems(room) {
     return !isLoadCanaryRoom(room);
+  }
+  function buildRoomEndPayload(room, overrides = {}) {
+    const source = overrides && typeof overrides === "object" ? overrides : {};
+    const durationSeconds = Number(source.durationSeconds ?? GAME_DURATION_IN_SECONDS);
+    const remaining = Number(source.remaining ?? source.timeRemaining ?? 0);
+    const safeRemaining = Number.isFinite(remaining) ? Math.max(0, Math.round(remaining)) : 0;
+    return {
+      ...source,
+      room: canonicalRoomId(room),
+      remaining: safeRemaining,
+      timeRemaining: safeRemaining,
+      durationSeconds: Number.isFinite(durationSeconds) ? Math.max(0, Math.round(durationSeconds)) : GAME_DURATION_IN_SECONDS,
+      endedAt: source.endedAt || new Date().toISOString(),
+    };
   }
   function getLocalSocketsForRoom(room) {
     const wanted = canonicalRoomId(room);
@@ -1486,12 +1501,9 @@ async function broadcastRoomState(room, state, extra = {}) {
       room,
     });
   }
-  if (extra.remaining) io.to(room).emit("game.time", extra.remaining);
+  if (Number.isFinite(Number(extra.remaining))) io.to(room).emit("game.time", Number(extra.remaining));
   if (state === "ENDED") {
-    const endPayload = {
-      ...(extra.end && typeof extra.end === "object" ? extra.end : {}),
-      room: canonicalRoomId(room),
-    };
+    const endPayload = buildRoomEndPayload(room, extra.end && typeof extra.end === "object" ? extra.end : {});
     io.to(room).emit("game.end", endPayload);
     emitRoomEndToLocalSockets(room, endPayload);
     scheduleRoomEndRebroadcast(room, endPayload);
@@ -1652,7 +1664,10 @@ async function startRoomMatch(room) {
       if (remaining <= 0) {
         clearInterval(rs.timerId);
         rs.timerId = null;
-        await broadcastRoomState(room, 'ENDED', { end: { room }, ownerServerId: serverId });
+        await broadcastRoomState(room, 'ENDED', {
+          end: buildRoomEndPayload(room, { remaining: 0 }),
+          ownerServerId: serverId,
+        });
         scheduleRoomWaitingReset(room, 10000);
         return;
       }
@@ -1674,7 +1689,10 @@ async function endRoomMatch(room) {
   rs.startingAt = null;
   rs.startTime = null;
   rs.ownerServerId = serverId;
-  await broadcastRoomState(room, 'ENDED', { end: { room }, ownerServerId: serverId });
+  await broadcastRoomState(room, 'ENDED', {
+    end: buildRoomEndPayload(room, { remaining: 0 }),
+    ownerServerId: serverId,
+  });
   scheduleRoomWaitingReset(room, 10000);
   return { ok: true, scope: "room", room, state: "ENDED" };
 }
@@ -2913,8 +2931,18 @@ function scheduleRoomRefill(room, delayMs = 0) {
 
       const dx = Math.sin(state.rotY) * state.vel * dt;
       const dz = Math.cos(state.rotY) * state.vel * dt;
-      state.x = clamp((state.x ?? 0) + dx, -WORLD_HALF_X, WORLD_HALF_X);
-      state.z = clamp((state.z ?? 0) + dz, -WORLD_HALF_Z, WORLD_HALF_Z);
+      const boundary = softClampWorldPosition({
+        x: (state.x ?? 0) + dx,
+        z: (state.z ?? 0) + dz,
+        velocity: state.vel,
+        worldSizeX: WORLD_HALF_X * 2,
+        worldSizeZ: WORLD_HALF_Z * 2,
+        boatMargin: typeConfig.collisionRadius || 1.25,
+      });
+      state.x = boundary.x;
+      state.z = boundary.z;
+      state.vel = boundary.velocity;
+      state.boundaryHit = boundary.hit ? { edge: boundary.edge, at: now } : null;
 
       playersState.set(id, state);
     }

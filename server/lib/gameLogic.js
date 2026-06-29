@@ -203,6 +203,66 @@ export function recomputeWorldSize(humans, worldScaleCfg) {
   return { x, z };
 }
 
+export const DEFAULT_WORLD_BOUNDARY_BOAT_MARGIN = 1.25;
+export const DEFAULT_WORLD_BOUNDARY_SPEED_DAMPING = 0.35;
+
+export function worldBoundaryExtents({
+  worldSizeX = 128,
+  worldSizeZ = 42,
+  boatMargin = DEFAULT_WORLD_BOUNDARY_BOAT_MARGIN,
+} = {}) {
+  const width = Math.max(1, Number(worldSizeX) || 128);
+  const height = Math.max(1, Number(worldSizeZ) || 42);
+  const margin = Math.max(0, Number(boatMargin) || 0);
+  return {
+    width,
+    height,
+    halfX: Math.max(0.1, width / 2 - margin),
+    halfZ: Math.max(0.1, height / 2 - margin),
+    boatMargin: margin,
+  };
+}
+
+export function softClampWorldPosition({
+  x = 0,
+  z = 0,
+  velocity = 0,
+  worldSizeX = 128,
+  worldSizeZ = 42,
+  boatMargin = DEFAULT_WORLD_BOUNDARY_BOAT_MARGIN,
+  speedDamping = DEFAULT_WORLD_BOUNDARY_SPEED_DAMPING,
+} = {}) {
+  const extents = worldBoundaryExtents({ worldSizeX, worldSizeZ, boatMargin });
+  const px = Number(x);
+  const pz = Number(z);
+  const safeX = Number.isFinite(px) ? px : 0;
+  const safeZ = Number.isFinite(pz) ? pz : 0;
+  const clampedX = clampNum(safeX, -extents.halfX, extents.halfX);
+  const clampedZ = clampNum(safeZ, -extents.halfZ, extents.halfZ);
+  const hitX = clampedX !== safeX;
+  const hitZ = clampedZ !== safeZ;
+  const hit = hitX || hitZ;
+  const edge = hitX && hitZ
+    ? "corner"
+    : hitX
+    ? (safeX < 0 ? "west" : "east")
+    : hitZ
+    ? (safeZ < 0 ? "south" : "north")
+    : null;
+  const damping = Math.max(0, Math.min(1, Number(speedDamping)));
+  const currentVelocity = Number(velocity);
+  return {
+    x: clampedX,
+    z: clampedZ,
+    velocity: hit && Number.isFinite(currentVelocity) ? currentVelocity * damping : currentVelocity,
+    hit,
+    hitX,
+    hitZ,
+    edge,
+    extents,
+  };
+}
+
 export const DEFAULT_COLLISION_VALIDATE_RADIUS = 3.6;
 export const DEFAULT_ITEM_COLLISION_RADIUS = 0.95;
 export const TURTLE_ITEM_COLLISION_RADIUS = 1.35;

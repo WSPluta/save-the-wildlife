@@ -218,6 +218,27 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
     - `node --check` passed for `server/server.js`, `web/src/script.js`, and `web/src/commsWorker.js`.
     - Scoped `git diff --check` passed for touched tracked files; new-file no-index checks reported no whitespace diagnostics.
 - Deployed gameplay polish verification on 2026-06-11:
+
+- Demo fallback recording and PAF commentary hardening on 2026-06-29:
+  - User flagged the live multiplayer game as too risky for the talk; shifted delivery stance to a stage-safe screen recording with live commentary visible at the end.
+  - Added `scripts/record-commentary-fallback.mjs`, a repeatable Playwright + Socket.IO capture that opens the public `/admin/ai-learning` surface, seeds real `game.event` telemetry through `http://130.162.174.167`, waits for `commentary.ready`, and records the admin commentary feed.
+  - Tightened `private-agent-factory/index.js` commentary guards so Select AI/in-db output that invents trash, turtle/marine, trail, freeze, or powerup facts is repaired to a SQL-grounded safe draft and marked as `select-ai-guarded`.
+  - Added PAF tests for marine-collection hallucination and guarded Select AI metadata; validation passed with `/Users/wojtekpluta/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --test private-agent-factory/test/*.test.js` (42/42).
+  - Built and deployed PAF `0.0.29` via OKE Kaniko + OCIR emergency path because GitHub push/auth was not available for canonical OCI DevOps pickup.
+  - Public PAF validation: `/paf/healthz?deep=1` reports `version=0.0.29`, `oracle_configured=true`, `canvas_configured=true`, `indb_agent_enabled=true`, `select_ai_auto_init=true`, `mcp_enabled=true`, and `genai_configured=false`.
+  - OKE validation: all four `private-agent-factory` pods are running `lhr.ocir.io/axywji1aljc2/save-the-wildlife/private-agent-factory:0.0.29`.
+  - Public fallback capture passed:
+    - MP4: `event-pack/save-the-wildlife-ai-database-demo/recording/output/commentary-fallback-capture/save-the-wildlife-commentary-fallback.mp4`
+    - WebM: `event-pack/save-the-wildlife-ai-database-demo/recording/output/commentary-fallback-capture/save-the-wildlife-commentary-fallback.webm`
+    - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/commentary-fallback-capture/recording-report.md`
+    - Final screenshot: `event-pack/save-the-wildlife-ai-database-demo/recording/output/commentary-fallback-capture/02-commentary-ready.png`
+    - Evidence: three players, three `select-ai` commentary lines, all bounded/safe/grounded, browser errors zero, capture real time 24.89s, max RSS 475627520.
+  - Public hardening probes from PAF `0.0.28`/server `0.0.68` before the PAF guard deploy:
+    - Admin commentary multiuser PASS, all three lines `source=select-ai`: `.codex_tmp/qa-20260629-admin-commentary-multiuser-recording-evidence/latest.md`.
+    - Lobby/admin canonical timer PASS, both clients observed 60s server timer and match end: `.codex_tmp/qa-20260629-lobby-admin-timer-public-server068/latest.md`.
+    - Motion smoothness PASS overall; Chrome desktop healthy, WebKit desktop passed motion but warned on frame budget at ~30 FPS: `.codex_tmp/qa-20260629-motion-smoothness-public-server068/latest.md`.
+    - PAF browser context matrix FAIL only on WebKit frame budget; commentary/context checks passed: `.codex_tmp/qa-20260629-paf-context-matrix-public-server068/latest.md`.
+  - Current honest caveat for talk: the fallback recording proves the public PAF/Select AI commentary path. It does not prove a direct OCI GenAI model route because `genai_configured=false`, and it should not be presented as a flawless live gameplay recording while WebKit frame-budget risk remains.
 - Commentary delivery + turtle footprint fix on 2026-06-25:
   - Changed server game-over commentary from blocking `await buildCommentary()` inside the `game.event` ack to an async queue.
   - Server now emits `commentary.pending` immediately, returns queued status in the ack, then emits and stores `commentary.ready` when PAF/SQL fallback finishes.
@@ -1685,3 +1706,327 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Public normalized remote sync probe passed: `.codex_tmp/qa-20260628-remote-sync-refresh-normalized-20260627235021/latest.md`. Room `QA-MIX-021318`; all four clients reached `RUNNING`, saw all three other human remotes, remote driver movement was `8.035/8.043/8.053`, and `largeJumpCount=0` for every observer. Compute: `real=31.95s`, max RSS `338575360`.
   - Updated `qa/hardening-tickets.md` with the latest refresh-rate-normalized public evidence. Strict remote visual mesh telemetry still requires deploying `web:0.0.100`; the current public bundle correctly reports `visual=false` because it lacks the new `visualX/visualZ` debug fields.
   - GitHub push remains blocked by missing auth (`gh auth status` not logged in; `git push --dry-run origin main` cannot read HTTPS username). Do not run the canonical OCI DevOps build/deploy until `git push origin main` succeeds, because the pipeline source is GitHub `main`.
+
+2026-06-28 conference fallback recording and public collision recheck:
+  - Built a stitched fallback recording for the conference path:
+    - `event-pack/save-the-wildlife-ai-database-demo/recording/output/save-the-wildlife-match-intelligence-with-commentary-proof.mp4`
+    - Duration `472.80s`, 1920x1080, 30 FPS, about 12 MB.
+    - It appends the public `/admin/ai-learning` commentary proof segment to the existing match-intelligence rehearsal video.
+    - Verified a final-frame screenshot at `event-pack/save-the-wildlife-ai-database-demo/recording/output/with-commentary-proof-commentary-frame.png`; the end of the video shows grouped `select-ai` commentary lines from the public PAF adapter.
+    - Build compute: `real=26.96s`, max RSS `735854592`.
+  - Public Chrome-only item collision matrix against `http://130.162.174.167` mostly passed:
+    - Artifact: `.codex_tmp/qa-20260629-item-collision-public-current-rerun-20260628182929/latest.md`.
+    - Desktop trash, turtle, and powerup passed.
+    - Mobile trash and turtle passed.
+    - Mobile powerup failed in the 22s matrix because the only powerup was far left/back and the probe orbited away rather than touching it; no console/network/frame errors.
+    - Compute: `real=170.18s`, max RSS `341622784`.
+  - Focused public Chrome mobile powerup rerun passed with a longer drive budget:
+    - Artifact: `.codex_tmp/qa-20260629-mobile-powerup-focused-20260628183312/latest.md`.
+    - Real `powerup_speed` pickup acknowledged by the public socket path; final count `1->0`, last distance `0.54`.
+    - Compute: `real=25.02s`, max RSS `304988160`.
+  - Public admin commentary multi-user probe passed:
+    - Artifact: `.codex_tmp/qa-20260629-admin-commentary-multiuser-current-20260628183534/latest.md`.
+    - Three seeded players generated grouped commentary lines in `/admin/ai-learning`; two lines used `select-ai`, one used the guarded `request-summary` repair path, and the latest-source summary stayed live.
+    - Compute: `real=13.67s`, max RSS `243974144`.
+  - Longer public Chrome item collision matrix passed:
+    - Artifact: `.codex_tmp/qa-20260629-item-collision-public-long-20260628183525/latest.md`.
+    - Desktop and mobile all passed for trash, turtle, and powerup with real public `items.collision` acknowledgements.
+    - Compute: `real=161.33s`, max RSS `328859648`.
+  - Public health/OKE check:
+    - `http://130.162.174.167/healthz` returned `ok=true`.
+    - `/paf/healthz` returned `version=0.0.29`, `oracle_configured=true`, `canvas_configured=true`, `indb_agent_enabled=true`, `select_ai_auto_init=true`, `mcp_enabled=true`, `graph_retrieval_enabled=true`, `replay_retrieval_enabled=true`, `vector_retrieval_enabled=true`, and `genai_configured=false`.
+    - OKE deployments ready: `web:0.0.100` `1/1`, `ws-server:0.0.68` `4/4`, `private-agent-factory:0.0.29` `4/4`.
+  - Decision note: live gameplay remains plausible but should not be the only plan. Use the stitched fallback recording if rehearsal time is tight or if venue/mobile network behavior is uncertain.
+
+2026-06-28 public acceptance continuation:
+  - Public deployment/health reconfirmed:
+    - `/healthz` returned `ok=true`.
+    - `/paf/healthz` returned `private-agent-factory` `0.0.29`, Oracle configured, Canvas configured, in-db agent enabled, Select AI auto-init enabled, MCP enabled, graph/replay/vector retrieval enabled, and `genai_configured=false`.
+    - OKE deployments ready: `web:0.0.100`, `ws-server:0.0.68` `4/4`, `private-agent-factory:0.0.29` `4/4`.
+  - Full public controls matrix passed:
+    - Artifact: `.codex_tmp/qa-20260629-controls-public-full-20260628183952/latest.md`.
+    - Chrome/WebKit desktop: `A/W` and arrow-left move left, `D/W` and arrow-right move right.
+    - Chrome/WebKit mobile: joystick up-left moves left, joystick up-right moves right.
+    - Compute: `real=317.91s`, max RSS `312328192`.
+  - Public lobby/admin/timer probe passed:
+    - Artifact: `.codex_tmp/qa-20260629-lobby-timer-public-20260628184537/latest.md`.
+    - Non-admin start rejected, duplicate start rejected, both clients enter RUNNING, canonical server timer is 60s.
+    - Compute: `real=25.21s`, max RSS `77889536`.
+  - Public server-affinity probe passed:
+    - Artifact: `.codex_tmp/qa-20260629-server-affinity-public-20260628184536/latest.md`.
+    - 12 clients spread across all four ws-server IDs; all received `game.on`; all valid post-start trash collisions accepted; `not_running=0`.
+    - Compute: `real=32.09s`, max RSS `97484800`.
+  - Public browser motion smoothness passed:
+    - Artifact: `.codex_tmp/qa-20260629-motion-public-full-20260628184536/latest.md`.
+    - Chrome desktop/mobile ~120 FPS; WebKit desktop/mobile steady ~30 FPS automation WARN.
+    - All four cases had `large frame-to-frame position jumps=0`.
+    - Compute: `real=130.12s`, max RSS `464060416`.
+  - Public strict multiplayer visual sync passed:
+    - Artifact: `.codex_tmp/qa-20260629-multiplayer-sync-public-full-20260628184802/latest.md`.
+    - Chrome desktop, WebKit desktop, Chrome mobile, and WebKit mobile all saw all three human remotes.
+    - Strict remote visual telemetry present; driver movement ~7.8 units; remote large jumps `0`.
+    - Compute: `real=45.91s`, max RSS `381845504`.
+  - Patched `scripts/browser-item-collision-matrix-probe.mjs` only:
+    - Steady browser-automation 30 Hz frame pacing now reports WARN instead of failing a successful item interaction.
+    - Mobile non-trash target steering is more precise, with stronger turn and less throttle while lining up powerups/turtles.
+    - Validation: `node --check scripts/browser-item-collision-matrix-probe.mjs` passed; scoped `git diff --check` passed.
+  - Public WebKit item collision matrix passed after probe hardening:
+    - Artifact: `.codex_tmp/qa-20260629-item-collision-public-webkit-steering-20260628185711/latest.md`.
+    - WebKit desktop/mobile passed trash, turtle, and powerup with real public `items.collision` acknowledgements.
+    - Frame budget entries are WARN because browser automation ran steadily at ~30 FPS; no long tasks.
+    - Compute: `real=151.03s`, max RSS `219398144`.
+
+2026-06-28 multiplayer gameplay proof recording:
+  - Added `scripts/record-multiplayer-gameplay-demo.mjs`.
+    - Opens four real browser clients against `http://130.162.174.167`.
+    - Joins all clients to one room, starts the match through `admin.presenter.start`, drives the players, records each browser, and stitches a 2x2 MP4.
+    - Injects visible per-client labels into the browser recording: player label, room id, and public OKE.
+    - Writes `recording-report.md/json` with multiplayer proof checks.
+  - Public recording run passed:
+    - Room: `DEMO-MP-263966`.
+    - Video: `event-pack/save-the-wildlife-ai-database-demo/recording/output/multiplayer-gameplay-proof/save-the-wildlife-public-multiplayer-gameplay-proof.mp4`.
+    - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/multiplayer-gameplay-proof/recording-report.md`.
+    - Gameplay proof frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/multiplayer-gameplay-proof/multiplayer-proof-gameplay-frame.png`.
+    - Media: 1920x1080, 25 FPS, 56.12s, about 15 MB.
+    - Compute: `real=66.55s`, max RSS `622952448`.
+  - Proof checks in the report passed:
+    - All four clients waited in lobby and reached `RUNNING` after admin start.
+    - `Demo Alpha` moved `8.286` world units.
+    - Every client saw the other three human players.
+    - `Demo Bravo`, `Demo Charlie`, and `Demo Delta` observed `Demo Alpha` moving remotely about `11.5` world units with `largeJumps=0`.
+    - Browser console/network errors were clean for all four clients.
+
+2026-06-28 stage fallback recording with commentary ending:
+  - Regenerated the public commentary proof segment using `scripts/record-commentary-fallback.mjs`.
+    - Room: `REC-COMMENTARY-501280`.
+    - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/commentary-fallback-capture/recording-report.md`.
+    - The public `/admin/ai-learning` page received seeded `game.event` telemetry and showed three grouped commentary lines.
+    - All commentary lines came back as `select-ai`, were under 200 characters, and passed the grounded/safe checks.
+    - Compute: `real=26.00s`, max RSS `475742208`.
+  - Built a stage-safe combined MP4:
+    - Video: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-fallback/save-the-wildlife-public-gameplay-with-commentary-ending.mp4`.
+    - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-fallback/recording-report.md`.
+    - Structure: public four-client multiplayer proof, short dark spacer, public Select AI commentary proof.
+    - Media: 1920x1080, 25 FPS, 80.56s, about 15 MB.
+  - Visual checks:
+    - Gameplay frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-fallback/stage-fallback-gameplay-frame.png`.
+    - Commentary frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-fallback/stage-fallback-commentary-frame.png`.
+  - Talk-track boundary remains important:
+    - Claim: `Public OKE game.event -> Oracle AI Database -> Select AI -> PAF/admin commentary UI`.
+    - Do not claim direct adapter GenAI execution for this artifact; deployed health still shows `genai_configured=false`.
+
+2026-06-29 fresh public multiplayer visibility test:
+  - Reran current public cross-browser multiplayer sync probe:
+    - Command: `scripts/multiplayer-cross-browser-sync-probe.mjs --base-url http://130.162.174.167 --strict-remote-visual`.
+    - Artifact: `.codex_tmp/qa-20260629-multiplayer-crossbrowser-current-20260629015948/latest.md`.
+    - Room: `QA-MIX-589177`.
+    - Clients: Chrome desktop, WebKit desktop, Chrome mobile.
+    - Result: PASS.
+  - Multiplayer visibility proof:
+    - Chrome saw all human remotes: `missing=none`, `nonBotRemoteCount=2`.
+    - WebKit saw all human remotes: `missing=none`, `nonBotRemoteCount=2`.
+    - Mobile saw all human remotes: `missing=none`, `nonBotRemoteCount=2`.
+    - WebKit and mobile both observed the Chrome driver moving remotely by `6.965` world units.
+    - Strict remote visual path had `largeJumps=0`.
+  - Runtime notes:
+    - Public `/healthz` returned `ok=true`.
+    - Public `/paf/healthz` returned healthy PAF adapter config.
+    - Compute: `real=42.62s`, max RSS `439631872`.
+    - WebKit frame budget reported WARN, consistent with browser automation frame pacing; remote visibility and remote motion checks passed.
+
+2026-06-29 shared item-map fairness and synced recording:
+  - Added `scripts/shared-item-map-probe.mjs`.
+    - Verifies multiple clients in one room receive the exact same server item IDs, types, rooms, coordinates, and sizes.
+    - Verifies `items.collision` against a common server-positioned trash item is accepted.
+    - Verifies `item.destroy` removes the collected item for every client.
+    - Verifies the post-destroy item map remains converged for every client.
+  - Public shared-map probe passed:
+    - Artifact: `.codex_tmp/qa-20260629-shared-item-map-current3-20260629021215/latest.md`.
+    - Room: `QA-MAP-335155`.
+    - 8 clients shared an exact authoritative item map: `114` total items each, `94` trash, `18` turtles, `2` powerups, `mismatches=0`.
+    - Each client received server appearance events: `items.all` 8-9 times and `item.new=114`.
+    - Common trash item `hRR6i9gMWWC1CHbVGmx6gc` was destroyed for every client.
+    - Compute: `real=27.66s`, max RSS `86327296`.
+  - Fixed synced multiplayer recording:
+    - Patched `scripts/record-multiplayer-gameplay-demo.mjs` to align each quadrant to the calculated server `RUNNING` timestamp instead of browser-open time.
+    - New artifact: `event-pack/save-the-wildlife-ai-database-demo/recording/output/multiplayer-gameplay-proof-synced/save-the-wildlife-public-multiplayer-gameplay-proof.mp4`.
+    - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/multiplayer-gameplay-proof-synced/recording-report.md`.
+    - Room: `DEMO-MP-191879`.
+    - All four clients reached `RUNNING`, saw other human players, and all remote motion checks had `largeJumps=0`.
+    - Proof frame shows all four quadrants at `Time: 34`, fixing the visible sync issue.
+    - Media: 1920x1080, 25 FPS, 34.12s.
+    - Compute: `real=71.81s`, max RSS `626343936`.
+  - Rebuilt stage fallback video from synced gameplay plus Select AI commentary ending:
+    - Video: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-fallback/save-the-wildlife-public-gameplay-with-commentary-ending.mp4`.
+    - Media: 1920x1080, 25 FPS, 58.56s.
+
+2026-06-29 same-room competition commentary proof recording:
+  - Added `scripts/record-stage-multiplayer-commentary-demo.mjs`.
+    - Opens four real browser clients against `http://130.162.174.167`.
+    - Keeps all four in one generated room and visibly overlays the same room id plus the full four-player roster in every quadrant.
+    - Starts the match through `admin.presenter.start`, drives the clients, verifies each client sees all three human remotes, and triggers real server `items.collision` events for trash, turtle, powerup, and trash.
+    - Emits `game.event`/`game_over` for those same four player ids, then captures `/admin/ai-learning` for the same room.
+  - Final artifact:
+    - Room: `DEMO-STAGE-014187`.
+    - Video: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof/save-the-wildlife-same-room-competition-commentary-proof.mp4`.
+    - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof/recording-report.md`.
+    - Gameplay proof frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof/proof-gameplay-frame.png`.
+    - Commentary proof frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof/proof-commentary-frame.png`.
+    - Media: 1920x1080, 25 FPS, 78.0s, about 11 MB.
+    - SHA-256: `044aeb54fc78c55a3d997f66c0c8aab9fca9fcf4b567e9204d7d8d8e344acf54`.
+  - Report checks passed:
+    - All four clients show the same lobby room.
+    - Presenter start reaches `RUNNING` for all four clients.
+    - Each client sees all three other human players.
+    - Server collisions accepted for Alpha trash, Bravo turtle, Charlie `powerup_speed`, and Delta trash.
+    - The visible gameplay proof frame shows the shared item count dropping and the `item.destroy` broadcast action across all quadrants.
+    - `commentary.ready` arrived for all four gameplay players.
+    - Admin commentary feed renders all four players with four different bounded Select AI / Select AI guarded lines.
+  - Recorder fixes made during capture:
+    - Removed flaky admin WebM recording and use a high-res rendered commentary screenshot segment.
+    - Trimmed final video to a stage-friendly 78 seconds.
+    - Corrected monitor socket verification: deployed `room.join` is event-only/no ack, so the recorder now checks observed `items.all`/commentary room stream instead.
+
+2026-06-29 stage proof layout refinement:
+  - Updated the stage recorder to use three game clients plus one live `/admin/observability` quadrant.
+    - Game clients launch with the normal public gameplay URL.
+    - The recorder injects video-only identity overlays for Demo Alpha, Demo Bravo, and Demo Charlie so the proof MP4 keeps player names visible without changing game label behavior.
+    - The fourth quadrant records the compact observability page for the same room.
+    - The final segment still captures `/admin/ai-learning` commentary for the same game clients.
+  - Simplified `/admin/observability`:
+    - Replaced the dense metrics/proof/table layout with a six-signal live trace board.
+    - Signals: connected players, room state, latency/traffic, item stream, commentary job, and latest commentary.
+    - `commentary.pending` now shows as "Commentary job received"; `commentary.ready` updates the latest line.
+    - Short viewport CSS makes the board readable inside a 960x540 recording quadrant.
+  - Corrected a recording-only label mistake:
+    - Do not use a gameplay query flag to force labels in the app; the real game already renders player names correctly.
+    - The recorder now adds a quadrant badge and local-boat marker in the captured browser DOM for video readability.
+  - Validation:
+    - `node --check web/src/script.js` passed.
+    - `node --check scripts/record-stage-multiplayer-commentary-demo.mjs` passed.
+    - `web` Vitest suite passed: 10 files, 71 tests.
+    - `web` production webpack build passed with existing asset-size warnings.
+    - Local 960x540 visual smoke for `/admin/observability` captured at `.codex_tmp/observability-compact-smoke/observability-960x540-final.png`.
+    - Recording-label smoke against a normal public gameplay URL captured at `.codex_tmp/recording-overlay-label-smoke/alpha-normal-url-recording-labels.png`.
+  - Remaining:
+    - Deploy web before regenerating the public `http://130.162.174.167` recording, otherwise the public page will still show the old observability UI.
+
+2026-06-29 fresh public URL recording:
+  - Generated a new public recording from `http://130.162.174.167` with the corrected recorder-only player labels.
+  - Final artifact: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-050332/save-the-wildlife-same-room-competition-commentary-proof.mp4`.
+  - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-050332/recording-report.md`.
+  - Room: `DEMO-STAGE-621292`; media duration `66.08s`; size about `11 MB`; SHA-256 `d0cea2a70eff4672769f8d6e2f2a32a864236703c28ba015c613098081245228`.
+  - Checks passed: same-room lobby, public observability quadrant, same-room item stream, presenter start, all clients RUNNING, every client sees the other human players, server pickup/removal events, queued game-over commentary, all commentary ready, bounded/safe/different commentary lines, admin feed rendered all players, and zero admin browser errors.
+  - Commentary lines:
+    - Demo Alpha: `select-ai`, 85 chars.
+    - Demo Bravo: `select-ai`, 93 chars.
+    - Demo Charlie: `select-ai-guarded`, 55 chars.
+  - Visual receipts inspected:
+    - Gameplay frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-050332/proof-gameplay-frame.png`.
+    - Commentary frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-050332/proof-commentary-frame.png`.
+
+2026-06-29 clean-flow public URL recording:
+  - User rejected the observability quadrant/static metrics, bottom proof strip, local self-name marker, and separate admin commentary screen.
+  - Updated `scripts/record-stage-multiplayer-commentary-demo.mjs`:
+    - Four gameplay quadrants: Demo Alpha, Demo Bravo, Demo Charlie, Demo Delta.
+    - Video starts at presenter countdown, not lobby.
+    - Top overlay is only `Alpha/Bravo/Charlie/Delta POV`; no local player name marker and no bottom text strip.
+    - Commentary is shown as live overlay cards on the gameplay views at the end, not as a separate admin screen.
+    - Report now includes countdown, gameplay, and commentary proof frames.
+  - Final artifact: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-051617/save-the-wildlife-same-room-competition-commentary-proof.mp4`.
+  - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-051617/recording-report.md`.
+  - Room: `DEMO-STAGE-390270`; media duration `57.28s`; size about `19 MB`; SHA-256 `2e4e64eb87d02e5196153ef6215192cc23e6f2e76ba231a2112e99d6ba5632a6`.
+  - Checks passed: same-room lobby, same-room item stream, presenter start, all clients RUNNING, every client sees other humans, server pickup/removal events, queued game-over commentary, all commentary ready, bounded/safe/different commentary lines, and live commentary overlays rendered on gameplay views.
+  - Visual receipts inspected:
+    - Countdown frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-051617/proof-countdown-frame.png`.
+    - Gameplay frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-051617/proof-gameplay-frame.png`.
+    - Commentary frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-051617/proof-commentary-frame.png`.
+
+2026-06-29 corrected 3-player + observability public URL recording:
+  - User clarified the desired composition: four browsers total from `http://130.162.174.167`, with three gameplay players and one observability browser.
+  - Updated `scripts/record-stage-multiplayer-commentary-demo.mjs` accordingly:
+    - Demo Alpha, Demo Bravo, and Demo Charlie are gameplay browser quadrants.
+    - Fourth quadrant is public `/admin/observability?room=<room>`.
+    - Video starts at countdown and stays in the same four-quadrant layout through gameplay and commentary.
+    - Removed local self-name marker and bottom proof strip.
+    - Observability quadrant gets recording-only live status for countdown, item stream, and commentary readiness.
+    - End-state commentary appears as live overlay cards on the gameplay views and in the observability quadrant.
+    - Item collision recording now retries and requires all three player pickup acknowledgements to pass.
+  - Final artifact: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-053018/save-the-wildlife-same-room-competition-commentary-proof.mp4`.
+  - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-053018/recording-report.md`.
+  - Room: `DEMO-STAGE-231318`; media duration `54.88s`; size about `13 MB`; SHA-256 `6c66e21c2e8e23020ce514d9c3cd244c21f4b163696d61f2f6c4e48553f4b332`.
+  - Checks passed: same-room lobby, observability browser open, same-room item stream, presenter start, all clients RUNNING, every client sees other humans, accepted server pickups for trash/turtle/powerup, queued game-over commentary, all commentary ready, bounded/safe/different commentary lines, and live commentary overlays rendered on gameplay views.
+  - Visual receipts inspected:
+    - Countdown frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-053018/proof-countdown-frame.png`.
+    - Gameplay frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-053018/proof-gameplay-frame.png`.
+    - Commentary frame: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-053018/proof-commentary-frame.png`.
+
+2026-06-29 no-overlay recording hardening:
+  - User rejected recorder overlays on observability and asked for the final video to use public URL, three gameplay clients, one real observability browser, no injected proof text, and less observability copy.
+  - Commit prepared locally: `df739089 Tighten public demo observability recording`.
+  - Recorder changes:
+    - `scripts/record-stage-multiplayer-commentary-demo.mjs` now uses three public gameplay clients plus `/admin/observability`.
+    - Removed recorder-injected observability overlays, gameplay POV badges, action toasts, freeze cards, bottom proof strips, and gameplay commentary overlays.
+    - The script still verifies same-room clients, server collisions, room `ENDED` before commentary, and `commentary.ready`; evidence lives in the report, not on the video.
+  - Real app changes:
+    - `/api/observability?room=<room>` now uses selected-room player and item counts instead of global item totals.
+    - `/admin/observability` is compacted: tabs/status/room snapshot hidden, room telemetry cards shortened, traces visible in the first 960x540 viewport.
+    - Web bumped to `0.0.101`; server bumped to `0.0.69`.
+  - Validation:
+    - `server` focused metrics test passed.
+    - `web` focused admin observability test passed.
+    - `web` production build passed with existing asset/entrypoint size warnings.
+    - Local production-bundle screenshot inspected: `.codex_tmp/observability-lean-local-960x540-final.png`.
+  - Blocker:
+    - `git push origin main` is blocked in this Codex shell by GitHub credentials/keychain access. The repo is ahead of `origin/main` by 9 commits, so OCI DevOps mirrored source will remain stale until the user pushes from an authenticated terminal.
+  - Next required commands after authenticated push:
+    - `git push origin main`
+    - Start OCI DevOps build pipeline for `ocid1.devopsbuildpipeline.oc1.uk-london-1.amaaaaaaeras5xiavejj5jwroovi2ivvht3iu5l6k7o2icunmwxqkhbqpcbq`.
+    - Start OCI DevOps deployment pipeline for `ocid1.devopsdeploypipeline.oc1.uk-london-1.amaaaaaaeras5xiacbcmwzo6b554ilowov7tqqudwyepqobro5jaspp5zq4a`.
+    - Re-run the public recorder against `http://130.162.174.167`.
+
+2026-06-29 public no-overlay recording after authenticated push:
+  - User pushed `df739089 Tighten public demo observability recording` to `origin/main`.
+  - OCI DevOps build run `ocid1.devopsbuildrun.oc1.uk-london-1.amaaaaaaeras5xiafuc44zhqvuf7qozfovqnb57il57x4s7h5tb26oroiema` succeeded.
+  - Build exported versions: `WEB_VERSION=0.0.101`, `WS_SERVER_VERSION=0.0.69`, `PAF_VERSION=0.0.28`, `BOTS_VERSION=0.0.8`, `SCORE_VERSION=0.0.8`, `REPLAY_VERSION=0.0.1`, `MODEL_AI_INFERENCE_VERSION=0.0.2`, `MODEL_AI_TRAINING_VERSION=latest`.
+  - OCI DevOps deployment `ocid1.devopsdeployment.oc1.uk-london-1.amaaaaaaeras5xia77cydlieckc7hwoidd4ubeqq5idvvtytv6hj7hhzs5xa` succeeded.
+  - Cluster readback showed `web:0.0.101`, `server:0.0.69`, and `private-agent-factory:0.0.28` ready on `http://130.162.174.167`.
+  - New public recording generated with 3 gameplay browsers plus real `/admin/observability`, no recorder-injected overlays:
+    - Video: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-072324/save-the-wildlife-same-room-competition-commentary-proof.mp4`.
+    - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-072324/recording-report.md`.
+    - Room: `DEMO-STAGE-004865`; video duration `52.48s`; output `1920x1080` at `25 fps`; SHA-256 `d6e75421cbf134b72b6dcfc56f4250235f05ef73149727d1e88d6fb8a2c68ced`.
+    - Report status: `PASS`.
+    - Checks passed: same-room lobby, real observability browser, same-room item stream, presenter start, all clients RUNNING, every client sees other humans, server pickup/removal events, room ended before commentary, `game_over` queued for all players, `commentary.ready` for all players, safe/different bounded commentary, real observability commentary.
+    - Commentary source: `select-ai` for Demo Alpha, Demo Bravo, and Demo Charlie.
+  - Visual receipts inspected:
+    - Countdown: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-072324/proof-countdown-frame.png`.
+    - Gameplay: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-072324/proof-gameplay-frame.png`.
+    - Commentary: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-072324/proof-commentary-frame.png`.
+
+2026-06-29 boundary + canonical commentary score hardening:
+  - Added lightweight visible world boundaries in the game scene:
+    - New `web/src/boundaries.js` helper computes boat-safe extents, soft clamps, and sparse marker layout.
+    - `web/src/script.js` now renders buoy/rope boundary markers, rebuilds them on server world-size/resize, and reports `worldBoundary` in `render_game_to_text`.
+    - Local movement now soft-clamps and damps speed at the edge instead of copying the last position, so the edge reads as intentional rather than an invisible wall.
+    - Server authoritative simulation uses the same soft clamp/damping through `softClampWorldPosition`.
+  - Hardened game-over timing and score consistency:
+    - Server `game.end` payloads now include `remaining: 0`, `timeRemaining: 0`, `durationSeconds`, and `endedAt`, including rebroadcast/direct socket paths.
+    - Client `endGame(endPayload)` is idempotent and pins results UI, HUD score, and emitted `game_over.score/final_score` to one `finalScore` value.
+    - `game_over.final_score`/`finalScore` now wins over generic `score` in server telemetry normalization.
+    - Local session summary, ADB schema view, PAF runtime SQL, and `stwl_commentary_pkg.sql` now prefer terminal `game_over` score and only fall back to latest event score if no terminal row exists.
+  - Added regression tests:
+    - `web/src/__tests__/boundaries.test.js`
+    - `web/src/__tests__/gameplayPolish.test.js` boundary/end-score guards
+    - `server/test/gameLogic.test.js` server boundary/end-payload guards
+    - `server/test/gameEvents.test.js` terminal final-score commentary guard
+    - `private-agent-factory/test/commentary.test.js` PAF SQL terminal-score guard
+  - Validation passed:
+    - `node --check web/src/script.js`
+    - `node --check server/server.js`
+    - `node --check server/lib/gameEvents.js`
+    - `node --check private-agent-factory/index.js`
+    - full `web` Vitest suite: 11 files, 76 tests
+    - full `server` Vitest suite: 7 files, 85 tests
+    - full `private-agent-factory` node test suite: 42 tests
+    - `web` production webpack build passed with the existing large-asset warnings.
+  - Deployment still pending for this hardening pass; next steps are version bump, authenticated push, OCI DevOps build/deploy, public smoke, then regenerate the 3-player + real observability recording.

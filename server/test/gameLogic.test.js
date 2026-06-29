@@ -33,6 +33,8 @@ import {
   roomRemainingSeconds,
   roomStartPositionForPlayer,
   selectCanonicalRoomState,
+  softClampWorldPosition,
+  worldBoundaryExtents,
 } from "../lib/gameLogic.js";
 
 describe("clampNum", () => {
@@ -407,6 +409,25 @@ describe("authoritative multiplayer lifecycle", () => {
     expect(server).toMatch(/const info = await getPlayersInfoObject\(\);\s*const rooms = listActiveRooms\(info\)\.filter\(shouldSyncVisualItems\);/);
   });
 
+  it("hardens room end delivery for load-balanced clients", () => {
+    const server = readFileSync("server.js", "utf8");
+    expect(server).toMatch(/function buildRoomEndPayload\(room, overrides = \{\}\)/);
+    expect(server).toMatch(/remaining: safeRemaining,/);
+    expect(server).toMatch(/timeRemaining: safeRemaining,/);
+    expect(server).toMatch(/const roomEndRebroadcastTimers = new Map\(\)/);
+    expect(server).toMatch(/function getLocalSocketsForRoom\(room\)/);
+    expect(server).toMatch(/function emitRoomEndToLocalSockets\(room, endPayload = \{\}\)/);
+    expect(server).toMatch(/socket\.emit\("game\.state", "ENDED"\);[\s\S]{0,120}socket\.emit\("game\.end", \{ \.\.\.endPayload, playerId \}\);/);
+    expect(server).toMatch(/function scheduleRoomEndRebroadcast\(room, endPayload = \{\}\)/);
+    expect(server).toMatch(/const latest = await readCanonicalRoomState\(wanted\);[\s\S]{0,180}latest\?\.state !== "ENDED"/);
+    expect(server).toMatch(/emitRoomEndBroadcast\(wanted, endPayload\);/);
+    expect(server).toMatch(/if \(state !== "ENDED"\) clearRoomEndRebroadcastTimers\(room\);/);
+    expect(server).toMatch(/if \(state === "ENDED"\) \{[\s\S]{0,260}emitRoomEndToLocalSockets\(room, endPayload\);[\s\S]{0,120}scheduleRoomEndRebroadcast\(room, endPayload\);/);
+    expect(server).toMatch(/else if \(state === "ENDED"\) \{[\s\S]{0,120}socket\.emit\("game\.end", buildRoomEndPayload\(wanted/);
+    expect(server).toMatch(/if \(Number\.isFinite\(Number\(extra\.remaining\)\)\) io\.to\(room\)\.emit\("game\.time", Number\(extra\.remaining\)\);/);
+    expect(server).toMatch(/broadcastRoomState\(room, 'ENDED', \{[\s\S]{0,160}remaining: 0/);
+  });
+
   it("builds separated player starts and sends them to clients", () => {
     const server = readFileSync("server.js", "utf8");
     const script = readFileSync("../web/src/script.js", "utf8");
@@ -419,6 +440,31 @@ describe("authoritative multiplayer lifecycle", () => {
 });
 
 describe("authoritative boat physics", () => {
+  it("soft-clamps server-authoritative boats at visible world boundaries", () => {
+    const extents = worldBoundaryExtents({ worldSizeX: 128, worldSizeZ: 42, boatMargin: 1.25 });
+    expect(extents.halfX).toBeCloseTo(62.75);
+    expect(extents.halfZ).toBeCloseTo(19.75);
+
+    const hit = softClampWorldPosition({
+      x: 90,
+      z: -30,
+      velocity: 3,
+      worldSizeX: 128,
+      worldSizeZ: 42,
+      boatMargin: 1.25,
+      speedDamping: 0.35,
+    });
+    expect(hit.hit).toBe(true);
+    expect(hit.edge).toBe("corner");
+    expect(hit.x).toBeCloseTo(62.75);
+    expect(hit.z).toBeCloseTo(-19.75);
+    expect(hit.velocity).toBeCloseTo(1.05);
+
+    const clear = softClampWorldPosition({ x: 10, z: 5, velocity: 2, worldSizeX: 128, worldSizeZ: 42 });
+    expect(clear.hit).toBe(false);
+    expect(clear.velocity).toBe(2);
+  });
+
   it("uses arcade-scale speed presets instead of runaway production defaults", () => {
     const boatTypes = resolveAuthoritativeBoatTypes();
     expect(boatTypes.speed.maxSpeed).toBeLessThanOrEqual(3);

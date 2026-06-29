@@ -75,6 +75,9 @@ export function normalizeGameEvent(payload = {}, context = {}) {
   const position = normalizePosition(payload);
   const now = new Date();
   const occurredAt = payload.occurred_at || payload.occurredAt || payload.timestamp || now.toISOString();
+  const rawScore = eventType === "game_over"
+    ? payload.final_score ?? payload.finalScore ?? payload.metadata?.final_score ?? payload.metadata?.finalScore ?? payload.score ?? payload.localScore
+    : payload.score ?? payload.localScore;
 
   return {
     event_type: eventType,
@@ -83,7 +86,7 @@ export function normalizeGameEvent(payload = {}, context = {}) {
     player_id: playerId,
     player_name: asString(payload.player_name || payload.playerName || context.playerName, "Player"),
     occurred_at: new Date(occurredAt).toString() === "Invalid Date" ? now.toISOString() : new Date(occurredAt).toISOString(),
-    score: finiteNumber(payload.score ?? payload.localScore, 0),
+    score: finiteNumber(rawScore, eventType === "game_over" ? 0 : null),
     x: position ? position.x : null,
     y: position ? position.y : null,
     z: position ? position.z : null,
@@ -209,7 +212,11 @@ async function ensureOracleSchema(connection) {
       MAX(player_name) AS player_name,
       MIN(occurred_at) AS started_at,
       MAX(occurred_at) AS ended_at,
-      MAX(score) KEEP (DENSE_RANK LAST ORDER BY occurred_at) AS final_score,
+      COALESCE(
+        MAX(CASE WHEN event_type = 'game_over' THEN score END)
+          KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type = 'game_over' THEN occurred_at END NULLS FIRST),
+        MAX(score) KEEP (DENSE_RANK LAST ORDER BY occurred_at)
+      ) AS final_score,
       SUM(CASE WHEN event_type = 'trash_collected' THEN 1 ELSE 0 END) AS trash_collected,
       SUM(CASE WHEN event_type = 'marine_hit' THEN 1 ELSE 0 END) AS marine_hits,
       SUM(CASE WHEN event_type = 'powerup_collected' THEN 1 ELSE 0 END) AS powerups_collected,
@@ -357,9 +364,11 @@ export function summarizeSession(sessionId, playerId) {
     last_position: null,
     prior_best_score: null,
   };
+  let terminalScore = null;
   for (const event of events) {
     if (event.player_name && event.player_name !== "Player") summary.player_name = event.player_name;
     summary.score = Number.isFinite(event.score) ? event.score : summary.score;
+    if (event.event_type === "game_over" && Number.isFinite(event.score)) terminalScore = event.score;
     if (event.x != null && event.z != null) summary.last_position = { x: event.x, y: event.y, z: event.z };
     if (event.event_type === "trash_collected") summary.trash_collected++;
     if (event.event_type === "marine_hit") summary.marine_hits++;
@@ -370,6 +379,7 @@ export function summarizeSession(sessionId, playerId) {
       summary.powerups[type] = (summary.powerups[type] || 0) + 1;
     }
   }
+  if (Number.isFinite(terminalScore)) summary.score = terminalScore;
   const priorScores = localEvents
     .filter((event) => event.player_id === playerId && event.event_type === "game_over" && event.session_id !== sessionId)
     .map((event) => Number(event.score))

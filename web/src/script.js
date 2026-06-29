@@ -18,6 +18,12 @@ import {
   resetBoatFeel,
   updateBoatFeel,
 } from "./boatFeel";
+import {
+  WORLD_BOUNDARY_DEFAULTS,
+  boundaryMarkerLayout,
+  softClampToWorldBoundary,
+  worldBoundaryExtents,
+} from "./boundaries";
 import { summarizeAiAdapterHealth } from "./adminAiHealth";
 import "./style.css";
 import * as lobby from "./lobby";
@@ -182,6 +188,15 @@ let trashInstances = null;
 let powerupInstances = null;
 let environmentPropGroup = null;
 let environmentPropStats = { total: 0, buoys: 0, rocks: 0, markers: 0 };
+let worldBoundaryGroup = null;
+let worldBoundaryDebug = {
+  visible: false,
+  markers: 0,
+  width: 0,
+  height: 0,
+  hit: false,
+  edge: null,
+};
 let localBoatFeelState = null;
 let latestBoatFeelDebug = { y: 0, surfaceY: 0, waterlineClearance: 0, pitch: 0, roll: 0, wake: 0 };
 let latestPickupDebug = { pending: 0, lastResult: null };
@@ -741,6 +756,91 @@ function createArcadeEnvironmentProps(isMobileViewport) {
   }
   try { disableReflectionForObject(group); } catch (_) {}
   return { group, stats };
+}
+
+function createBoundaryRopeSegment(start, end) {
+  const dx = end.x - start.x;
+  const dz = end.z - start.z;
+  const length = Math.max(0.1, Math.hypot(dx, dz));
+  const material = makeStaticMaterial(0xf9f2d3, { emissive: 0x221a08, emissiveIntensity: 0.1 });
+  const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, length, 6), material);
+  rope.position.set((start.x + end.x) / 2, 0.18, (start.z + end.z) / 2);
+  rope.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(dx / length, 0, dz / length)
+  );
+  rope.userData.boundaryRope = true;
+  return rope;
+}
+
+function createWorldBoundaryMarkers(isMobileViewport) {
+  const group = new THREE.Group();
+  group.name = "WorldBoundaryMarkers";
+  group.renderOrder = 2;
+  const layout = boundaryMarkerLayout(boundaries, {
+    mobile: isMobileViewport,
+    boatMargin: WORLD_BOUNDARY_DEFAULTS.boatMargin,
+  });
+  const accents = [0xff5d4d, 0xffd047, 0x53d2dc];
+  const markersByEdge = new Map();
+
+  for (const marker of layout.markers) {
+    const buoy = createBuoyProp({
+      x: marker.x,
+      z: marker.z,
+      scale: isMobileViewport ? 0.42 : 0.48,
+      accent: accents[marker.accentIndex % accents.length],
+    });
+    buoy.userData.boundaryMarker = true;
+    group.add(buoy);
+    const edgeMarkers = markersByEdge.get(marker.edge) || [];
+    edgeMarkers.push(buoy);
+    markersByEdge.set(marker.edge, edgeMarkers);
+  }
+
+  for (const [edge, edgeMarkers] of markersByEdge.entries()) {
+    edgeMarkers.sort((a, b) => (
+      edge === "north" || edge === "south"
+        ? a.position.x - b.position.x
+        : a.position.z - b.position.z
+    ));
+    for (let i = 1; i < edgeMarkers.length; i += 1) {
+      const prev = edgeMarkers[i - 1].position;
+      const next = edgeMarkers[i].position;
+      const rope = createBoundaryRopeSegment(prev, next);
+      group.add(rope);
+    }
+  }
+
+  disableGameplayInteraction(group);
+  try { disableReflectionForObject(group); } catch (_) {}
+  return {
+    group,
+    debug: {
+      visible: true,
+      markers: layout.markers.length,
+      spacing: layout.spacing,
+      width: layout.extents.width,
+      height: layout.extents.height,
+      halfX: layout.extents.halfX,
+      halfZ: layout.extents.halfZ,
+    },
+  };
+}
+
+function rebuildWorldBoundaryMarkers() {
+  if (!scene) return;
+  if (worldBoundaryGroup) {
+    scene.remove(worldBoundaryGroup);
+    worldBoundaryGroup.traverse((child) => {
+      if (child.geometry && typeof child.geometry.dispose === "function") child.geometry.dispose();
+      if (child.material && typeof child.material.dispose === "function") child.material.dispose();
+    });
+  }
+  const result = createWorldBoundaryMarkers(window.innerWidth < 800);
+  worldBoundaryGroup = result.group;
+  worldBoundaryDebug = { ...worldBoundaryDebug, ...result.debug, hit: false, edge: null };
+  scene.add(worldBoundaryGroup);
 }
 
 function captureGameplayCollisionBox(object3d) {
@@ -2135,13 +2235,16 @@ function currentPlayerPosition() {
 function emitGameplayEvent(type, metadata = {}) {
   try {
     if (!worker || !type) return;
+    const canonicalScore = type === "game_over"
+      ? Number(metadata.final_score ?? metadata.finalScore ?? metadata.score ?? localScore ?? 0)
+      : Number(localScore || 0);
     const payload = {
       type,
       session_id: currentSessionId || `${roomId || "ROOM"}:${yourId}:pending`,
       room_id: roomId || null,
       player_id: yourId,
       player_name: currentDisplayName(),
-      score: Number(localScore || 0),
+      score: Number.isFinite(canonicalScore) ? canonicalScore : Number(localScore || 0),
       position: metadata.position || currentPlayerPosition(),
       occurred_at: new Date().toISOString(),
       related_player_id: metadata.related_player_id || metadata.relatedPlayerId || null,
@@ -3515,6 +3618,7 @@ async function init() {
         gameDuration = body.gameDuration;
         boundaries.width = body.worldSizeX;
         boundaries.height = body.worldSizeZ;
+        try { rebuildWorldBoundaryMarkers(); } catch (_) {}
         serverAuthEnabled = !!body.serverAuthEnabled;
         serverPhysics = body.physics || null;
         if (hudVersionEl) {
@@ -3586,7 +3690,7 @@ async function init() {
           setAdminStatus("Match ended.", "Ended");
           break;
         }
-        endGame();
+        endGame(body || {});
         break;
       case "items.all":
         syncAuthoritativeItems(body);
@@ -3794,7 +3898,7 @@ async function init() {
         } else if (incomingState === "ENDED") {
           gameState = incomingState;
           stopLocalTimeTicker();
-          endGame();
+          endGame({ remaining: 0, timeRemaining: 0 });
           setPhase("POST_GAME");
         }
         if (typeof updateControls === "function") updateControls();
@@ -5279,6 +5383,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
     // Update environment once on resize instead of every frame
     skyNeedsEnvironmentRefresh = true;
     try { updateSun(); } catch (_) {}
+    try { rebuildWorldBoundaryMarkers(); } catch (_) {}
   });
 
   // Pause audio when tab hidden (Firefox/others), resume on return
@@ -5374,6 +5479,7 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
   environmentPropGroup = envProps.group;
   environmentPropStats = envProps.stats;
   scene.add(environmentPropGroup);
+  rebuildWorldBoundaryMarkers();
   let lastTrace = null;
   sendYourPosition = throttle(traceRateInMillis, () => {
     if (gameOverFlag) return;
@@ -6087,18 +6193,26 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
       player.quaternion
     );
 
-    const lastPosition = player.position.clone();
     player.position.addScaledVector(direction, effectiveSignedSpeed * dt);
 
-    // 2D bounds check against world boundaries (ignore Y thickness)
-    const halfW = (boundaries?.width || 100) / 2;
-    const halfH = (boundaries?.height || 100) / 2;
-    if (
-      player.position.x < -halfW || player.position.x > halfW ||
-      player.position.z < -halfH || player.position.z > halfH
-    ) {
-      player.position.copy(lastPosition);
+    const boundary = softClampToWorldBoundary(player.position, boundaries, {
+      boatMargin: WORLD_BOUNDARY_DEFAULTS.boatMargin,
+    });
+    if (boundary.hit) {
+      player.position.x = boundary.x;
+      player.position.z = boundary.z;
+      playerSpeed *= WORLD_BOUNDARY_DEFAULTS.speedDamping;
+      effectiveSignedSpeed = playerSpeed;
     }
+    worldBoundaryDebug = {
+      ...worldBoundaryDebug,
+      hit: boundary.hit,
+      edge: boundary.edge,
+      halfX: boundary.extents.halfX,
+      halfZ: boundary.extents.halfZ,
+      width: boundary.extents.width,
+      height: boundary.extents.height,
+    };
 
     latestBoatFeelDebug = updateBoatFeel(player, localBoatFeelState, {
       dt,
@@ -6371,15 +6485,58 @@ function isPowerUp(type) {
   return String(type || "").startsWith("powerup_");
 }
 
-function endGame() {
+function finitePayloadNumber(...values) {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function finalScoreFromEndPayload(endPayload = {}) {
+  return finitePayloadNumber(
+    endPayload?.scores && endPayload.scores[yourId],
+    endPayload?.final_scores && endPayload.final_scores[yourId],
+    endPayload?.finalScores && endPayload.finalScores[yourId],
+    endPayload?.score_by_player && endPayload.score_by_player[yourId],
+    endPayload?.scoreByPlayer && endPayload.scoreByPlayer[yourId],
+    endPayload?.playerId === yourId ? endPayload?.final_score : null,
+    endPayload?.playerId === yourId ? endPayload?.finalScore : null,
+    endPayload?.playerId === yourId ? endPayload?.score : null,
+    localScore
+  );
+}
+
+function updateResultsScore(finalScore) {
+  const rn = document.getElementById("results-name");
+  if (rn) rn.textContent = "Name: " + (playerName || "Default");
+  const rs = document.getElementById("results-score");
+  if (rs) rs.textContent = "Score: " + finalScore;
+}
+
+function endGame(endPayload = {}) {
+  const finalScore = Math.max(0, Math.round(finalScoreFromEndPayload(endPayload) ?? Number(localScore || 0)));
+  const remainingFromServer = finitePayloadNumber(endPayload?.remaining, endPayload?.timeRemaining);
+  localScore = finalScore;
+  updateLocalScoreDisplays();
+  if (remainingFromServer != null) {
+    lastServerTimeSyncValue = Math.max(0, remainingFromServer);
+    lastServerTimeSyncAtMs = Date.now();
+    renderTimeValue(lastServerTimeSyncValue);
+  } else if (!gameOverFlag) {
+    renderTimeValue(0);
+  }
   if (gameOverFlag) {
     stopLocalTimeTicker();
+    updateResultsScore(finalScore);
     setPhase("POST_GAME");
     return;
   }
   stopLocalTimeTicker();
   emitGameplayEvent("game_over", {
-    final_score: Number(localScore || 0),
+    final_score: finalScore,
+    finalScore,
+    score: finalScore,
     time_remaining: Number(remainingTime || 0),
     stats: { ...eventStats },
     powerups_active_at_end: {
@@ -6395,10 +6552,7 @@ function endGame() {
   clearMatchVisualState();
 
   // Populate results screen instead of creating ad-hoc overlays
-  const rn = document.getElementById("results-name");
-  if (rn) rn.textContent = "Name: " + (playerName || "Default");
-  const rs = document.getElementById("results-score");
-  if (rs) rs.textContent = "Score: " + localScore;
+  updateResultsScore(finalScore);
   let rc = document.getElementById("results-commentary");
   if (!rc) {
     const summary = document.getElementById("results-summary");
@@ -6684,6 +6838,7 @@ function renderGameToText() {
     turtleSamples,
     camera: latestCameraCompositionDebug,
     boatFeel: getBoatFeelDebug(localBoatFeelState) || latestBoatFeelDebug,
+    worldBoundary: worldBoundaryDebug,
     waterEffects: { wakeRipples: false, contactRing: false, engineParticles: ENGINE_WAKE_PARTICLES_ENABLED },
     pickups: latestPickupDebug,
     badges: {

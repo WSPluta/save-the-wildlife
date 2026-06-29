@@ -1269,18 +1269,23 @@ function scoreTextAgainstEvidence(text, summary = {}, maxChars = COMMENTARY_MAX_
   const mentionsPowerup = /powerup|shield|magnet|freeze|boost/.test(normalized);
   const mentionsFreeze = /frozen|freeze/.test(normalized);
   const mentionsTrail = /trail|cross/.test(normalized);
+  const mentionsTrash = /\b(trash|pickup|pickups)\b/.test(normalized);
+  const mentionsMarine = /\b(marine|turtle)\b/.test(normalized);
+  const claimsMarineCollection = /\bcollect\w*\s+(?:trash\s+and\s+)?(?:marine|turtle|wildlife)\b/.test(normalized);
   const mentionsPolicy = /\b(policy|persona|trained|hunter|cleaner|ambusher|risk taker)\b/.test(normalized)
     || policyTerms.some((term) => term && normalized.includes(term.replace(/^powerup_/, "")));
   const mentionsWin = /\b(win|wins|won|victory|champion)\b/.test(normalized);
   const unsupportedFreeze = mentionsFreeze && !summary.freezes && !powerups.includes("freeze");
   const unsupportedPowerup = mentionsPowerup && powerups.length === 0 && !summary.freezes;
   const unsupportedTrail = mentionsTrail && !summary.trail_crosses;
+  const unsupportedTrash = mentionsTrash && !summary.trash_collected;
+  const unsupportedMarine = mentionsMarine && !summary.marine_hits;
   const unsupportedPolicy = mentionsPolicy && !policy;
   const unsupportedOutcome = mentionsWin;
   const tokenCount = estimateTokens(text);
   return {
-    uses_retrieved_evidence: Boolean(mentionsScore || mentionsPlayer || (summary.freezes && mentionsFreeze) || (summary.trail_crosses && mentionsTrail) || (powerups.length && mentionsPowerup) || (policy && mentionsPolicy)),
-    no_hallucinated_game_facts: !(unsupportedFreeze || unsupportedPowerup || unsupportedTrail || unsupportedPolicy || unsupportedOutcome),
+    uses_retrieved_evidence: Boolean(mentionsScore || mentionsPlayer || (summary.freezes && mentionsFreeze) || (summary.trail_crosses && mentionsTrail) || (summary.trash_collected && mentionsTrash) || (summary.marine_hits && mentionsMarine) || (powerups.length && mentionsPowerup) || (policy && mentionsPolicy)),
+    no_hallucinated_game_facts: !(unsupportedFreeze || unsupportedPowerup || unsupportedTrail || unsupportedTrash || unsupportedMarine || claimsMarineCollection || unsupportedPolicy || unsupportedOutcome),
     unique_commentary: Boolean(normalized && normalized !== normalizeSummary({}).player_name.toLowerCase()),
     commentary_quality: Boolean(text && text.length >= 24 && text.length <= Math.max(40, Math.min(200, maxChars))),
     confidence_calibrated: !/\b(definitely|guaranteed|certainly|undeniably)\b/i.test(text || ""),
@@ -1348,12 +1353,18 @@ function hasUnsupportedMechanicText(text = "", summary = {}) {
   const mentionsPowerup = /powerup|shield|magnet|boost/.test(normalized);
   const mentionsFreeze = /frozen|freeze/.test(normalized);
   const mentionsTrail = /trail|cross/.test(normalized);
+  const mentionsTrash = /\b(trash|pickup|pickups)\b/.test(normalized);
+  const mentionsMarine = /\b(marine|turtle)\b/.test(normalized);
+  const claimsMarineCollection = /\bcollect\w*\s+(?:trash\s+and\s+)?(?:marine|turtle|wildlife)\b/.test(normalized);
   const mentionsPolicy = /\b(policy|persona|trained|hunter|cleaner|ambusher|risk taker)\b/.test(normalized);
   const mentionsWin = /\b(win|wins|won|victory|champion)\b/.test(normalized);
   return Boolean(
     (mentionsFreeze && !summary.freezes && !powerups.includes("freeze")) ||
     (mentionsPowerup && powerups.length === 0 && !summary.freezes) ||
     (mentionsTrail && !summary.trail_crosses) ||
+    (mentionsTrash && !summary.trash_collected) ||
+    (mentionsMarine && !summary.marine_hits) ||
+    claimsMarineCollection ||
     (mentionsPolicy && !summary.bot_policy) ||
     mentionsWin
   );
@@ -1365,7 +1376,11 @@ function repairInDbCommentary(text, summary = {}, maxChars = COMMENTARY_MAX_CHAR
 
   const kept = splitCommentarySentences(original)
     .filter((part) => !hasUnsupportedMechanicText(part, summary));
-  if (!kept.length) return null;
+  if (!kept.length) {
+    const groundedDraft = liveLineGroundedDraft(summary, maxChars);
+    const gate = evidenceFactGate(groundedDraft, summary, maxChars);
+    return gate.ok ? { text: groundedDraft, repaired: true } : null;
+  }
 
   let repaired = kept.join(" ");
   const score = Number.isFinite(Number(summary.score)) ? String(Number(summary.score)) : "";
@@ -1878,7 +1893,11 @@ END STWL_COMMENTARY_PKG;`,
                MAX(e.room_id) KEEP (DENSE_RANK LAST ORDER BY e.occurred_at) AS room_id,
                e.player_id,
                MAX(e.player_name) KEEP (DENSE_RANK LAST ORDER BY e.occurred_at) AS player_name,
-               NVL(MAX(e.score) KEEP (DENSE_RANK LAST ORDER BY e.occurred_at), 0) AS score,
+               NVL(COALESCE(
+                 MAX(CASE WHEN e.event_type = 'game_over' THEN e.score END)
+                   KEEP (DENSE_RANK LAST ORDER BY CASE WHEN e.event_type = 'game_over' THEN e.occurred_at END NULLS FIRST),
+                 MAX(e.score) KEEP (DENSE_RANK LAST ORDER BY e.occurred_at)
+               ), 0) AS score,
                SUM(CASE WHEN e.event_type = 'trash_collected' THEN 1 ELSE 0 END) AS trash_collected,
                SUM(CASE WHEN e.event_type = 'marine_hit' THEN 1 ELSE 0 END) AS marine_hits,
                SUM(CASE WHEN e.event_type = 'trail_crossed' THEN 1 ELSE 0 END) AS trail_crosses,
@@ -2694,7 +2713,11 @@ async function getOracleSummary(sessionId, playerId, options = {}) {
         room_id,
         player_id,
         MAX(player_name) KEEP (DENSE_RANK LAST ORDER BY occurred_at) AS player_name,
-        NVL(MAX(score) KEEP (DENSE_RANK LAST ORDER BY occurred_at), 0) AS score,
+        NVL(COALESCE(
+          MAX(CASE WHEN event_type = 'game_over' THEN score END)
+            KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type = 'game_over' THEN occurred_at END NULLS FIRST),
+          MAX(score) KEEP (DENSE_RANK LAST ORDER BY occurred_at)
+        ), 0) AS score,
         SUM(CASE WHEN event_type = 'trash_collected' THEN 1 ELSE 0 END) AS trash_collected,
         SUM(CASE WHEN event_type = 'marine_hit' THEN 1 ELSE 0 END) AS marine_hits,
         SUM(CASE WHEN event_type = 'trail_crossed' THEN 1 ELSE 0 END) AS trail_crosses,
@@ -2804,7 +2827,11 @@ async function resolveLatestOracleIdentityForRoom(connection, roomId) {
          player_id,
          MAX(player_name) KEEP (DENSE_RANK LAST ORDER BY occurred_at) AS player_name,
          MAX(occurred_at) AS last_event_at,
-         NVL(MAX(score) KEEP (DENSE_RANK LAST ORDER BY occurred_at), 0) AS score,
+         NVL(COALESCE(
+           MAX(CASE WHEN event_type = 'game_over' THEN score END)
+             KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type = 'game_over' THEN occurred_at END NULLS FIRST),
+           MAX(score) KEEP (DENSE_RANK LAST ORDER BY occurred_at)
+         ), 0) AS score,
          COUNT(*) AS event_count,
          CASE WHEN LOWER(player_id) LIKE 'bot-%' THEN 1 ELSE 0 END AS bot_rank
        FROM ${GAME_EVENTS_TABLE}
@@ -3373,6 +3400,9 @@ async function buildCommentary(body = {}, options = {}) {
           );
         }
         const candidateCommentary = repairedCandidate?.text || candidate.commentary;
+        const candidateSource = repairedCandidate?.repaired
+          ? `${candidate.source || "oracle-ai-database-agent"}-guarded`
+          : candidate.source;
         const inDbGate = evidenceFactGate(candidateCommentary, summary, maxChars);
         if (!inDbGate.ok) {
           diagnosticWarnings = combineWarnings(
@@ -3381,7 +3411,7 @@ async function buildCommentary(body = {}, options = {}) {
           );
           return null;
         }
-        inDbAgent = { ...candidate, commentary: candidateCommentary };
+        inDbAgent = { ...candidate, source: candidateSource, commentary: candidateCommentary };
         return inDbAgent;
       }
     } catch (error) {
