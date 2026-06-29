@@ -2064,3 +2064,28 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
       - Gameplay: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-124807-selectai/proof-gameplay-frame.png`.
       - Commentary: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-124807-selectai/proof-commentary-frame.png`.
     - Visual inspection: no recorder overlays; real observability quadrant shows `AI Job ready` and `select-ai`; boundary rope/buoys are visible; final result cards show matching score/commentary.
+
+2026-06-29 visible end-timer hardening:
+  - Completion audit found that the report state proved `timeRemaining=0`, but the result-frame HUD still showed `Time: 60` because late `server.info` / room `WAITING` updates reset the visible timer back to `gameDuration` while the client was already in `POST_GAME`.
+  - Patched `web/src/script.js` so non-running server-info sync skips timer resets during `POST_GAME`, and `room.state WAITING` exits before resetting the visible timer when results are still being shown.
+  - Added `web/src/__tests__/gameplayPolish.test.js` coverage for keeping the visible timer pinned after post-game.
+  - Validation:
+    - `node --check web/src/script.js` passed.
+    - Focused web Vitest passed: `src/__tests__/gameplayPolish.test.js` 27 tests.
+    - `webpack --config ./bundler/webpack.prod.js` passed with existing large-asset warnings.
+    - `kubectl kustomize deploy/k8s/overlays/devops` rendered successfully with existing Kustomize deprecation warnings only.
+  - Public hot patch:
+    - Built new frontend bundle `bundle.7a8323dff8d417219ba8.js`.
+    - Copied `web/dist` into the live `web-595b486db-gw6t5` pod so `http://130.162.174.167/` served the timer fix for proof capture.
+  - Final timer-proof public recording:
+    - Video: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-141735-timer-final/save-the-wildlife-same-room-competition-commentary-proof.mp4`.
+    - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-141735-timer-final/recording-report.md`.
+    - Room: `DEMO-STAGE-855999`; video duration `57.48s`; output `1920x1080` at `25 fps`; SHA-256 `b1e79e03a83c8eaaee97febf8e45b4c401c21cb79389ad50738d7915c68d780d`.
+    - Report status: `PASS`.
+    - All three commentary lines came from `select-ai`.
+    - Score consistency evidence: queued `game_over` events carry `score=0`, `metadata.final_score=0`, and commentary score `0` for all three demo players; `ENDED` state reports `timeRemaining=0` for all players.
+    - Pickups proved: Alpha/trash, Bravo/turtle, Charlie/powerup_speed.
+    - Visual receipts inspected:
+      - Gameplay: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-141735-timer-final/proof-gameplay-frame.png`.
+      - Commentary: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-141735-timer-final/proof-commentary-frame.png`.
+    - Visual inspection: commentary frame shows `Time: 0` on all gameplay panes, result cards show `Score: 0`, observability shows `AI Job ready` with `select-ai`, and buoy/rope boundaries remain visible.

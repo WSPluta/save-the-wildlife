@@ -3625,7 +3625,7 @@ async function init() {
           hudVersionEl.innerHTML = "Version: " + (serverVersion || "-");
         }
         // Keep shared timer aligned with authoritative server duration while not running.
-        if (Number.isFinite(gameDuration) && gameState !== "RUNNING" && gameState !== "STARTING") {
+        if (Number.isFinite(gameDuration) && gameState !== "RUNNING" && gameState !== "STARTING" && currentPhase !== "POST_GAME") {
           lastServerTimeSyncValue = Number(gameDuration);
           lastServerTimeSyncAtMs = Date.now();
           renderTimeValue(gameDuration);
@@ -3863,15 +3863,15 @@ async function init() {
           gameState = incomingState;
           const statusEl = document.getElementById("lobby-status");
           if (statusEl) statusEl.textContent = "Waiting for game...";
-          if (Number.isFinite(gameDuration)) {
-            lastServerTimeSyncValue = Number(gameDuration);
-            lastServerTimeSyncAtMs = Date.now();
-            renderTimeValue(gameDuration);
-          }
           stopLocalTimeTicker();
           if (currentPhase === "POST_GAME") {
             if (typeof updateControls === "function") updateControls();
             break;
+          }
+          if (Number.isFinite(gameDuration)) {
+            lastServerTimeSyncValue = Number(gameDuration);
+            lastServerTimeSyncAtMs = Date.now();
+            renderTimeValue(gameDuration);
           }
           setPhase("LOBBY");
         } else if (incomingState === "STARTING") {

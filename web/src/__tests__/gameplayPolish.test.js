@@ -484,4 +484,9 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/updateResultsScore\(finalScore\);/);
     expect(script).toMatch(/endGame\(\{ remaining: 0, timeRemaining: 0 \}\);/);
   });
+
+  it("keeps the visible timer pinned after post-game instead of resetting to duration", () => {
+    expect(script).toMatch(/gameState !== "RUNNING" && gameState !== "STARTING" && currentPhase !== "POST_GAME"/);
+    expect(script).toMatch(/if \(incomingState === "WAITING"\) \{[\s\S]{0,220}stopLocalTimeTicker\(\);[\s\S]{0,180}if \(currentPhase === "POST_GAME"\) \{[\s\S]{0,120}break;[\s\S]{0,180}if \(Number\.isFinite\(gameDuration\)\) \{/);
+  });
 });
