@@ -385,6 +385,10 @@
 - Acceptance: Public PAF and all end-game `commentary.ready` events must report `source=select-ai`, `llm_generated=true`, `select_ai_verified=true`, `generation_proof.operation=DBMS_CLOUD_AI.GENERATE:chat`, a finite `generation_proof.latency_ms`, `generation_proof.output_rewritten=false`, Command A model identity, exact canonical score, and no deterministic fallback.
 - Status: Fixed locally; public verification blocked on release commit/pipeline.
 
+- First Public Rollout Finding (2026-06-30): OCI build and deployment succeeded for web `0.0.104`, server `0.0.72`, and PAF `0.0.32`, but retained Kubernetes drift injected `INDB_AGENT_AUTO_INIT=false`. The new PAF image therefore called an older `STWL_COMMENTARY_PKG` that returned `source=select-ai` without generation proof. Strict mode correctly returned HTTP 500 instead of relabeling the sentence.
+- Follow-up Fix: PAF `0.0.33` explicitly sets `INDB_AGENT_AUTO_INIT=true`, upgrades the in-database package, gives Select AI one bounded model retry after validation failure, and rejects unsupported outcome/causality claims such as a win or freezing an opponent when those facts are absent.
+- Follow-up Status: Source fix tested locally; live env temporarily corrected for verification; immutable PAF `0.0.33` pipeline rollout pending commit.
+
 ## STWL-QA-002
 
 - ID: STWL-QA-002

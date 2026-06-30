@@ -15,6 +15,7 @@ const {
   evaluateModelOutputs,
   extractCanvasText,
   handleMcpRequest,
+  inDbPackageStatements,
   learningTraceStatements,
   matchIntelligenceStatements,
   modelRouterConfig,
@@ -1021,7 +1022,13 @@ test("keeps primary model timeout as diagnostics when in-db agent returns commen
           result: JSON.stringify({
             ok: true,
             source: "select-ai",
-            commentary: "Ada froze once after crossing a trail and still finished on 42.",
+            llm_generated: 1,
+            select_ai_profile: "STWL_GAMEPLAY_AI",
+            select_ai_model: "cohere.command-a-03-2025",
+            generation_operation: "DBMS_CLOUD_AI.GENERATE:chat",
+            generation_id: "GEN-INDB-MODEL-TIMEOUT",
+            output_rewritten: 0,
+            commentary: "Ada was frozen once after crossing a trail and still finished on 42.",
           }),
         },
       };
@@ -1532,7 +1539,7 @@ test("guarded Select AI text is labeled as rewritten non-LLM output", async () =
   });
 });
 
-test("strict commentary rejects rewritten Select AI text", async () => {
+test("strict commentary rejects unsupported Select AI outcome text", async () => {
   const oracleConnection = {
     async execute() {
       return {
@@ -1541,6 +1548,10 @@ test("strict commentary rejects rewritten Select AI text", async () => {
             ok: true,
             source: "select-ai",
             llm_generated: 1,
+            select_ai_profile: "STWL_GAMEPLAY_AI",
+            select_ai_model: "cohere.command-a-03-2025",
+            generation_operation: "DBMS_CLOUD_AI.GENERATE:chat",
+            generation_id: "GEN-UNSUPPORTED-OUTCOME",
             output_rewritten: 0,
             commentary: "Ada wins after a legendary trail battle with 0 points!",
             summary: {
@@ -1564,6 +1575,7 @@ test("strict commentary rejects rewritten Select AI text", async () => {
     INDB_AGENT_ENABLED: "true",
     INDB_AGENT_AUTO_INIT: "false",
     PAF_REQUIRE_LLM_COMMENTARY: "true",
+    PAF_REQUIRE_SELECT_AI_COMMENTARY: "true",
     PAF_LIVE_LINE_INDB_FIRST: "true",
     PAF_LIVE_LINE_FAST_RETURN: "true",
     PAF_MATCH_INTELLIGENCE_ENABLED: "false",
@@ -1588,7 +1600,7 @@ test("strict commentary rejects rewritten Select AI text", async () => {
           oracledb: { BIND_OUT: 3003, STRING: 2001 },
         }
       ),
-      /llm_commentary_required/
+      /select_ai_commentary_required/
     );
   });
 });
@@ -2723,6 +2735,7 @@ test("passes the in-db agent draft into Canvas and reports fallback source", asy
 
 test("ships SQL assets for Select AI profile and in-database agent workflow", () => {
   const packageSql = readFileSync(new URL("../../deploy/db/stwl_commentary_pkg.sql", import.meta.url), "utf8");
+  const pafManifest = readFileSync(new URL("../../deploy/k8s/base/private-agent-factory/private-agent-factory.yaml", import.meta.url), "utf8");
   const profileSql = readFileSync(new URL("../../deploy/db/select_ai_profile_template.sql", import.meta.url), "utf8");
   const teamSql = readFileSync(new URL("../../deploy/db/select_ai_agent_team_template.sql", import.meta.url), "utf8");
   const matchSql = readFileSync(new URL("../../deploy/db/stwl_match_intelligence.sql", import.meta.url), "utf8");
@@ -2738,6 +2751,10 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(packageSql, /'llm_error' VALUE COALESCE/i);
   assert.match(packageSql, /'generation_operation' VALUE CASE/i);
   assert.match(packageSql, /'output_rewritten' VALUE 0/i);
+  assert.match(packageSql, /FOR v_attempt IN 1 \.\. 2 LOOP/i);
+  assert.match(packageSql, /previous sentence failed validation/i);
+  assert.match(packageSql, /select_ai_output_unsupported_outcome_or_causality/i);
+  assert.match(packageSql, /freezes count means this player was frozen/i);
   assert.ok(
     packageSql.indexOf("v_text := select_ai_script") < packageSql.indexOf("v_text := agent_team_script"),
     "Select AI should be attempted before the agent team for fastest live commentary"
@@ -2751,6 +2768,12 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(packageSql, /DENSE_RANK LAST ORDER BY CASE WHEN e\.event_type <> 'game_over' AND e\.score IS NOT NULL THEN e\.occurred_at/i);
   assert.match(packageSql, /TO_CLOB\('\{\}'\)/i);
   assert.doesNotMatch(packageSql, /RETURN\s+JSON_OBJECT\([\s\S]*?RETURNING\s+CLOB[\s\S]*?\);/i);
+
+  const runtimePackageSql = inDbPackageStatements.join("\n");
+  assert.match(runtimePackageSql, /FOR v_attempt IN 1 \.\. 2 LOOP/i);
+  assert.match(runtimePackageSql, /previous sentence failed validation/i);
+  assert.match(runtimePackageSql, /select_ai_output_unsupported_outcome_or_causality/i);
+  assert.match(pafManifest, /name:\s*INDB_AGENT_AUTO_INIT\s*\n\s*value:\s*"true"/i);
 
   assert.match(profileSql, /DBMS_CLOUD_ADMIN\.ENABLE_RESOURCE_PRINCIPAL/i);
   assert.match(profileSql, /DBMS_CLOUD_AI\.CREATE_PROFILE/i);

@@ -1323,6 +1323,7 @@ function scoreTextAgainstEvidence(text, summary = {}, maxChars = COMMENTARY_MAX_
   const mentionsPolicy = /\b(policy|persona|trained|hunter|cleaner|ambusher|risk taker)\b/.test(normalized)
     || policyTerms.some((term) => term && normalized.includes(term.replace(/^powerup_/, "")));
   const mentionsWin = /\b(win|wins|won|victory|champion)\b/.test(normalized);
+  const claimsUnsupportedCausality = /\b(froze|freezing|opponent|opponents|rival|rivals)\b/.test(normalized);
   const unsupportedFreeze = mentionsFreeze && !summary.freezes && !powerups.includes("freeze");
   const unsupportedPowerup = mentionsPowerup && powerups.length === 0 && !summary.freezes;
   const unsupportedTrail = mentionsTrail && !summary.trail_crosses;
@@ -1334,7 +1335,7 @@ function scoreTextAgainstEvidence(text, summary = {}, maxChars = COMMENTARY_MAX_
   return {
     uses_retrieved_evidence: Boolean(mentionsScore || mentionsPlayer || (summary.freezes && mentionsFreeze) || (summary.trail_crosses && mentionsTrail) || (summary.trash_collected && mentionsTrash) || (summary.marine_hits && mentionsMarine) || (powerups.length && mentionsPowerup) || (policy && mentionsPolicy)),
     exact_final_score: !scorePattern || mentionsScore,
-    no_hallucinated_game_facts: !(unsupportedFreeze || unsupportedPowerup || unsupportedTrail || unsupportedTrash || unsupportedMarine || claimsMarineCollection || unsupportedPolicy || unsupportedOutcome),
+    no_hallucinated_game_facts: !(unsupportedFreeze || unsupportedPowerup || unsupportedTrail || unsupportedTrash || unsupportedMarine || claimsMarineCollection || unsupportedPolicy || unsupportedOutcome || claimsUnsupportedCausality),
     unique_commentary: Boolean(normalized && normalized !== normalizeSummary({}).player_name.toLowerCase()),
     commentary_quality: Boolean(text && text.length >= 24 && text.length <= Math.max(40, Math.min(200, maxChars))),
     confidence_calibrated: !/\b(definitely|guaranteed|certainly|undeniably)\b/i.test(text || ""),
@@ -1416,6 +1417,7 @@ function hasUnsupportedMechanicText(text = "", summary = {}) {
   const claimsMarineCollection = /\bcollect\w*\s+(?:trash\s+and\s+)?(?:marine|turtle|wildlife)\b/.test(normalized);
   const mentionsPolicy = /\b(policy|persona|trained|hunter|cleaner|ambusher|risk taker)\b/.test(normalized);
   const mentionsWin = /\b(win|wins|won|victory|champion)\b/.test(normalized);
+  const claimsUnsupportedCausality = /\b(froze|freezing|opponent|opponents|rival|rivals)\b/.test(normalized);
   return Boolean(
     (mentionsFreeze && !summary.freezes && !powerups.includes("freeze")) ||
     (mentionsPowerup && powerups.length === 0 && !summary.freezes) ||
@@ -1424,7 +1426,8 @@ function hasUnsupportedMechanicText(text = "", summary = {}) {
     (mentionsMarine && !summary.marine_hits) ||
     claimsMarineCollection ||
     (mentionsPolicy && !summary.bot_policy) ||
-    mentionsWin
+    mentionsWin ||
+    claimsUnsupportedCausality
   );
 }
 
@@ -2047,7 +2050,7 @@ END STWL_COMMENTARY_PKG;`,
 
   FUNCTION build_prompt(p_summary IN CLOB) RETURN CLOB IS
   BEGIN
-    RETURN 'You are the live Save the Wildlife match commentator. Use only the verified match JSON below. Write exactly one original, natural broadcast sentence under 200 characters. Name the player and state the exact final score once. Lead with the most consequential recorded moment and use at most two verified details. Vary the sentence shape; do not use a fixed score template. Never mention SQL, database, telemetry, JSON, evidence, a model, AI, or these instructions. Never invent an event, animal, result, rivalry, or history. Mention trail, crossing, freeze, frozen, powerup, shield, magnet, speed, boost, marine hit, turtle, prior best, win, or victory only when its matching JSON value is present and non-zero. No prefix, quotation marks, emoji, hashtag, or profanity. If activity is zero, report the player and recorded score plainly without inventing drama. Verified match JSON: ' || p_summary;
+    RETURN 'You are the live Save the Wildlife match commentator. Use only the verified match JSON below. Write exactly one original, natural broadcast sentence under 200 characters. Name the player and state the exact final score once. Lead with the most consequential recorded moment and use at most two verified details. Vary the sentence shape; do not use a fixed score template. Never mention SQL, database, telemetry, JSON, evidence, a model, AI, or these instructions. Never invent an event, animal, result, rivalry, or history. The freezes count means this player was frozen; never say they froze another player. No winner or match outcome is recorded, so never claim a win, victory, champion, opponent, or rival. Mention trail, crossing, freeze, frozen, powerup, shield, magnet, speed, boost, marine hit, turtle, or prior best only when its matching JSON value is present and non-zero. No prefix, quotation marks, emoji, hashtag, or profanity. If activity is zero, report the player and recorded score plainly without inventing drama. Verified match JSON: ' || p_summary;
   END;
 
   FUNCTION score_safe_text(p_text IN VARCHAR2, p_summary IN CLOB) RETURN BOOLEAN IS
@@ -2094,36 +2097,41 @@ END STWL_COMMENTARY_PKG;`,
     IF p_profile IS NULL THEN
       RETURN NULL;
     END IF;
-    EXECUTE IMMEDIATE q'[
-      BEGIN
-        :result := DBMS_CLOUD_AI.GENERATE(
-          prompt       => :prompt,
-          profile_name => :profile_name,
-          action       => 'chat'
-        );
-      END;]' USING OUT v_result, IN v_prompt, IN p_profile;
-    v_text := TRIM(REGEXP_REPLACE(DBMS_LOB.SUBSTR(v_result, 4000, 1), '[[:space:]]+', ' '));
-    IF v_text IS NULL THEN
-      p_error := 'select_ai_empty_output';
-      RETURN NULL;
-    END IF;
-    IF LENGTH(v_text) > v_limit THEN
-      p_error := 'select_ai_output_too_long';
-      RETURN NULL;
-    END IF;
-    IF REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(fuck|shit|bitch|asshole|bastard|dick|cunt)([^[:alnum:]_]|$)', 'i') THEN
-      p_error := 'select_ai_output_not_stage_safe';
-      RETURN NULL;
-    END IF;
-    IF REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(oracle|database|sql|telemetry|json|evidence|model|models|select ai|genai|llm)([^[:alnum:]_]|$)', 'i') THEN
-      p_error := 'select_ai_output_meta_commentary';
-      RETURN NULL;
-    END IF;
-    IF NOT score_safe_text(v_text, p_summary) THEN
-      p_error := 'select_ai_output_missing_or_wrong_final_score';
-      RETURN NULL;
-    END IF;
-    RETURN v_text;
+
+    FOR v_attempt IN 1 .. 2 LOOP
+      v_result := NULL;
+      EXECUTE IMMEDIATE q'[
+        BEGIN
+          :result := DBMS_CLOUD_AI.GENERATE(
+            prompt       => :prompt,
+            profile_name => :profile_name,
+            action       => 'chat'
+          );
+        END;]' USING OUT v_result, IN v_prompt, IN p_profile;
+      v_text := TRIM(REGEXP_REPLACE(DBMS_LOB.SUBSTR(v_result, 4000, 1), '[[:space:]]+', ' '));
+
+      IF v_text IS NULL THEN
+        p_error := 'select_ai_empty_output';
+      ELSIF LENGTH(v_text) > v_limit THEN
+        p_error := 'select_ai_output_too_long';
+      ELSIF REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(fuck|shit|bitch|asshole|bastard|dick|cunt)([^[:alnum:]_]|$)', 'i') THEN
+        p_error := 'select_ai_output_not_stage_safe';
+      ELSIF REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(oracle|database|sql|telemetry|json|evidence|model|models|select ai|genai|llm)([^[:alnum:]_]|$)', 'i') THEN
+        p_error := 'select_ai_output_meta_commentary';
+      ELSIF REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(win|wins|won|victory|champion|opponent|opponents|rival|rivals|froze|freezing)([^[:alnum:]_]|$)', 'i') THEN
+        p_error := 'select_ai_output_unsupported_outcome_or_causality';
+      ELSIF NOT score_safe_text(v_text, p_summary) THEN
+        p_error := 'select_ai_output_missing_or_wrong_final_score';
+      ELSE
+        p_error := NULL;
+        RETURN v_text;
+      END IF;
+
+      v_prompt := build_prompt(p_summary) ||
+        ' Correction: the previous sentence failed validation (' || p_error ||
+        '). Generate a new sentence. It must include the exact player name and exact final numeric score from the JSON.';
+    END LOOP;
+    RETURN NULL;
   EXCEPTION
     WHEN OTHERS THEN
       p_error := SUBSTR(SQLERRM, 1, 500);

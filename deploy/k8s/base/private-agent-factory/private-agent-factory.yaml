@@ -60,6 +60,8 @@ spec:
           value: "2000"
         - name: PAF_CONTEXT_TIMEOUT_MS
           value: "1500"
+        - name: INDB_AGENT_AUTO_INIT
+          value: "true"
         - name: INDB_AGENT_TIMEOUT_MS
           value: "12000"
         - name: PAF_CANVAS_TIMEOUT_MS
