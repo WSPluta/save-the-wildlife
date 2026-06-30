@@ -16,6 +16,40 @@ const POSITION_SAMPLE_MIN_MS = parseInt(process.env.GAME_EVENTS_POSITION_SAMPLE_
 const COMMENTARY_MAX_CHARS = parseInt(process.env.COMMENTARY_MAX_CHARS ?? "200", 10);
 const profanityPattern = /\b(fuck|shit|bitch|asshole|bastard|dick|cunt)\b/i;
 
+function boolEnv(name, defaultValue = false) {
+  const value = process.env[name];
+  if (value == null || value === "") return defaultValue;
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
+
+export function isModelBackedCommentarySource(source) {
+  const normalized = asString(source).toLowerCase();
+  return normalized === "select-ai" ||
+    normalized === "oracle-ai-database-agent" ||
+    normalized === "paf-canvas" ||
+    normalized === "oci-base" ||
+    normalized === "oci-fine-tuned";
+}
+
+export function commentaryRequiresLlm() {
+  return boolEnv("COMMENTARY_REQUIRE_LLM", false);
+}
+
+export function commentaryRequiresSelectAi() {
+  return boolEnv("COMMENTARY_REQUIRE_SELECT_AI", false);
+}
+
+export function isDirectSelectAiCommentary(payload = {}) {
+  const proof = payload.generation_proof || payload.generationProof || {};
+  const operation = proof.operation || payload.generation_operation || payload.in_db_agent?.generation_operation;
+  const outputRewritten = proof.output_rewritten ?? payload.output_rewritten ?? payload.in_db_agent?.output_rewritten;
+  return asString(payload.source).toLowerCase() === "select-ai"
+    && (payload.llm_generated === true || payload.llm_generated === 1)
+    && asString(operation) === "DBMS_CLOUD_AI.GENERATE:chat"
+    && outputRewritten !== true
+    && outputRewritten !== 1;
+}
+
 const localEvents = [];
 const localPlayerSessions = [];
 const lastPositionSampleByPlayer = new Map();
@@ -497,26 +531,65 @@ export function deterministicCommentary(summary) {
 async function requestPafCommentary(summary) {
   const pafAgentBaseUrl = (process.env.PAF_AGENT_BASE_URL || "").replace(/\/+$/, "");
   const pafAgentTimeoutMs = parseInt(process.env.PAF_AGENT_TIMEOUT_MS ?? "45000", 10);
-  if (!pafAgentBaseUrl) return null;
-  try {
-    const response = await fetch(`${pafAgentBaseUrl}/api/commentary`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ summary, max_chars: COMMENTARY_MAX_CHARS }),
-      signal: AbortSignal.timeout(pafAgentTimeoutMs),
-    });
-    if (!response.ok) return null;
-    const body = await response.json();
-    const text = body.commentary || body.script || body.text || null;
-    if (!text) return null;
-    return {
-      ...body,
-      commentary: enforceCommentary(text),
-      source: body.source || "oracle-private-agent-factory",
-    };
-  } catch (_) {
+  const requireSelectAi = commentaryRequiresSelectAi();
+  const requireLlm = commentaryRequiresLlm() || requireSelectAi;
+  const attempts = requireLlm
+    ? Math.max(1, Math.min(5, parseInt(process.env.COMMENTARY_LLM_RETRY_ATTEMPTS ?? "3", 10) || 3))
+    : 1;
+  const retryDelayMs = Math.max(50, Math.min(5000, parseInt(process.env.COMMENTARY_LLM_RETRY_DELAY_MS ?? "750", 10) || 750));
+  if (!pafAgentBaseUrl) {
+    if (requireLlm) throw new Error("llm_commentary_paf_not_configured");
     return null;
   }
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(`${pafAgentBaseUrl}/api/commentary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          summary,
+          max_chars: COMMENTARY_MAX_CHARS,
+          output_format: "live_line",
+          require_llm: requireLlm,
+          require_select_ai: requireSelectAi,
+        }),
+        signal: AbortSignal.timeout(pafAgentTimeoutMs),
+      });
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        throw new Error(`paf_commentary_http_${response.status}:${detail.slice(0, 500)}`);
+      }
+      const body = await response.json();
+      const text = body.commentary || body.script || body.text || null;
+      if (!text) throw new Error("paf_commentary_empty");
+      const source = body.source || "oracle-private-agent-factory";
+      const explicitlyGenerated = body.llm_generated === true || body.llm_generated === 1;
+      const llmGenerated = explicitlyGenerated && isModelBackedCommentarySource(source);
+      const selectAiVerified = isDirectSelectAiCommentary(body);
+      if (requireSelectAi && !selectAiVerified) {
+        throw new Error(`paf_commentary_not_direct_select_ai:${source}`);
+      }
+      if (requireLlm && !llmGenerated) {
+        throw new Error(`paf_commentary_not_model_backed:${source}`);
+      }
+      return {
+        ...body,
+        commentary: enforceCommentary(text),
+        source,
+        llm_generated: llmGenerated,
+        select_ai_verified: selectAiVerified,
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+  }
+  if (requireLlm) throw lastError || new Error("llm_commentary_unavailable");
+  return null;
 }
 
 export async function buildCommentary(sessionId, playerId) {
@@ -529,6 +602,9 @@ export async function buildCommentary(sessionId, playerId) {
       commentary: enforceCommentary(paf.commentary),
       source: paf.source || "oracle-private-agent-factory",
     };
+  }
+  if (commentaryRequiresLlm() || commentaryRequiresSelectAi()) {
+    throw new Error("llm_commentary_unavailable");
   }
   return {
     summary,

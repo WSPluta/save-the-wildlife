@@ -17,6 +17,18 @@ describe("world boundaries", () => {
     expect(extents.halfZ).toBeCloseTo(19.75);
   });
 
+  it("reserves an inner item band so targets stay collectible at the edge", () => {
+    const edgeMargin = WORLD_BOUNDARY_DEFAULTS.boatMargin + WORLD_BOUNDARY_DEFAULTS.itemEdgeInset;
+    const extents = worldBoundaryExtents(
+      { width: 128, height: 42 },
+      { boatMargin: edgeMargin }
+    );
+
+    expect(edgeMargin).toBe(2.25);
+    expect(extents.halfX).toBeCloseTo(61.75);
+    expect(extents.halfZ).toBeCloseTo(18.75);
+  });
+
   it("soft-clamps positions and reports the visible edge cue", () => {
     const result = softClampToWorldBoundary(
       { x: 80, z: -25 },

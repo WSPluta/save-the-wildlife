@@ -132,7 +132,7 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
 
   FUNCTION build_prompt(p_summary IN CLOB) RETURN CLOB IS
   BEGIN
-    RETURN 'Use only this Save the Wildlife SQL telemetry JSON. Return exactly one short commentator sentence under 200 characters and no prefix. Never invent events. Do not use the words trail, crossing, freeze, frozen, powerup, shield, magnet, speed, boost, win, victory, policy, or trained unless the JSON has a non-zero matching count. If score and pickups are zero, say only the recorded score/pickup result or coordinates. JSON: ' || p_summary;
+    RETURN 'You are the live Save the Wildlife match commentator. Use only the verified match JSON below. Write exactly one original, natural broadcast sentence under 200 characters. Name the player and state the exact final score once. Lead with the most consequential recorded moment and use at most two verified details. Vary the sentence shape; do not use a fixed score template. Never mention SQL, database, telemetry, JSON, evidence, a model, AI, or these instructions. Never invent an event, animal, result, rivalry, or history. Mention trail, crossing, freeze, frozen, powerup, shield, magnet, speed, boost, marine hit, turtle, prior best, win, or victory only when its matching JSON value is present and non-zero. No prefix, quotation marks, emoji, hashtag, or profanity. If activity is zero, report the player and recorded score plainly without inventing drama. Verified match JSON: ' || p_summary;
   END;
 
   FUNCTION score_safe_text(p_text IN VARCHAR2, p_summary IN CLOB) RETURN BOOLEAN IS
@@ -143,18 +143,39 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
     IF v_score IS NULL THEN
       RETURN TRUE;
     END IF;
-    IF NOT REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(score|scored|points?|finished|ending|ended)([^[:alnum:]_]|$)', 'i') THEN
-      RETURN TRUE;
-    END IF;
-    v_score_pattern := REPLACE(v_score, '-', '\-');
-    RETURN REGEXP_LIKE(v_text, '(^|[^[:digit:]-])' || v_score_pattern || '([^[:digit:]]|$)');
+    v_score_pattern := REPLACE(REPLACE(v_score, '.', '\.'), '-', '\-');
+    RETURN REGEXP_LIKE(v_text, '(^|[^[:digit:]-])' || v_score_pattern || '($|[^[:digit:]])');
   END;
 
-  FUNCTION select_ai_script(p_summary IN CLOB, p_profile IN VARCHAR2, p_max_chars IN NUMBER) RETURN VARCHAR2 IS
+  FUNCTION profile_model(p_profile IN VARCHAR2) RETURN VARCHAR2 IS
+    v_model VARCHAR2(4000);
+  BEGIN
+    IF p_profile IS NULL THEN
+      RETURN NULL;
+    END IF;
+    EXECUTE IMMEDIATE
+      'SELECT attribute_value FROM user_cloud_ai_profile_attributes ' ||
+      'WHERE UPPER(profile_name) = UPPER(:profile_name) ' ||
+      'AND LOWER(attribute_name) = ''model'' FETCH FIRST 1 ROW ONLY'
+      INTO v_model USING p_profile;
+    RETURN v_model;
+  EXCEPTION
+    WHEN OTHERS THEN
+      RETURN NULL;
+  END;
+
+  FUNCTION select_ai_script(
+    p_summary IN CLOB,
+    p_profile IN VARCHAR2,
+    p_max_chars IN NUMBER,
+    p_error OUT VARCHAR2
+  ) RETURN VARCHAR2 IS
     v_result CLOB;
     v_prompt CLOB := build_prompt(p_summary);
     v_text   VARCHAR2(4000);
+    v_limit  PLS_INTEGER := LEAST(200, GREATEST(40, NVL(p_max_chars, 200)));
   BEGIN
+    p_error := NULL;
     IF p_profile IS NULL THEN
       RETURN NULL;
     END IF;
@@ -166,22 +187,47 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
           action       => 'chat'
         );
       END;]' USING OUT v_result, IN v_prompt, IN p_profile;
-    v_text := clamp_text(v_result, p_max_chars);
+    v_text := TRIM(REGEXP_REPLACE(DBMS_LOB.SUBSTR(v_result, 4000, 1), '[[:space:]]+', ' '));
+    IF v_text IS NULL THEN
+      p_error := 'select_ai_empty_output';
+      RETURN NULL;
+    END IF;
+    IF LENGTH(v_text) > v_limit THEN
+      p_error := 'select_ai_output_too_long';
+      RETURN NULL;
+    END IF;
+    IF REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(fuck|shit|bitch|asshole|bastard|dick|cunt)([^[:alnum:]_]|$)', 'i') THEN
+      p_error := 'select_ai_output_not_stage_safe';
+      RETURN NULL;
+    END IF;
+    IF REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(oracle|database|sql|telemetry|json|evidence|model|models|select ai|genai|llm)([^[:alnum:]_]|$)', 'i') THEN
+      p_error := 'select_ai_output_meta_commentary';
+      RETURN NULL;
+    END IF;
     IF NOT score_safe_text(v_text, p_summary) THEN
+      p_error := 'select_ai_output_missing_or_wrong_final_score';
       RETURN NULL;
     END IF;
     RETURN v_text;
   EXCEPTION
     WHEN OTHERS THEN
+      p_error := SUBSTR(SQLERRM, 1, 500);
       RETURN NULL;
   END;
 
-  FUNCTION agent_team_script(p_summary IN CLOB, p_team_name IN VARCHAR2, p_max_chars IN NUMBER) RETURN VARCHAR2 IS
+  FUNCTION agent_team_script(
+    p_summary IN CLOB,
+    p_team_name IN VARCHAR2,
+    p_max_chars IN NUMBER,
+    p_error OUT VARCHAR2
+  ) RETURN VARCHAR2 IS
     v_result CLOB;
     v_prompt CLOB := build_prompt(p_summary);
     v_params VARCHAR2(4000);
     v_text   VARCHAR2(4000);
+    v_limit  PLS_INTEGER := LEAST(200, GREATEST(40, NVL(p_max_chars, 200)));
   BEGIN
+    p_error := NULL;
     IF p_team_name IS NULL THEN
       RETURN NULL;
     END IF;
@@ -194,13 +240,23 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
           params       => :params
         );
       END;]' USING OUT v_result, IN p_team_name, IN v_prompt, IN v_params;
-    v_text := clamp_text(v_result, p_max_chars);
+    v_text := TRIM(REGEXP_REPLACE(DBMS_LOB.SUBSTR(v_result, 4000, 1), '[[:space:]]+', ' '));
+    IF v_text IS NULL OR LENGTH(v_text) > v_limit THEN
+      p_error := 'agent_output_empty_or_too_long';
+      RETURN NULL;
+    END IF;
+    IF REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(fuck|shit|bitch|asshole|bastard|dick|cunt|oracle|database|sql|telemetry|json|evidence|model|models|select ai|genai|llm)([^[:alnum:]_]|$)', 'i') THEN
+      p_error := 'agent_output_not_stage_safe';
+      RETURN NULL;
+    END IF;
     IF NOT score_safe_text(v_text, p_summary) THEN
+      p_error := 'agent_output_missing_or_wrong_final_score';
       RETURN NULL;
     END IF;
     RETURN v_text;
   EXCEPTION
     WHEN OTHERS THEN
+      p_error := SUBSTR(SQLERRM, 1, 500);
       RETURN NULL;
   END;
 
@@ -214,17 +270,22 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
     v_summary CLOB;
     v_text    VARCHAR2(4000);
     v_source  VARCHAR2(64) := 'oracle-ai-database-deterministic';
+    v_select_ai_error VARCHAR2(500);
+    v_agent_error VARCHAR2(500);
+    v_select_ai_model VARCHAR2(4000);
+    v_generation_id VARCHAR2(32) := LOWER(RAWTOHEX(SYS_GUID()));
   BEGIN
     v_summary := session_summary_json(p_session_id, p_player_id);
     IF v_summary IS NULL THEN
       RETURN JSON_OBJECT('ok' VALUE 0, 'source' VALUE 'oracle-ai-database', 'error' VALUE 'session_not_found');
     END IF;
 
-    v_text := select_ai_script(v_summary, p_select_ai_profile, p_max_chars);
+    v_select_ai_model := profile_model(p_select_ai_profile);
+    v_text := select_ai_script(v_summary, p_select_ai_profile, p_max_chars, v_select_ai_error);
     IF v_text IS NOT NULL THEN
       v_source := 'select-ai';
     ELSE
-      v_text := agent_team_script(v_summary, p_agent_team_name, p_max_chars);
+      v_text := agent_team_script(v_summary, p_agent_team_name, p_max_chars, v_agent_error);
       IF v_text IS NOT NULL THEN
         v_source := 'oracle-ai-database-agent';
       ELSE
@@ -235,6 +296,17 @@ CREATE OR REPLACE PACKAGE BODY stwl_commentary_pkg AS
     RETURN JSON_OBJECT(
       'ok' VALUE 1,
       'source' VALUE v_source,
+      'llm_generated' VALUE CASE WHEN v_source IN ('select-ai', 'oracle-ai-database-agent') THEN 1 ELSE 0 END,
+      'llm_error' VALUE COALESCE(v_select_ai_error, v_agent_error),
+      'select_ai_profile' VALUE p_select_ai_profile,
+      'select_ai_model' VALUE v_select_ai_model,
+      'generation_operation' VALUE CASE
+        WHEN v_source = 'select-ai' THEN 'DBMS_CLOUD_AI.GENERATE:chat'
+        WHEN v_source = 'oracle-ai-database-agent' THEN 'DBMS_CLOUD_AI_AGENT.RUN_TEAM'
+        ELSE 'deterministic-fallback'
+      END,
+      'generation_id' VALUE v_generation_id,
+      'output_rewritten' VALUE 0,
       'commentary' VALUE v_text,
       'summary' VALUE v_summary FORMAT JSON
     );

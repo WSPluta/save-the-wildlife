@@ -26,6 +26,11 @@ import {
 } from "./boundaries";
 import { summarizeAiAdapterHealth } from "./adminAiHealth";
 import { finalScoreFromSources } from "./scoreIntegrity";
+import {
+  beginOptimisticPickupScore,
+  reconcilePickupScore,
+  rollbackOptimisticPickupScore,
+} from "./pickupScore";
 import "./style.css";
 import * as lobby from "./lobby";
 import { normalizeRoomId } from "./util";
@@ -44,6 +49,9 @@ let sendYourPosition;
 
 // Default
 let boundaries = { width: 89, height: 23 };
+let itemSpawnEdgeMargin = (
+  WORLD_BOUNDARY_DEFAULTS.boatMargin + WORLD_BOUNDARY_DEFAULTS.itemEdgeInset
+);
 
 const shortUuidTranslator = createTranslator();
 
@@ -1618,7 +1626,7 @@ function isCurrentPlayerCommentaryPayload(payload = {}) {
   return true;
 }
 
-function applyResultsCommentaryPayload(payload = {}, { pending = false } = {}) {
+function applyResultsCommentaryPayload(payload = {}, { pending = false, failed = false } = {}) {
   if (IS_ADMIN_VIEW || !isCurrentPlayerCommentaryPayload(payload)) return false;
   const el = ensureResultsCommentaryElement();
   if (!el) return false;
@@ -1629,6 +1637,10 @@ function applyResultsCommentaryPayload(payload = {}, { pending = false } = {}) {
   }
   if (pending) {
     el.textContent = "Commentary is being drafted...";
+    return true;
+  }
+  if (failed) {
+    el.textContent = "Live model commentary unavailable.";
     return true;
   }
   return false;
@@ -1905,6 +1917,24 @@ function rememberObservabilityTrace(title, detail = "") {
   renderObservabilityTraces();
 }
 
+function commentaryGenerationLabel(payload = {}) {
+  const source = normalizeCommentaryText(payload.source || payload.fallback_source || "commentary");
+  const proof = payload.generation_proof || {};
+  const llmGenerated = payload.llm_generated === true || payload.llm_generated === 1;
+  const directSelectAi = source === "select-ai"
+    && llmGenerated
+    && payload.select_ai_verified === true
+    && proof.select_ai_verified === true
+    && proof.operation === "DBMS_CLOUD_AI.GENERATE:chat"
+    && proof.output_rewritten === false;
+  if (!directSelectAi) return source;
+  const model = normalizeCommentaryText(proof.model_id || payload.model_id || "");
+  const modelLabel = /command-a/i.test(model) ? "Command A" : model;
+  const latencyMs = Number(proof.latency_ms ?? payload.latency_ms);
+  const latencyLabel = Number.isFinite(latencyMs) ? `${Math.max(0, Math.round(latencyMs))} ms` : "";
+  return ["Select AI", modelLabel, "direct", latencyLabel].filter(Boolean).join(" · ");
+}
+
 function setObservabilityCommentaryJob(payload = {}, state = "received") {
   if (!IS_OBSERVABILITY_VIEW) return;
   const playerName = normalizeCommentaryText(
@@ -1914,7 +1944,7 @@ function setObservabilityCommentaryJob(payload = {}, state = "received") {
     payload.summary?.playerName ||
     "Player"
   );
-  const source = normalizeCommentaryText(payload.source || payload.fallback_source || "commentary");
+  const source = commentaryGenerationLabel(payload);
   setTextById("obs-commentary-job", state === "ready" ? "ready" : "received");
   setTextById("obs-commentary-source", `${playerName} · ${source}`);
 }
@@ -1924,7 +1954,7 @@ function setObservabilityLatestCommentary(payload = {}) {
   const entry = commentaryEntryFromPayload(payload);
   if (!entry) return;
   setTextById("obs-commentary-line", entry.commentary);
-  setTextById("obs-commentary-player", `${entry.playerName} · ${entry.source}`);
+  setTextById("obs-commentary-player", `${entry.playerName} · ${commentaryGenerationLabel(payload)}`);
 }
 
 function observeWorkerEvent(type, body = {}) {
@@ -1999,7 +2029,14 @@ function observeWorkerEvent(type, body = {}) {
     case "commentary.ready":
       setObservabilityCommentaryJob(body || {}, "ready");
       setObservabilityLatestCommentary(body || {});
-      rememberObservabilityTrace("Commentary ready", body?.player_name || body?.playerName || "Player");
+      rememberObservabilityTrace(
+        "Commentary ready",
+        `${body?.player_name || body?.playerName || "Player"} · ${commentaryGenerationLabel(body || {})}`
+      );
+      break;
+    case "commentary.failed":
+      setObservabilityCommentaryJob(body || {}, "failed");
+      rememberObservabilityTrace("Commentary failed", body?.player_name || body?.playerName || "Player");
       break;
     default:
       break;
@@ -2366,16 +2403,102 @@ function markItemCollisionPending(itemId, itemType) {
   const now = Date.now();
   const existing = pendingItemCollisions.get(itemId);
   if (existing && now - existing.at < COLLISION_PENDING_TIMEOUT_MS) return false;
-  pendingItemCollisions.set(itemId, { at: now, itemType });
+  const optimistic = beginOptimisticPickupScore(localScore, itemType, {
+    shielded: !!powerUpState.shield,
+  });
+  pendingItemCollisions.set(itemId, {
+    at: now,
+    itemType,
+    scoreBefore: localScore,
+    optimisticAt: optimistic.applied ? now : null,
+    optimisticApplied: optimistic.applied,
+    optimisticDelta: optimistic.delta,
+  });
+  if (optimistic.applied) {
+    localScore = optimistic.score;
+    updateLocalScoreDisplays();
+  }
+  const hudUpdatedAt = Date.now();
+  latestPickupDebug = {
+    pending: pendingItemCollisions.size,
+    lastRequest: {
+      itemId,
+      itemType,
+      requestedAt: now,
+      hudUpdatedAt,
+      hudLatencyMs: Math.max(0, hudUpdatedAt - now),
+      optimisticApplied: optimistic.applied,
+      optimisticDelta: optimistic.delta,
+      score: localScore,
+    },
+    lastResult: latestPickupDebug.lastResult || null,
+  };
   return true;
 }
 
 function clearStalePendingItemCollisions(now = Date.now()) {
   for (const [itemId, entry] of pendingItemCollisions.entries()) {
     if (!entry || now - entry.at > COLLISION_PENDING_TIMEOUT_MS) {
+      localScore = rollbackOptimisticPickupScore(localScore, entry);
       pendingItemCollisions.delete(itemId);
+      updateLocalScoreDisplays();
+      latestPickupDebug = {
+        pending: pendingItemCollisions.size,
+        lastRequest: latestPickupDebug.lastRequest || null,
+        lastResult: {
+          ok: false,
+          itemId,
+          itemType: entry?.itemType || null,
+          error: "client_timeout",
+          requestToResultMs: entry?.at ? Math.max(0, now - entry.at) : null,
+          optimisticApplied: !!entry?.optimisticApplied,
+          score: localScore,
+        },
+      };
     }
   }
+}
+
+function pendingOptimisticScoreDelta(excludedItemId = null) {
+  let delta = 0;
+  for (const [itemId, entry] of pendingItemCollisions.entries()) {
+    if (excludedItemId && itemId === excludedItemId) continue;
+    if (entry?.optimisticApplied && Number.isFinite(Number(entry.optimisticDelta))) {
+      delta += Number(entry.optimisticDelta);
+    }
+  }
+  return delta;
+}
+
+function rollbackAllPendingItemCollisions() {
+  for (const entry of pendingItemCollisions.values()) {
+    localScore = rollbackOptimisticPickupScore(localScore, entry);
+  }
+  pendingItemCollisions.clear();
+  updateLocalScoreDisplays();
+}
+
+function rollbackPendingItemCollision(itemId, error = "rejected", payload = {}) {
+  if (!itemId) return null;
+  const pending = pendingItemCollisions.get(itemId);
+  localScore = rollbackOptimisticPickupScore(localScore, pending);
+  pendingItemCollisions.delete(itemId);
+  updateLocalScoreDisplays();
+  const settledAt = Date.now();
+  latestPickupDebug = {
+    pending: pendingItemCollisions.size,
+    lastRequest: latestPickupDebug.lastRequest || null,
+    lastResult: {
+      ok: false,
+      itemId,
+      itemType: pending?.itemType || payload.itemType || null,
+      error,
+      requestToResultMs: pending?.at ? Math.max(0, settledAt - pending.at) : null,
+      optimisticApplied: !!pending?.optimisticApplied,
+      score: localScore,
+    },
+  };
+  return pending;
 }
 
 function updateLocalScoreDisplays() {
@@ -2452,16 +2575,15 @@ function syncAuthoritativeItems(nextItems = {}) {
 
   for (const itemId of Object.keys(items || {})) {
     if (nextIds.has(itemId)) continue;
-    pendingItemCollisions.delete(itemId);
-    scoredItemCollisions.delete(itemId);
     removeItemFromScene(itemId);
   }
 
   for (const [itemId, item] of Object.entries(scopedItems)) {
     if (!item) continue;
-    pendingItemCollisions.delete(itemId);
-    scoredItemCollisions.delete(itemId);
-    if (!items[itemId]) {
+    const isNewItem = !items[itemId];
+    if (isNewItem) {
+      pendingItemCollisions.delete(itemId);
+      scoredItemCollisions.delete(itemId);
       createItemMeshForScene(
         itemId,
         item.type,
@@ -2478,12 +2600,16 @@ function applyConfirmedCollisionOutcome(rawPayload, options = {}) {
   const itemId = payload.itemId || payload.id;
   if (!itemId) return;
   const pending = pendingItemCollisions.get(itemId);
-  pendingItemCollisions.delete(itemId);
+  const remainingPendingScoreDelta = pendingOptimisticScoreDelta(itemId);
 
   const actorId = payload.playerId || payload.player_id || null;
   const forceLocalOutcome = options && options.localAck === true && payload.ok === true;
-  if (!forceLocalOutcome && actorId && actorId !== yourId) return;
+  if (!forceLocalOutcome && actorId && actorId !== yourId) {
+    rollbackPendingItemCollision(itemId, "collected_by_other_player", payload);
+    return;
+  }
   if (!forceLocalOutcome && !actorId && !pending) return;
+  pendingItemCollisions.delete(itemId);
   if (scoredItemCollisions.has(itemId)) return;
 
   const itemType =
@@ -2514,9 +2640,15 @@ function applyConfirmedCollisionOutcome(rawPayload, options = {}) {
     } catch (_) {}
   } else if (isMarineLife(itemType)) {
     const delta = Number.isFinite(payload.scoreDelta) ? Number(payload.scoreDelta) : -1;
+    localScore = reconcilePickupScore({
+      currentScore: localScore,
+      pending,
+      payload,
+      itemType,
+      shielded: !!powerUpState.shield,
+      pendingScoreDelta: remainingPendingScoreDelta,
+    });
     if (delta !== 0) {
-      const serverScore = finitePayloadNumber(payload.score, payload.serverScore);
-      localScore = Number.isFinite(serverScore) ? Math.round(serverScore) : localScore + delta;
       eventStats.marine_hit++;
       emitGameplayEvent("marine_hit", {
         itemId,
@@ -2533,9 +2665,14 @@ function applyConfirmedCollisionOutcome(rawPayload, options = {}) {
       } catch (_) {}
     }
   } else {
-    const delta = Number.isFinite(payload.scoreDelta) ? Number(payload.scoreDelta) : 1;
-    const serverScore = finitePayloadNumber(payload.score, payload.serverScore);
-    localScore = Number.isFinite(serverScore) ? Math.round(serverScore) : localScore + delta;
+    localScore = reconcilePickupScore({
+      currentScore: localScore,
+      pending,
+      payload,
+      itemType,
+      shielded: !!powerUpState.shield,
+      pendingScoreDelta: remainingPendingScoreDelta,
+    });
     eventStats.trash_collected++;
     emitGameplayEvent("trash_collected", {
       itemId,
@@ -2553,6 +2690,24 @@ function applyConfirmedCollisionOutcome(rawPayload, options = {}) {
 
   scoredItemCollisions.add(itemId);
   updateLocalScoreDisplays();
+  const settledAt = Date.now();
+  latestPickupDebug = {
+    pending: pendingItemCollisions.size,
+    lastRequest: latestPickupDebug.lastRequest || null,
+    lastResult: {
+      ok: true,
+      itemId,
+      itemType,
+      scoreDelta: Number.isFinite(Number(payload.scoreDelta)) ? Number(payload.scoreDelta) : null,
+      score: localScore,
+      scoreSource: payload.scoreSource || payload.score_source || null,
+      transport: options.localAck === true ? "ack" : "broadcast",
+      requestToResultMs: pending?.at ? Math.max(0, settledAt - pending.at) : null,
+      optimisticApplied: !!pending?.optimisticApplied,
+      optimisticToCanonicalMs: pending?.optimisticAt ? Math.max(0, settledAt - pending.optimisticAt) : null,
+      serverProcessingMs: Number.isFinite(Number(payload.serverProcessingMs)) ? Number(payload.serverProcessingMs) : null,
+    },
+  };
 }
 
 function clearPowerUpRuntime() {
@@ -3704,6 +3859,10 @@ async function init() {
         applyResultsCommentaryPayload(body || {}, { pending: true });
         appendEventConsole("commentary.pending", body);
         break;
+      case "commentary.failed":
+        applyResultsCommentaryPayload(body || {}, { failed: true });
+        appendEventConsole("commentary.failed", body);
+        break;
       case "commentary.history":
         rememberAdminCommentaryHistory(body || []);
         break;
@@ -3712,6 +3871,12 @@ async function init() {
         gameDuration = body.gameDuration;
         boundaries.width = body.worldSizeX;
         boundaries.height = body.worldSizeZ;
+        if (Number.isFinite(Number(body.itemSpawnEdgeMargin))) {
+          itemSpawnEdgeMargin = Math.max(
+            WORLD_BOUNDARY_DEFAULTS.boatMargin,
+            Number(body.itemSpawnEdgeMargin)
+          );
+        }
         try { rebuildWorldBoundaryMarkers(); } catch (_) {}
         serverAuthEnabled = !!body.serverAuthEnabled;
         serverPhysics = body.physics || null;
@@ -3816,25 +3981,15 @@ async function init() {
       case "items.collision.result":
         {
           const payload = normalizeItemDestroyPayload(body);
-          latestPickupDebug = {
-            pending: pendingItemCollisions.size,
-            lastResult: body && typeof body === "object"
-              ? {
-                  ok: body.ok === true,
-                  itemId: body.itemId || body.id || null,
-                  itemType: body.itemType || body.powerupType || payload.itemType || null,
-                  error: body.error || null,
-                  distance: Number.isFinite(Number(body.distance)) ? Number(body.distance) : null,
-                  allowedRadius: Number.isFinite(Number(body.allowedRadius)) ? Number(body.allowedRadius) : null,
-                  scoreDelta: Number.isFinite(Number(body.scoreDelta)) ? Number(body.scoreDelta) : null,
-                }
-              : null,
-          };
           if (payload.ok) {
             applyConfirmedCollisionOutcome(payload, { localAck: true });
             removeItemFromScene(payload.itemId || payload.id);
           } else if (payload.itemId || payload.id) {
-            pendingItemCollisions.delete(payload.itemId || payload.id);
+            rollbackPendingItemCollision(
+              payload.itemId || payload.id,
+              body?.error || "rejected",
+              body || payload
+            );
           }
           latestPickupDebug.pending = pendingItemCollisions.size;
         }
@@ -6072,6 +6227,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
       const collisionData = {
         itemId: key,
+        requestId: `${yourId}:${key}:${Date.now()}`,
+        clientRequestedAt: Date.now(),
         localScore,
         playerId: yourId,
         playerName: playerName,
@@ -6115,6 +6272,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
       const collisionData = {
         itemId: key,
+        requestId: `${yourId}:${key}:${Date.now()}`,
+        clientRequestedAt: Date.now(),
         localScore,
         playerId: yourId,
         playerName: playerName,
@@ -6160,6 +6319,8 @@ function startGame(gameDuration, [boat /*, turtle, box*/], sounds, waternormals)
 
       const collisionData = {
         itemId: key,
+        requestId: `${yourId}:${key}:${Date.now()}`,
+        clientRequestedAt: Date.now(),
         localScore,
         playerId: yourId,
         playerName: playerName,
@@ -6628,6 +6789,7 @@ function updateResultsScore(finalScore) {
 
 function endGame(endPayload = {}) {
   clearPendingAuthoritativeEnd();
+  rollbackAllPendingItemCollisions();
   const finalScore = finalScoreFromEndPayload(endPayload);
   const remainingFromServer = finitePayloadNumber(endPayload?.remaining, endPayload?.timeRemaining);
   localScore = finalScore;
@@ -6699,6 +6861,19 @@ function hideMessages() {
 function renderGameToText() {
   try { ensureBotRosterVisualsForScene(); } catch (_) {}
   refreshVisualQaBadges();
+  const itemReachabilityExtents = worldBoundaryExtents(boundaries, {
+    boatMargin: itemSpawnEdgeMargin,
+  });
+  const isReachableItemPosition = (position) => {
+    const x = Number(position?.x);
+    const z = Number(position?.z);
+    return Number.isFinite(x) && Number.isFinite(z) &&
+      Math.abs(x) <= itemReachabilityExtents.halfX + 0.001 &&
+      Math.abs(z) <= itemReachabilityExtents.halfZ + 0.001;
+  };
+  const unreachableItems = Object.values(items || {})
+    .filter((item) => item && !isReachableItemPosition(item.position))
+    .length;
   const turtleAuthoritativeItems = Object.values(items || {})
     .filter((item) => item && isMarineLife(item.type));
   const turtleWorldMeshes = Object.values(itemMeshes || {})
@@ -6733,6 +6908,7 @@ function renderGameToText() {
         z: Number(z.toFixed(3)),
         visualScale: Number(clampVisualScale(item.size, TRASH_VISUAL_SCALE_MIN, TRASH_VISUAL_SCALE_MAX).toFixed(3)),
         distance: Number(Math.hypot(px - x, pz - z).toFixed(3)),
+        reachable: isReachableItemPosition(item.position),
       };
     })
     .sort((a, b) => a.distance - b.distance)
@@ -6754,6 +6930,7 @@ function renderGameToText() {
         z: Number(z.toFixed(3)),
         visualScale: Number(clampVisualScale(item.size, POWERUP_VISUAL_SCALE_MIN, POWERUP_VISUAL_SCALE_MAX).toFixed(3)),
         distance: Number(Math.hypot(px - x, pz - z).toFixed(3)),
+        reachable: isReachableItemPosition(item.position),
       };
     })
     .sort((a, b) => a.distance - b.distance)
@@ -6951,7 +7128,13 @@ function renderGameToText() {
     turtleSamples,
     camera: latestCameraCompositionDebug,
     boatFeel: getBoatFeelDebug(localBoatFeelState) || latestBoatFeelDebug,
-    worldBoundary: worldBoundaryDebug,
+    worldBoundary: {
+      ...worldBoundaryDebug,
+      itemSpawnEdgeMargin,
+      itemHalfX: Number(itemReachabilityExtents.halfX.toFixed(3)),
+      itemHalfZ: Number(itemReachabilityExtents.halfZ.toFixed(3)),
+      unreachableItems,
+    },
     waterEffects: { wakeRipples: false, contactRing: false, engineParticles: ENGINE_WAKE_PARTICLES_ENABLED },
     pickups: latestPickupDebug,
     badges: {

@@ -16,6 +16,8 @@ const pafMetrics = {
   startedAt: Date.now(),
   commentaryRequests: 0,
   commentaryFailures: 0,
+  commentaryLlmGenerated: 0,
+  commentaryFallback: 0,
   contextRequests: 0,
   contextFailures: 0,
 };
@@ -203,6 +205,46 @@ function boolEnv(name, defaultValue = false) {
   return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
 }
 
+function boolValue(value, defaultValue = false) {
+  if (value == null || value === "") return defaultValue;
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
+
+function isLlmCommentarySource(source) {
+  const normalized = textValue(source).toLowerCase();
+  return normalized === "select-ai" ||
+    normalized === "oracle-ai-database-agent" ||
+    normalized === "paf-canvas" ||
+    normalized === "oci-base" ||
+    normalized === "oci-fine-tuned";
+}
+
+function isDirectSelectAiCommentary({
+  source,
+  llmGenerated,
+  generationOperation,
+  outputRewritten,
+} = {}) {
+  return textValue(source).toLowerCase() === "select-ai"
+    && llmGenerated === true
+    && textValue(generationOperation) === "DBMS_CLOUD_AI.GENERATE:chat"
+    && outputRewritten !== true;
+}
+
+function requireLlmCommentary(body = {}) {
+  const requested = body.require_llm ?? body.requireLlm;
+  return requested == null
+    ? boolEnv("PAF_REQUIRE_LLM_COMMENTARY", false)
+    : boolValue(requested, false);
+}
+
+function requireSelectAiCommentary(body = {}) {
+  const requested = body.require_select_ai ?? body.requireSelectAi;
+  return requested == null
+    ? boolEnv("PAF_REQUIRE_SELECT_AI_COMMENTARY", false)
+    : boolValue(requested, false);
+}
+
 function mcpConfig() {
   return {
     enabled: boolEnv("PAF_MCP_ENABLED", true),
@@ -245,9 +287,10 @@ function inDbAgentConfig() {
     selectAiProfile: optionalIdentifier(process.env.SELECT_AI_PROFILE || "STWL_GAMEPLAY_AI"),
     agentTeamName: optionalIdentifier(process.env.SELECT_AI_AGENT_TEAM || ""),
     selectAiObjectOwner: optionalIdentifier(process.env.SELECT_AI_OBJECT_OWNER || process.env.ORACLE_USER || "ADMIN"),
-    selectAiModel: textValue(process.env.SELECT_AI_MODEL || process.env.OCI_GENAI_MODEL_ID || "cohere.command-r-08-2024"),
+    selectAiModel: textValue(process.env.SELECT_AI_MODEL || process.env.OCI_GENAI_MODEL_ID || "cohere.command-a-03-2025"),
     selectAiRegion: textValue(process.env.SELECT_AI_REGION || process.env.OCI_REGION || "uk-london-1"),
     selectAiApiFormat: textValue(process.env.SELECT_AI_OCI_APIFORMAT || "COHERE"),
+    selectAiTemperature: Math.max(0, Math.min(1, numberValue(process.env.SELECT_AI_TEMPERATURE || 0.2, 0.2))),
     timeoutMs: INDB_AGENT_TIMEOUT_MS,
   };
 }
@@ -1264,7 +1307,12 @@ function scoreTextAgainstEvidence(text, summary = {}, maxChars = COMMENTARY_MAX_
     policy?.source,
     ...(policy?.targetPriority || []),
   ].filter(Boolean).map((item) => String(item).toLowerCase());
-  const mentionsScore = normalized.includes(String(summary.score));
+  const score = Number(summary.score);
+  const scoreText = Number.isFinite(score) ? String(score) : "";
+  const scorePattern = scoreText
+    ? new RegExp(`(^|[^\\d-])${scoreText.replace(".", "\\.")}(?=$|[^\\d])`)
+    : null;
+  const mentionsScore = Boolean(scorePattern && scorePattern.test(normalized));
   const mentionsPlayer = summary.player_name && normalized.includes(String(summary.player_name).toLowerCase());
   const mentionsPowerup = /powerup|shield|magnet|freeze|boost/.test(normalized);
   const mentionsFreeze = /frozen|freeze/.test(normalized);
@@ -1285,6 +1333,7 @@ function scoreTextAgainstEvidence(text, summary = {}, maxChars = COMMENTARY_MAX_
   const tokenCount = estimateTokens(text);
   return {
     uses_retrieved_evidence: Boolean(mentionsScore || mentionsPlayer || (summary.freezes && mentionsFreeze) || (summary.trail_crosses && mentionsTrail) || (summary.trash_collected && mentionsTrash) || (summary.marine_hits && mentionsMarine) || (powerups.length && mentionsPowerup) || (policy && mentionsPolicy)),
+    exact_final_score: !scorePattern || mentionsScore,
     no_hallucinated_game_facts: !(unsupportedFreeze || unsupportedPowerup || unsupportedTrail || unsupportedTrash || unsupportedMarine || claimsMarineCollection || unsupportedPolicy || unsupportedOutcome),
     unique_commentary: Boolean(normalized && normalized !== normalizeSummary({}).player_name.toLowerCase()),
     commentary_quality: Boolean(text && text.length >= 24 && text.length <= Math.max(40, Math.min(200, maxChars))),
@@ -1303,6 +1352,7 @@ function modelOutputGate(output, summary = {}, maxChars = COMMENTARY_MAX_CHARS) 
   const metaLeak = commentaryMetaPattern.test(output.text || "");
   const ok = Boolean(
     scores.uses_retrieved_evidence &&
+    scores.exact_final_score &&
     scores.no_hallucinated_game_facts &&
     scores.commentary_quality &&
     scores.confidence_calibrated &&
@@ -1313,6 +1363,7 @@ function modelOutputGate(output, summary = {}, maxChars = COMMENTARY_MAX_CHARS) 
   if (!ok) {
     if (metaLeak) reason = "meta_commentary";
     else if (!scores.uses_retrieved_evidence) reason = "not_evidence_anchored";
+    else if (!scores.exact_final_score) reason = "missing_final_score";
     else if (!scores.no_hallucinated_game_facts) reason = "unsupported_game_fact";
     else if (!scores.commentary_quality) reason = "quality_gate";
     else if (!scores.confidence_calibrated) reason = "overconfident";
@@ -1323,20 +1374,27 @@ function modelOutputGate(output, summary = {}, maxChars = COMMENTARY_MAX_CHARS) 
 
 function evidenceFactGate(text, summary = {}, maxChars = COMMENTARY_MAX_CHARS) {
   const scores = scoreTextAgainstEvidence(text, summary, maxChars);
+  const metaLeak = commentaryMetaPattern.test(text || "");
   const ok = Boolean(
+    scores.uses_retrieved_evidence &&
+    scores.exact_final_score &&
     scores.no_hallucinated_game_facts &&
     scores.commentary_quality &&
     scores.confidence_calibrated &&
-    scores.safe_for_stage
+    scores.safe_for_stage &&
+    !metaLeak
   );
   let reason = "accepted";
   if (!ok) {
-    if (!scores.no_hallucinated_game_facts) reason = "unsupported_game_fact";
+    if (metaLeak) reason = "meta_commentary";
+    else if (!scores.uses_retrieved_evidence) reason = "not_evidence_anchored";
+    else if (!scores.exact_final_score) reason = "missing_final_score";
+    else if (!scores.no_hallucinated_game_facts) reason = "unsupported_game_fact";
     else if (!scores.commentary_quality) reason = "quality_gate";
     else if (!scores.confidence_calibrated) reason = "overconfident";
     else if (!scores.safe_for_stage) reason = "safety_gate";
   }
-  return { ok, reason, scores };
+  return { ok, reason, scores, meta_leak: metaLeak };
 }
 
 function splitCommentarySentences(text = "") {
@@ -1989,7 +2047,7 @@ END STWL_COMMENTARY_PKG;`,
 
   FUNCTION build_prompt(p_summary IN CLOB) RETURN CLOB IS
   BEGIN
-    RETURN 'Use only this Save the Wildlife SQL telemetry JSON. Return exactly one short commentator sentence under 200 characters and no prefix. Never invent events. Do not use the words trail, crossing, freeze, frozen, powerup, shield, magnet, speed, boost, win, victory, policy, or trained unless the JSON has a non-zero matching count. If score and pickups are zero, say only the recorded score/pickup result or coordinates. JSON: ' || p_summary;
+    RETURN 'You are the live Save the Wildlife match commentator. Use only the verified match JSON below. Write exactly one original, natural broadcast sentence under 200 characters. Name the player and state the exact final score once. Lead with the most consequential recorded moment and use at most two verified details. Vary the sentence shape; do not use a fixed score template. Never mention SQL, database, telemetry, JSON, evidence, a model, AI, or these instructions. Never invent an event, animal, result, rivalry, or history. Mention trail, crossing, freeze, frozen, powerup, shield, magnet, speed, boost, marine hit, turtle, prior best, win, or victory only when its matching JSON value is present and non-zero. No prefix, quotation marks, emoji, hashtag, or profanity. If activity is zero, report the player and recorded score plainly without inventing drama. Verified match JSON: ' || p_summary;
   END;
 
   FUNCTION score_safe_text(p_text IN VARCHAR2, p_summary IN CLOB) RETURN BOOLEAN IS
@@ -2000,18 +2058,39 @@ END STWL_COMMENTARY_PKG;`,
     IF v_score IS NULL THEN
       RETURN TRUE;
     END IF;
-    IF NOT REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(score|scored|points?|finished|ending|ended)([^[:alnum:]_]|$)', 'i') THEN
-      RETURN TRUE;
-    END IF;
-    v_score_pattern := REPLACE(v_score, '-', '\-');
-    RETURN REGEXP_LIKE(v_text, '(^|[^[:digit:]-])' || v_score_pattern || '([^[:digit:]]|$)');
+    v_score_pattern := REPLACE(REPLACE(v_score, '.', '\.'), '-', '\-');
+    RETURN REGEXP_LIKE(v_text, '(^|[^[:digit:]-])' || v_score_pattern || '($|[^[:digit:]])');
   END;
 
-  FUNCTION select_ai_script(p_summary IN CLOB, p_profile IN VARCHAR2, p_max_chars IN NUMBER) RETURN VARCHAR2 IS
+  FUNCTION profile_model(p_profile IN VARCHAR2) RETURN VARCHAR2 IS
+    v_model VARCHAR2(4000);
+  BEGIN
+    IF p_profile IS NULL THEN
+      RETURN NULL;
+    END IF;
+    EXECUTE IMMEDIATE
+      'SELECT attribute_value FROM user_cloud_ai_profile_attributes ' ||
+      'WHERE UPPER(profile_name) = UPPER(:profile_name) ' ||
+      'AND LOWER(attribute_name) = ''model'' FETCH FIRST 1 ROW ONLY'
+      INTO v_model USING p_profile;
+    RETURN v_model;
+  EXCEPTION
+    WHEN OTHERS THEN
+      RETURN NULL;
+  END;
+
+  FUNCTION select_ai_script(
+    p_summary IN CLOB,
+    p_profile IN VARCHAR2,
+    p_max_chars IN NUMBER,
+    p_error OUT VARCHAR2
+  ) RETURN VARCHAR2 IS
     v_result CLOB;
     v_prompt CLOB := build_prompt(p_summary);
     v_text   VARCHAR2(4000);
+    v_limit  PLS_INTEGER := LEAST(200, GREATEST(40, NVL(p_max_chars, 200)));
   BEGIN
+    p_error := NULL;
     IF p_profile IS NULL THEN
       RETURN NULL;
     END IF;
@@ -2023,22 +2102,47 @@ END STWL_COMMENTARY_PKG;`,
           action       => 'chat'
         );
       END;]' USING OUT v_result, IN v_prompt, IN p_profile;
-    v_text := clamp_text(v_result, p_max_chars);
+    v_text := TRIM(REGEXP_REPLACE(DBMS_LOB.SUBSTR(v_result, 4000, 1), '[[:space:]]+', ' '));
+    IF v_text IS NULL THEN
+      p_error := 'select_ai_empty_output';
+      RETURN NULL;
+    END IF;
+    IF LENGTH(v_text) > v_limit THEN
+      p_error := 'select_ai_output_too_long';
+      RETURN NULL;
+    END IF;
+    IF REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(fuck|shit|bitch|asshole|bastard|dick|cunt)([^[:alnum:]_]|$)', 'i') THEN
+      p_error := 'select_ai_output_not_stage_safe';
+      RETURN NULL;
+    END IF;
+    IF REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(oracle|database|sql|telemetry|json|evidence|model|models|select ai|genai|llm)([^[:alnum:]_]|$)', 'i') THEN
+      p_error := 'select_ai_output_meta_commentary';
+      RETURN NULL;
+    END IF;
     IF NOT score_safe_text(v_text, p_summary) THEN
+      p_error := 'select_ai_output_missing_or_wrong_final_score';
       RETURN NULL;
     END IF;
     RETURN v_text;
   EXCEPTION
     WHEN OTHERS THEN
+      p_error := SUBSTR(SQLERRM, 1, 500);
       RETURN NULL;
   END;
 
-  FUNCTION agent_team_script(p_summary IN CLOB, p_team_name IN VARCHAR2, p_max_chars IN NUMBER) RETURN VARCHAR2 IS
+  FUNCTION agent_team_script(
+    p_summary IN CLOB,
+    p_team_name IN VARCHAR2,
+    p_max_chars IN NUMBER,
+    p_error OUT VARCHAR2
+  ) RETURN VARCHAR2 IS
     v_result CLOB;
     v_prompt CLOB := build_prompt(p_summary);
     v_params VARCHAR2(4000);
     v_text   VARCHAR2(4000);
+    v_limit  PLS_INTEGER := LEAST(200, GREATEST(40, NVL(p_max_chars, 200)));
   BEGIN
+    p_error := NULL;
     IF p_team_name IS NULL THEN
       RETURN NULL;
     END IF;
@@ -2051,13 +2155,23 @@ END STWL_COMMENTARY_PKG;`,
           params       => :params
         );
       END;]' USING OUT v_result, IN p_team_name, IN v_prompt, IN v_params;
-    v_text := clamp_text(v_result, p_max_chars);
+    v_text := TRIM(REGEXP_REPLACE(DBMS_LOB.SUBSTR(v_result, 4000, 1), '[[:space:]]+', ' '));
+    IF v_text IS NULL OR LENGTH(v_text) > v_limit THEN
+      p_error := 'agent_output_empty_or_too_long';
+      RETURN NULL;
+    END IF;
+    IF REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(fuck|shit|bitch|asshole|bastard|dick|cunt|oracle|database|sql|telemetry|json|evidence|model|models|select ai|genai|llm)([^[:alnum:]_]|$)', 'i') THEN
+      p_error := 'agent_output_not_stage_safe';
+      RETURN NULL;
+    END IF;
     IF NOT score_safe_text(v_text, p_summary) THEN
+      p_error := 'agent_output_missing_or_wrong_final_score';
       RETURN NULL;
     END IF;
     RETURN v_text;
   EXCEPTION
     WHEN OTHERS THEN
+      p_error := SUBSTR(SQLERRM, 1, 500);
       RETURN NULL;
   END;
 
@@ -2071,17 +2185,22 @@ END STWL_COMMENTARY_PKG;`,
     v_summary CLOB;
     v_text    VARCHAR2(4000);
     v_source  VARCHAR2(64) := 'oracle-ai-database-deterministic';
+    v_select_ai_error VARCHAR2(500);
+    v_agent_error VARCHAR2(500);
+    v_select_ai_model VARCHAR2(4000);
+    v_generation_id VARCHAR2(32) := LOWER(RAWTOHEX(SYS_GUID()));
   BEGIN
     v_summary := session_summary_json(p_session_id, p_player_id);
     IF v_summary IS NULL THEN
       RETURN JSON_OBJECT('ok' VALUE 0, 'source' VALUE 'oracle-ai-database', 'error' VALUE 'session_not_found');
     END IF;
 
-    v_text := select_ai_script(v_summary, p_select_ai_profile, p_max_chars);
+    v_select_ai_model := profile_model(p_select_ai_profile);
+    v_text := select_ai_script(v_summary, p_select_ai_profile, p_max_chars, v_select_ai_error);
     IF v_text IS NOT NULL THEN
       v_source := 'select-ai';
     ELSE
-      v_text := agent_team_script(v_summary, p_agent_team_name, p_max_chars);
+      v_text := agent_team_script(v_summary, p_agent_team_name, p_max_chars, v_agent_error);
       IF v_text IS NOT NULL THEN
         v_source := 'oracle-ai-database-agent';
       ELSE
@@ -2092,6 +2211,17 @@ END STWL_COMMENTARY_PKG;`,
     RETURN JSON_OBJECT(
       'ok' VALUE 1,
       'source' VALUE v_source,
+      'llm_generated' VALUE CASE WHEN v_source IN ('select-ai', 'oracle-ai-database-agent') THEN 1 ELSE 0 END,
+      'llm_error' VALUE COALESCE(v_select_ai_error, v_agent_error),
+      'select_ai_profile' VALUE p_select_ai_profile,
+      'select_ai_model' VALUE v_select_ai_model,
+      'generation_operation' VALUE CASE
+        WHEN v_source = 'select-ai' THEN 'DBMS_CLOUD_AI.GENERATE:chat'
+        WHEN v_source = 'oracle-ai-database-agent' THEN 'DBMS_CLOUD_AI_AGENT.RUN_TEAM'
+        ELSE 'deterministic-fallback'
+      END,
+      'generation_id' VALUE v_generation_id,
+      'output_rewritten' VALUE 0,
       'commentary' VALUE v_text,
       'summary' VALUE v_summary FORMAT JSON
     );
@@ -2107,6 +2237,9 @@ END STWL_COMMENTARY_PKG;`,
 ];
 
 function buildSelectAiProfileStatement(config) {
+  const selectAiTemperature = Number.isFinite(Number(config.selectAiTemperature))
+    ? Math.max(0, Math.min(1, Number(config.selectAiTemperature)))
+    : 0.2;
   const attributes = {
     provider: "oci",
     credential_name: "OCI$RESOURCE_PRINCIPAL",
@@ -2121,7 +2254,7 @@ function buildSelectAiProfileStatement(config) {
     ],
     comments: true,
     max_tokens: 512,
-    temperature: 0,
+    temperature: selectAiTemperature,
   };
   return `BEGIN
   EXECUTE IMMEDIATE q'~
@@ -2149,6 +2282,27 @@ function buildSelectAiProfileStatement(config) {
           profile_name => '${sqlLiteral(config.selectAiProfile)}',
           attributes   => '${sqlLiteral(JSON.stringify(attributes))}'
         );
+      ELSE
+        DBMS_CLOUD_AI.SET_ATTRIBUTE(
+          profile_name   => '${sqlLiteral(config.selectAiProfile)}',
+          attribute_name => 'model',
+          attribute_value => '${sqlLiteral(config.selectAiModel)}'
+        );
+        DBMS_CLOUD_AI.SET_ATTRIBUTE(
+          profile_name   => '${sqlLiteral(config.selectAiProfile)}',
+          attribute_name => 'temperature',
+          attribute_value => '${sqlLiteral(String(selectAiTemperature))}'
+        );
+        DBMS_CLOUD_AI.SET_ATTRIBUTE(
+          profile_name   => '${sqlLiteral(config.selectAiProfile)}',
+          attribute_name => 'max_tokens',
+          attribute_value => '512'
+        );
+        BEGIN
+          DBMS_CLOUD_AI.ENABLE_PROFILE('${sqlLiteral(config.selectAiProfile)}');
+        EXCEPTION
+          WHEN OTHERS THEN NULL;
+        END;
       END IF;
     END;
   ~';
@@ -2167,7 +2321,7 @@ function buildSelectAiAgentTeamStatement(config) {
   };
   const taskAttributes = {
     description: "Produce one conference-safe Save the Wildlife commentator line under 200 characters from recorded SQL telemetry only.",
-    instructions: "Use only provided telemetry or read-only SQL tool results. Mention powerups, trail crossings, freezes, coordinates, or prior best only when present. Never invent events, players, animals, or history.",
+    instructions: "Use only provided telemetry or read-only SQL tool results. Write one original, natural broadcast sentence. Name the player and state the exact final score once. Highlight at most two verified moments. Never mention SQL, database, telemetry, JSON, evidence, a model, AI, or instructions. Never invent events, players, animals, outcomes, or history.",
     tools: ["STWL_GAMEPLAY_SQL_TOOL"],
   };
   const agentAttributes = {
@@ -3220,6 +3374,7 @@ async function callInDbAgent(summary, maxChars, options = {}) {
   const { connection, oracledb, close } = oracle;
   try {
     await ensureInDbPackage(connection);
+    const generationStartedAt = Date.now();
     const result = await connection.execute(
       `BEGIN
         :result := ${config.packageName}.build_script_json(
@@ -3246,10 +3401,20 @@ async function callInDbAgent(summary, maxChars, options = {}) {
     const payload = parseJsonMaybe(result.outBinds?.result || "{}");
     if (!payload || typeof payload !== "object") throw new Error("indb_agent_invalid_json");
     if (!payload.ok) throw new Error(`indb_agent_${payload.error || "not_ready"}`);
-    const commentary = enforceCommentary(payload.commentary, maxChars);
+    const commentary = textValue(payload.commentary).replace(/\s+/g, " ").trim();
+    if (!commentary) throw new Error("indb_agent_empty_commentary");
+    const source = textValue(payload.source, "oracle-ai-database-agent");
     return {
       commentary,
-      source: textValue(payload.source, "oracle-ai-database-agent"),
+      source,
+      llm_generated: boolValue(payload.llm_generated, isLlmCommentarySource(source)),
+      llm_error: textValue(payload.llm_error) || null,
+      select_ai_profile: textValue(payload.select_ai_profile || config.selectAiProfile) || null,
+      select_ai_model: textValue(payload.select_ai_model || config.selectAiModel) || null,
+      generation_operation: textValue(payload.generation_operation) || null,
+      generation_id: textValue(payload.generation_id) || null,
+      latency_ms: Math.max(0, Date.now() - generationStartedAt),
+      output_rewritten: boolValue(payload.output_rewritten, false),
       summary: payload.summary && typeof payload.summary === "object" ? normalizeSummary(payload.summary) : null,
     };
   } finally {
@@ -3356,7 +3521,30 @@ function buildCommentaryResult({
   matchContext,
   maxChars,
   diagnosticWarnings = [],
+  requireLlm = false,
+  requireSelectAi = false,
 }) {
+  const selectedInDbOutput = Boolean(inDbAgent && selectedSource === inDbAgent.source);
+  const llmGenerated = isLlmCommentarySource(selectedSource)
+    && (!selectedInDbOutput || (inDbAgent.llm_generated === true && inDbAgent.output_rewritten !== true));
+  const selectAiVerified = selectedInDbOutput && isDirectSelectAiCommentary({
+    source: selectedSource,
+    llmGenerated: inDbAgent.llm_generated === true,
+    generationOperation: inDbAgent.generation_operation,
+    outputRewritten: inDbAgent.output_rewritten,
+  });
+  if (requireSelectAi && !selectAiVerified) {
+    const details = combineWarnings(diagnosticWarnings, warning).join(";") || "no_direct_select_ai_output";
+    const error = new Error(`select_ai_commentary_required:${selectedSource || "missing_source"}:${details}`);
+    error.code = "select_ai_commentary_required";
+    throw error;
+  }
+  if (requireLlm && !llmGenerated) {
+    const details = combineWarnings(diagnosticWarnings, warning).join(";") || "no_model_backed_output";
+    const error = new Error(`llm_commentary_required:${selectedSource || "missing_source"}:${details}`);
+    error.code = "llm_commentary_required";
+    throw error;
+  }
   const selectedHasGrounding = Boolean(
     selectedSource && selectedSource !== "request-summary" ||
     inDbAgent ||
@@ -3372,6 +3560,9 @@ function buildCommentaryResult({
     commentary: enforceCommentary(selectedCommentary, requestedOutput === "clip_title" ? 80 : maxChars),
     output_format: requestedOutput,
     source: selectedSource,
+    llm_generated: llmGenerated,
+    select_ai_verified: selectAiVerified,
+    generation_mode: selectAiVerified ? "select-ai" : (llmGenerated ? "llm" : "deterministic-fallback"),
     fallback_source: fallbackSource,
     warning: publicWarning,
     diagnostics,
@@ -3380,8 +3571,8 @@ function buildCommentaryResult({
     route_mode: modelRoute.route_mode,
     primary_provider: modelRoute.primary_provider,
     candidate_provider: modelRoute.candidate_provider,
-    model_id: modelRoute.model_id,
-    latency_ms: modelRoute.latency_ms,
+    model_id: inDbAgent?.select_ai_model || modelRoute.model_id,
+    latency_ms: selectedInDbOutput ? inDbAgent.latency_ms : modelRoute.latency_ms,
     evidence_hash: modelRoute.evidence_hash,
     prompt_hash: modelRoute.prompt_hash,
     eval_scores: modelRoute.eval_scores,
@@ -3403,8 +3594,29 @@ function buildCommentaryResult({
     },
     in_db_agent: inDbAgent ? {
       source: inDbAgent.source,
+      llm_generated: inDbAgent.llm_generated === true
+        && isLlmCommentarySource(inDbAgent.source)
+        && inDbAgent.output_rewritten !== true,
+      llm_error: inDbAgent.llm_error || null,
+      select_ai_profile: inDbAgent.select_ai_profile || null,
+      select_ai_model: inDbAgent.select_ai_model || null,
+      generation_operation: inDbAgent.generation_operation || null,
+      generation_id: inDbAgent.generation_id || null,
+      latency_ms: inDbAgent.latency_ms ?? null,
+      output_rewritten: inDbAgent.output_rewritten === true,
       configured: true,
     } : null,
+    generation_proof: {
+      llm_generated: llmGenerated,
+      select_ai_verified: selectAiVerified,
+      source: selectedSource,
+      operation: selectedInDbOutput ? inDbAgent.generation_operation : null,
+      profile: selectedInDbOutput ? inDbAgent.select_ai_profile : null,
+      model_id: selectedInDbOutput ? inDbAgent.select_ai_model : modelRoute.model_id,
+      generation_id: selectedInDbOutput ? inDbAgent.generation_id : modelRoute.trace_id,
+      latency_ms: selectedInDbOutput ? inDbAgent.latency_ms : modelRoute.latency_ms,
+      output_rewritten: selectedInDbOutput ? inDbAgent.output_rewritten === true : false,
+    },
     canvas: canvas ? {
       endpoint: canvas.endpoint,
       room_id: canvas.room_id,
@@ -3431,6 +3643,8 @@ async function buildCommentary(body = {}, options = {}) {
   const maxChars = Number(body.max_chars || body.maxChars || COMMENTARY_MAX_CHARS);
   const bodySummary = normalizeSummary(body.summary || body);
   const requestedOutput = outputFormat(body.output_format || body.outputFormat || body.format);
+  const requireSelectAi = requireSelectAiCommentary(body);
+  const requireLlm = requireLlmCommentary(body) || requireSelectAi;
   let summary = bodySummary;
   let source = "request-summary";
   let warning = null;
@@ -3456,26 +3670,61 @@ async function buildCommentary(body = {}, options = {}) {
       );
       if (candidate?.summary) summary = candidate.summary;
       if (candidate?.commentary) {
-        const repairedCandidate = repairInDbCommentary(candidate.commentary, summary, maxChars);
-        if (repairedCandidate?.repaired) {
+        const candidateSource = candidate.source || "oracle-ai-database-agent";
+        const candidateIsDirectLlm = candidate.llm_generated === true
+          && isLlmCommentarySource(candidateSource)
+          && candidate.output_rewritten !== true;
+        const candidateIsDirectSelectAi = isDirectSelectAiCommentary({
+          source: candidateSource,
+          llmGenerated: candidate.llm_generated === true,
+          generationOperation: candidate.generation_operation,
+          outputRewritten: candidate.output_rewritten,
+        });
+        const directGate = evidenceFactGate(candidate.commentary, summary, maxChars);
+        if ((requireSelectAi ? candidateIsDirectSelectAi : candidateIsDirectLlm) && directGate.ok) {
+          inDbAgent = candidate;
+          return inDbAgent;
+        }
+
+        if (!candidateIsDirectLlm && candidate.llm_error) {
           diagnosticWarnings = combineWarnings(
             diagnosticWarnings,
-            `${candidate.source || "oracle-ai-database-agent"}:in_db_output_guarded`
+            `select-ai:${candidate.llm_error}`
           );
         }
-        const candidateCommentary = repairedCandidate?.text || candidate.commentary;
-        const candidateSource = repairedCandidate?.repaired
-          ? `${candidate.source || "oracle-ai-database-agent"}-guarded`
-          : candidate.source;
-        const inDbGate = evidenceFactGate(candidateCommentary, summary, maxChars);
-        if (!inDbGate.ok) {
+        if (requireSelectAi && candidateIsDirectLlm && !candidateIsDirectSelectAi) {
           diagnosticWarnings = combineWarnings(
             diagnosticWarnings,
-            `${candidate.source || "oracle-ai-database-agent"}:in_db_output_rejected_${inDbGate.reason}`
+            `${candidateSource}:direct_select_ai_proof_missing`
+          );
+        }
+        if (!directGate.ok) {
+          diagnosticWarnings = combineWarnings(
+            diagnosticWarnings,
+            `${candidateSource}:in_db_output_rejected_${directGate.reason}`
+          );
+        }
+        if (requireLlm) return null;
+
+        const repairedCandidate = repairInDbCommentary(candidate.commentary, summary, maxChars);
+        if (!repairedCandidate?.text) {
+          diagnosticWarnings = combineWarnings(
+            diagnosticWarnings,
+            `${candidateSource}:in_db_output_unusable`
           );
           return null;
         }
-        inDbAgent = { ...candidate, source: candidateSource, commentary: candidateCommentary };
+        diagnosticWarnings = combineWarnings(
+          diagnosticWarnings,
+          `${candidateSource}:in_db_output_guarded_non_llm`
+        );
+        inDbAgent = {
+          ...candidate,
+          source: `${candidateSource}-guarded`,
+          commentary: repairedCandidate.text,
+          llm_generated: false,
+          output_rewritten: true,
+        };
         return inDbAgent;
       }
     } catch (error) {
@@ -3561,6 +3810,8 @@ async function buildCommentary(body = {}, options = {}) {
         formats,
         matchContext,
         maxChars,
+        requireLlm,
+        requireSelectAi,
       });
     }
   }
@@ -3596,6 +3847,8 @@ async function buildCommentary(body = {}, options = {}) {
       formats,
       matchContext,
       maxChars,
+      requireLlm,
+      requireSelectAi,
     });
   }
 
@@ -3645,6 +3898,8 @@ async function buildCommentary(body = {}, options = {}) {
         formats,
         matchContext,
         maxChars,
+        requireLlm,
+        requireSelectAi,
       });
     }
     if (modelRoute.primary?.ok && !primaryGate.ok) {
@@ -3662,6 +3917,8 @@ async function buildCommentary(body = {}, options = {}) {
         formats,
         matchContext,
         maxChars,
+        requireLlm,
+        requireSelectAi,
       });
     }
     if (modelWarnings.length) {
@@ -3844,6 +4101,8 @@ async function buildCommentary(body = {}, options = {}) {
     formats,
     matchContext,
     maxChars,
+    requireLlm,
+    requireSelectAi,
   });
 }
 
@@ -3868,6 +4127,8 @@ app.get("/healthz", async (req, res) => {
     select_ai_profile: inDbConfig.selectAiProfile,
     select_ai_region: inDbConfig.selectAiRegion,
     select_ai_model: inDbConfig.selectAiModel,
+    require_llm_commentary: boolEnv("PAF_REQUIRE_LLM_COMMENTARY", false),
+    require_select_ai_commentary: boolEnv("PAF_REQUIRE_SELECT_AI_COMMENTARY", false),
     select_ai_agent_team_configured: Boolean(inDbConfig.agentTeamName),
     live_line_fast_return: liveLineFastReturnEnabled(),
     match_intelligence_enabled: matchConfig.enabled,
@@ -3932,6 +4193,12 @@ function renderPrometheusMetrics() {
     "# HELP stwl_paf_commentary_failures_total Commentary requests that failed.",
     "# TYPE stwl_paf_commentary_failures_total counter",
     prometheusLine("stwl_paf_commentary_failures_total", pafMetrics.commentaryFailures),
+    "# HELP stwl_paf_commentary_llm_generated_total Commentary responses produced by a model-backed source.",
+    "# TYPE stwl_paf_commentary_llm_generated_total counter",
+    prometheusLine("stwl_paf_commentary_llm_generated_total", pafMetrics.commentaryLlmGenerated),
+    "# HELP stwl_paf_commentary_fallback_total Commentary responses produced by deterministic fallback.",
+    "# TYPE stwl_paf_commentary_fallback_total counter",
+    prometheusLine("stwl_paf_commentary_fallback_total", pafMetrics.commentaryFallback),
     "# HELP stwl_paf_context_requests_total Context requests received.",
     "# TYPE stwl_paf_context_requests_total counter",
     prometheusLine("stwl_paf_context_requests_total", pafMetrics.contextRequests),
@@ -4152,7 +4419,10 @@ app.post("/mcp", async (req, res) => {
 app.get("/api/commentary", async (req, res) => {
   pafMetrics.commentaryRequests++;
   try {
-    res.json(await buildCommentary(req.query));
+    const result = await buildCommentary(req.query);
+    if (result.llm_generated) pafMetrics.commentaryLlmGenerated++;
+    else pafMetrics.commentaryFallback++;
+    res.json(result);
   } catch (error) {
     pafMetrics.commentaryFailures++;
     res.status(500).json({ ok: false, error: "commentary_failed", detail: error.message });
@@ -4162,7 +4432,10 @@ app.get("/api/commentary", async (req, res) => {
 app.post("/api/commentary", async (req, res) => {
   pafMetrics.commentaryRequests++;
   try {
-    res.json(await buildCommentary(req.body));
+    const result = await buildCommentary(req.body);
+    if (result.llm_generated) pafMetrics.commentaryLlmGenerated++;
+    else pafMetrics.commentaryFallback++;
+    res.json(result);
   } catch (error) {
     pafMetrics.commentaryFailures++;
     res.status(500).json({ ok: false, error: "commentary_failed", detail: error.message });

@@ -76,6 +76,12 @@ spec:
           value: "true"
         - name: PAF_LIVE_LINE_FAST_RETURN
           value: "true"
+        - name: PAF_REQUIRE_LLM_COMMENTARY
+          value: "true"
+        - name: PAF_REQUIRE_SELECT_AI_COMMENTARY
+          value: "true"
+        - name: SELECT_AI_TEMPERATURE
+          value: "0.2"
         envFrom:
         - configMapRef:
             name: private-agent-factory-env

@@ -6,7 +6,7 @@ import { deleteCurrentScore, postCurrentScore } from "./score.js";
 import pkg from "./package.json" with { type: "json" };
 import ObjectPool from './object-pool.js';
 import { updateRuntimeMetrics } from "./metrics.js";
-import { buildCommentary, deterministicCommentary, recordGameEvent, recordPlayerSessionProfile, summarizeSession } from "./lib/gameEvents.js";
+import { buildCommentary, commentaryRequiresLlm, commentaryRequiresSelectAi, deterministicCommentary, recordGameEvent, recordPlayerSessionProfile, summarizeSession } from "./lib/gameEvents.js";
 import { createCoherenceAdapter } from "./lib/coherenceSocketAdapter.js";
 import {
   resolveRealtimeBackend,
@@ -30,9 +30,12 @@ import {
   resolvePickupTouchForgiveness,
   resolveServerAuthSpeedLimit,
   isTrashBoxFootprintOverlap,
+  clampItemPositionToPlayableWorld,
+  DEFAULT_ITEM_SPAWN_EDGE_MARGIN,
   softClampWorldPosition,
   normalizeRoomStateRecord as normalizeRoomStateRecordBase,
   normalizeRoomScores,
+  firstNonEmptyRoomScores,
   normalizeStartPosition,
   normalizeStartPositions,
   persistedRoomState as buildPersistedRoomState,
@@ -388,6 +391,7 @@ let gameStartingAt = null;
 let gameTimer = null;
 const roomTimers = new Map(); // roomId -> { state, startTime, startingAt, timerId, resetTimerId }
 const roomEndRebroadcastTimers = new Map(); // roomId -> timeout ids for terminal event delivery
+const roomScoreUpdateChains = new Map(); // roomId:playerId -> serialized canonical score writes
 const GLOBAL_ROOM = "__global__";
 const pendingRoomRefills = new Map();
 const ROOM_COUNTDOWN_MS = parseInt(process.env.ROOM_COUNTDOWN_MS ?? "10000");
@@ -533,7 +537,15 @@ function queueGameOverCommentary(io, { room, event, playerName } = {}) {
       commentary = await buildCommentary(event.session_id, event.player_id);
     } catch (error) {
       logger.error(`commentary build failed for ${key}: ${error && error.message ? error.message : error}`);
-      commentary = fallbackCommentaryFromEvent(event);
+      commentary = commentaryRequiresLlm() || commentaryRequiresSelectAi()
+        ? {
+            status: "failed",
+            summary: summarizeSession(event.session_id, event.player_id),
+            source: "llm-unavailable",
+            llm_generated: false,
+            error: error && error.message ? error.message : String(error),
+          }
+        : fallbackCommentaryFromEvent(event);
     } finally {
       pendingCommentaryTasks.delete(key);
     }
@@ -545,7 +557,10 @@ function queueGameOverCommentary(io, { room, event, playerName } = {}) {
       score: commentary?.summary?.score ?? event.score,
       ...commentary,
     });
-    io.to(safeRoom).emit("commentary.ready", commentaryPayload);
+    io.to(safeRoom).emit(
+      commentaryPayload.status === "failed" ? "commentary.failed" : "commentary.ready",
+      commentaryPayload
+    );
   });
   return pendingPayload;
 }
@@ -904,6 +919,7 @@ function reinitItemForRoom(obj, type, room) {
     worldSizeX,
     worldSizeZ,
     clearRadius: SPAWN_PLAYER_CLEAR_RADIUS,
+    edgeMargin: DEFAULT_ITEM_SPAWN_EDGE_MARGIN,
   });
   obj.position = {
     x: safe.x,
@@ -955,6 +971,7 @@ export async function start(
     gameDuration: GAME_DURATION_IN_SECONDS,
     worldSizeX: worldSizeX,
     worldSizeZ: worldSizeZ,
+    itemSpawnEdgeMargin: DEFAULT_ITEM_SPAWN_EDGE_MARGIN,
     serverAuthEnabled: SERVER_AUTH_ENABLED,
     physics: PHYSICS_CONFIG,
     boatTypes: BOAT_TYPES
@@ -1115,14 +1132,14 @@ export async function start(
   function buildRoomEndPayload(room, overrides = {}) {
     const source = overrides && typeof overrides === "object" ? overrides : {};
     const state = roomTimers.get(canonicalRoomId(room)) || {};
-    const scores = normalizeRoomScores(
-      source.finalScores ||
-      source.final_scores ||
-      source.scoreByPlayer ||
-      source.score_by_player ||
-      source.scores ||
-      state.finalScores ||
-      state.scoreByPlayer ||
+    const scores = firstNonEmptyRoomScores(
+      source.finalScores,
+      source.final_scores,
+      source.scoreByPlayer,
+      source.score_by_player,
+      source.scores,
+      state.finalScores,
+      state.scoreByPlayer,
       state.scores
     );
     const hasAuthoritativeScores = Object.keys(scores).length > 0;
@@ -1149,24 +1166,36 @@ export async function start(
     const safePlayerId = String(playerId || "").trim();
     if (!safePlayerId || !Number.isFinite(parsedDelta) || parsedDelta === 0) return null;
     const safeRoom = canonicalRoomId(room);
-    const latest = await readCanonicalRoomState(safeRoom) || {
-      room: safeRoom,
-      state: gameState || "WAITING",
-      durationSeconds: GAME_DURATION_IN_SECONDS,
-    };
-    const scores = normalizeRoomScores(latest.scores || latest.scoreByPlayer || latest.finalScores);
-    const current = Number(scores[safePlayerId]);
-    const nextScore = Math.round((Number.isFinite(current) ? current : 0) + parsedDelta);
-    const nextScores = { ...scores, [safePlayerId]: nextScore };
-    await writeCanonicalRoomState(safeRoom, {
-      ...latest,
-      scores: nextScores,
-      scoreByPlayer: nextScores,
-    }, {
-      timerId: latest.timerId || null,
-      resetTimerId: latest.resetTimerId || null,
+    const updateKey = `${safeRoom}:${safePlayerId}`;
+    const previous = roomScoreUpdateChains.get(updateKey) || Promise.resolve();
+    const update = previous.catch(() => {}).then(async () => {
+      const latest = await readCanonicalRoomState(safeRoom) || {
+        room: safeRoom,
+        state: gameState || "WAITING",
+        durationSeconds: GAME_DURATION_IN_SECONDS,
+      };
+      const scores = normalizeRoomScores(latest.scores || latest.scoreByPlayer || latest.finalScores);
+      const current = Number(scores[safePlayerId]);
+      const nextScore = Math.round((Number.isFinite(current) ? current : 0) + parsedDelta);
+      const nextScores = { ...scores, [safePlayerId]: nextScore };
+      await writeCanonicalRoomState(safeRoom, {
+        ...latest,
+        scores: nextScores,
+        scoreByPlayer: nextScores,
+      }, {
+        timerId: latest.timerId || null,
+        resetTimerId: latest.resetTimerId || null,
+      });
+      return nextScore;
     });
-    return nextScore;
+    roomScoreUpdateChains.set(updateKey, update);
+    try {
+      return await update;
+    } finally {
+      if (roomScoreUpdateChains.get(updateKey) === update) {
+        roomScoreUpdateChains.delete(updateKey);
+      }
+    }
   }
   async function roomScoreForPlayer(room, playerId, { includeZeroForActiveRoom = false } = {}) {
     const safePlayerId = String(playerId || "").trim();
@@ -1323,17 +1352,35 @@ export async function start(
     const { trash, marine, power } = await readAllItemsObjects();
     const want = room || GLOBAL_ROOM;
     const filtered = {};
-    for (const [id, obj] of Object.entries(trash)) {
-      const r = obj && obj.room ? obj.room : GLOBAL_ROOM;
-      if (r === want) filtered[id] = obj;
-    }
-    for (const [id, obj] of Object.entries(marine)) {
-      const r = obj && obj.room ? obj.room : GLOBAL_ROOM;
-      if (r === want) filtered[id] = obj;
-    }
-    for (const [id, obj] of Object.entries(power)) {
-      const r = obj && obj.room ? obj.room : GLOBAL_ROOM;
-      if (r === want) filtered[id] = obj;
+    let relocated = 0;
+    const addReachableItems = async (objects, source) => {
+      for (const [id, obj] of Object.entries(objects || {})) {
+        const r = obj && obj.room ? obj.room : GLOBAL_ROOM;
+        if (r !== want || !obj) continue;
+        const reachable = clampItemPositionToPlayableWorld(obj.position, {
+          worldSizeX,
+          worldSizeZ,
+          edgeMargin: DEFAULT_ITEM_SPAWN_EDGE_MARGIN,
+        });
+        if (reachable.adjusted) {
+          obj.position = { x: reachable.x, y: reachable.y, z: reachable.z };
+          await writeRoomItem(source, id, obj);
+          relocated += 1;
+        }
+        filtered[id] = obj;
+      }
+    };
+    await addReachableItems(trash, "trash");
+    await addReachableItems(marine, "marine");
+    await addReachableItems(power, "power");
+    if (relocated > 0) {
+      logger.warn({
+        room: want,
+        relocated,
+        worldSizeX,
+        worldSizeZ,
+        edgeMargin: DEFAULT_ITEM_SPAWN_EDGE_MARGIN,
+      }, "relocated unreachable gameplay items");
     }
     return filtered;
   }
@@ -1592,7 +1639,20 @@ async function broadcastRoomState(room, state, extra = {}) {
   }
   if (Number.isFinite(Number(extra.remaining))) io.to(room).emit("game.time", Number(extra.remaining));
   if (state === "ENDED") {
-    const endPayload = buildRoomEndPayload(room, extra.end && typeof extra.end === "object" ? extra.end : {});
+    const requestedEnd = extra.end && typeof extra.end === "object" ? extra.end : {};
+    const endPayload = buildRoomEndPayload(room, {
+      ...requestedEnd,
+      scores: firstNonEmptyRoomScores(
+        requestedEnd.finalScores,
+        requestedEnd.final_scores,
+        requestedEnd.scoreByPlayer,
+        requestedEnd.score_by_player,
+        requestedEnd.scores,
+        persisted.finalScores,
+        persisted.scoreByPlayer,
+        persisted.scores
+      ),
+    });
     io.to(room).emit("game.end", endPayload);
     emitRoomEndToLocalSockets(room, endPayload);
     scheduleRoomEndRebroadcast(room, endPayload);
@@ -1756,7 +1816,10 @@ async function startRoomMatch(room) {
         clearInterval(rs.timerId);
         rs.timerId = null;
         await broadcastRoomState(room, 'ENDED', {
-          end: buildRoomEndPayload(room, { remaining: 0 }),
+          end: buildRoomEndPayload(room, {
+            remaining: 0,
+            scores: firstNonEmptyRoomScores(latest?.scores, rs.scores),
+          }),
           ownerServerId: serverId,
         });
         scheduleRoomWaitingReset(room, 10000);
@@ -1781,7 +1844,10 @@ async function endRoomMatch(room) {
   rs.startTime = null;
   rs.ownerServerId = serverId;
   await broadcastRoomState(room, 'ENDED', {
-    end: buildRoomEndPayload(room, { remaining: 0 }),
+    end: buildRoomEndPayload(room, {
+      remaining: 0,
+      scores: firstNonEmptyRoomScores(rs.scores, rs.scoreByPlayer, rs.finalScores),
+    }),
     ownerServerId: serverId,
   });
   scheduleRoomWaitingReset(room, 10000);
@@ -2343,7 +2409,8 @@ function scheduleRoomRefill(room, delayMs = 0) {
       }
     });
 
-    socket.on("items.collision", async ({ itemId, playerId, playerName, clientPosition, clientItemPosition } = {}, ack) => {
+    socket.on("items.collision", async ({ itemId, playerId, playerName, clientPosition, clientItemPosition, requestId, clientRequestedAt } = {}, ack) => {
+      const serverReceivedAt = Date.now();
       let ackSent = false;
       const safeAck = (payload) => {
         if (ackSent) return;
@@ -2457,6 +2524,7 @@ function scheduleRoomRefill(room, delayMs = 0) {
 
         const acceptedPayload = (scoreDelta = 0, scoreTotal = null) => {
           const safeScoreTotal = Number(scoreTotal);
+          const serverAcceptedAt = Date.now();
           return {
           ok: true,
           id: itemId,
@@ -2469,6 +2537,11 @@ function scheduleRoomRefill(room, delayMs = 0) {
           score: Number.isFinite(safeScoreTotal) ? safeScoreTotal : null,
           serverScore: Number.isFinite(safeScoreTotal) ? safeScoreTotal : null,
           scoreSource: Number.isFinite(safeScoreTotal) ? "server_room_state" : null,
+          requestId: requestId || null,
+          clientRequestedAt: Number.isFinite(Number(clientRequestedAt)) ? Number(clientRequestedAt) : null,
+          serverReceivedAt,
+          serverAcceptedAt,
+          serverProcessingMs: Math.max(0, serverAcceptedAt - serverReceivedAt),
           powerupType: String(itemSnapshot?.type || "").startsWith("powerup_") ? itemSnapshot.type : null,
           };
         };
@@ -3129,17 +3202,22 @@ function scheduleRoomRefill(room, delayMs = 0) {
     const info = await getPlayersInfoObject();
     const { humans: humansGlobal } = countHumansAndBots(info);
 
-    // Dynamic world scaling (global)
+    const rooms = (roomParam ? [roomParam] : listActiveRooms(info)).filter(shouldSyncVisualItems);
+
+    // Dynamic world scaling (global). Rehome stale cached items before clients
+    // receive a smaller playable boundary.
     const desired = recomputeWorldSize(humansGlobal);
     if (desired.x !== worldSizeX || desired.z !== worldSizeZ) {
       worldSizeX = desired.x;
       worldSizeZ = desired.z;
+      for (const room of rooms) {
+        io.to(room).emit("items.all", await getItemsForRoom(room));
+      }
       io.emit("server.info", {
         ...serverInfoPayload(),
       });
     }
 
-    const rooms = (roomParam ? [roomParam] : listActiveRooms(info)).filter(shouldSyncVisualItems);
     for (const room of rooms) {
       const humans = await humansInRoom(room);
       const targets = computeEffectiveTargets(humans);

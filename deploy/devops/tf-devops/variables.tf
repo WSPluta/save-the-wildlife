@@ -76,7 +76,7 @@ variable "paf_image_repository" {
 
 variable "genai_model_id" {
   type        = string
-  default     = "cohere.command-r-08-2024"
+  default     = "cohere.command-a-03-2025"
   description = "OCI Generative AI model id used by the Oracle Private Agent Factory deployment."
 }
 

@@ -1,7 +1,7 @@
 -- Optional setup for the in-database Select AI Agent path.
 -- Run after select_ai_profile_template.sql and after validating STWL_GAMEPLAY_AI.
--- The runtime package falls back to DBMS_CLOUD_AI.GENERATE or deterministic SQL
--- commentary if this team is not installed or if provider calls fail.
+-- The runtime package falls back to DBMS_CLOUD_AI.GENERATE when this team is
+-- unavailable. Production rejects deterministic text as successful commentary.
 
 BEGIN
   DBMS_CLOUD_AI_AGENT.DROP_TEAM(team_name => 'STWL_GAMEPLAY_COMMENTARY_TEAM', force => TRUE);
@@ -45,7 +45,7 @@ BEGIN
     task_name  => 'STWL_COMMENTARY_TASK',
     attributes => '{
       "description": "Produce one conference-safe Save the Wildlife commentator line under 200 characters from recorded SQL telemetry only.",
-      "instructions": "Use only provided telemetry or read-only SQL tool results. Mention powerups, trail crossings, freezes, coordinates, or prior best only when present. Never invent events, players, animals, or history.",
+      "instructions": "Use only provided telemetry or read-only SQL tool results. Write one original, natural broadcast sentence. Name the player and state the exact final score once. Highlight at most two verified moments. Never mention SQL, database, telemetry, JSON, evidence, a model, AI, or instructions. Never invent events, players, animals, outcomes, or history.",
       "tools": ["STWL_GAMEPLAY_SQL_TOOL"]
     }'
   );

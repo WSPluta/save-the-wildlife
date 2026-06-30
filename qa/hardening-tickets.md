@@ -13,10 +13,10 @@
 
 ## Executive Summary
 
-- Total tickets opened: 19
-- P0 blockers: 0 open. P0 gameplay/multiplayer authority was verified on the public URL and re-confirmed at 20:18-20:22 CEST with `web:0.0.96`, `ws-server:0.0.62`, and refreshed `private-agent-factory:0.0.28`.
+- Total tickets opened: 23
+- P0 blockers: 3 open pending public rollout verification: immediate canonical score feedback, reachable item placement, and direct Select AI commentary proof. Earlier multiplayer authority blockers remain closed.
 - P1 blockers: 1
-- Demo readiness verdict: P0 gameplay/multiplayer authority is public-URL clean. PAF commentary context/session binding is also public-URL clean on the Select AI path. Presenter observability now reads canonical scoped data and stays stable. Remaining non-P0 demo caveats are PAF Canvas/GenAI/trace provenance and presenter proof polish.
+- Demo readiness verdict: NOT READY on the currently deployed `web:0.0.103` / `ws-server:0.0.71` / PAF `0.0.31` release. Pickups work across browsers, but the public build does not meet the new immediate-score, reconciliation-proof, or reachable-item gates. Local `0.0.104` / `0.0.72` / `0.0.32` candidates pass and await public rollout.
 - Recommended hardening order: distributed room lifecycle authority, browser gameplay collision state, multiplayer human sync, room admin/timer consistency, observability canonical metrics, PAF/model provenance, commentary session/context binding, presenter proof UI, public autostart bypass, stale admin room cleanup, cross-room item isolation, public health route, mobile performance budget, local dev/prod parity and dev-server noise.
 
 ## Latest P0 Public Rerun
@@ -330,6 +330,60 @@
   - `.codex_tmp/qa-multiplayer-cross-browser-sync-after-web092-server059-20260627/latest.json`
 - Verification Test: `node scripts/multiplayer-sync-probe.mjs --base-url http://130.162.174.167 --include-mobile` and `node scripts/multiplayer-cross-browser-sync-probe.mjs --base-url http://130.162.174.167` must pass. Three browser clients in one room must each report at least two non-bot remote players and show remote position/rotation deltas after one client moves.
 - Status: Verified fixed on public deployment
+
+## STWL-QA-020
+
+- ID: STWL-QA-020
+- Title: Public pickup score waits for authority and has no immediate-feedback proof
+- Severity: P0
+- Area: Gameplay / Score / Cross-browser
+- Environment: Public `http://130.162.174.167`, deployed web `0.0.103`, ws-server `0.0.71`, Chrome and WebKit on desktop/mobile, 2026-06-30.
+- Actual Result: All 12 trash/turtle/powerup scenarios completed without browser errors and with healthy frame budgets, but the deployed client exposed no optimistic score application, HUD latency, request-to-result latency, server processing time, or canonical score source. Trash and turtle score changes therefore remain tied to the asynchronous authority response and fail the 50 ms immediate-feedback gate.
+- Local Fix: Candidate web `0.0.104` applies a reversible optimistic score for trash/turtle contact, then reconciles or rolls back from the authoritative collision response. Candidate server `0.0.72` serializes per-player room score updates and returns canonical score/source/timing fields.
+- Local Evidence: `.codex_tmp/qa-local-candidate-20260630-item-score-reachability/latest.md` passes all 12 Chrome/WebKit desktop/mobile trash/turtle/powerup cases with HUD latency `0 ms`, authority reconciliation `2-22 ms`, `scoreSource=server_room_state`, no browser errors, and healthy frame pacing; `.codex_tmp/qa-score-burst-local-after-end-fix/latest.md` preserves concurrent scores `1,2,3` and final score `3`.
+- Public Evidence: `.codex_tmp/qa-public-baseline-20260630-item-score/latest.md` and `latest.json`.
+- Acceptance: Deploy web `0.0.104` and ws-server `0.0.72`, then require all 12 public scenarios to report HUD latency `<=50 ms`, reconciliation `<=2500 ms`, `scoreSource=server_room_state`, and the correct final score.
+- Status: Fixed locally; public verification blocked on release commit/pipeline.
+
+## STWL-QA-021
+
+- ID: STWL-QA-021
+- Title: Items can remain outside the boat's reachable world after spawn or world resize
+- Severity: P0
+- Area: Gameplay / World Bounds / Item Lifecycle
+- Environment: Public `http://130.162.174.167`, deployed web `0.0.103`, ws-server `0.0.71`, 2026-06-30.
+- Actual Result: The deployed bundle does not expose `worldBoundary.unreachableItems` or `itemSpawnEdgeMargin`, so none of the 12 public scenarios can prove that visible items are inside the boat-clamped play area. This matches the reported failure mode where distant objects remain visible after the boat reaches its movement limit.
+- Local Fix: Candidate server `0.0.72` spawns inside a shared item edge margin, clamps opening/refill positions, repairs stale cached positions, and rehomes items before broadcasting a smaller world. Candidate web `0.0.104` reports per-item reachability and the current unreachable count.
+- Local Evidence: `.codex_tmp/qa-local-candidate-20260630-item-score-reachability/latest.md` reports `maxUnreachableItems=0` with a `2.25` world-unit spawn margin in all 12 browser/device/item scenarios while every interaction passes.
+- Public Evidence: `.codex_tmp/qa-public-baseline-20260630-item-score/latest.md` shows the reachability gate missing/failing in all 12 current-production scenarios.
+- Acceptance: After deployment, all 12 public scenarios must report `maxUnreachableItems=0` throughout RUNNING and still collect trash, hit turtles, and collect powerups.
+- Status: Fixed locally; public verification blocked on release commit/pipeline.
+
+## STWL-QA-022
+
+- ID: STWL-QA-022
+- Title: Mobile trash mesh reads disproportionately large beside the player boat
+- Severity: P2
+- Area: Rendering / Visual Balance / Mobile
+- Environment: Public Chrome mobile baseline, 390x844 viewport, 2026-06-30.
+- Actual Result: The floating trash box is visually wider than the nearby boat and dominates the mobile frame. Pickup behavior succeeds, so this is not the P0 collision defect.
+- Evidence: `.codex_tmp/qa-public-baseline-20260630-item-score/chrome-mobile-trash/after-drive.png`.
+- Proposed Fix: Tune the trash visual geometry/scale against measured boat bounds while keeping the authoritative box footprint unchanged until overlap screenshots confirm visual and collision agreement. Add a screenshot ratio assertion instead of changing collision radius from appearance alone.
+- Acceptance: Desktop/mobile screenshots show readable trash without dominating the boat, while all collision and score gates remain unchanged.
+- Status: Open; schedule after the P0 release proof.
+
+## STWL-QA-023
+
+- ID: STWL-QA-023
+- Title: Production commentary accepts generic model output without proving direct Select AI generation
+- Severity: P0
+- Area: PAF / Select AI / Commentary Integrity
+- Environment: Public `http://130.162.174.167`, deployed PAF `0.0.31` and ws-server `0.0.71`, 2026-06-30.
+- Actual Result: Public commentary reports `source=select-ai`, but the deployed payload does not carry an independently checkable generation operation, rewrite flag, or Select AI verification bit. The prior strict switch only required a model-backed source and could also accept OCI endpoint, Canvas, or in-database agent-team output.
+- Local Fix: Candidate PAF `0.0.32` requires `source=select-ai`, `llm_generated=true`, `generation_operation=DBMS_CLOUD_AI.GENERATE:chat`, and `output_rewritten=false`. Candidate ws-server `0.0.72` independently validates the same tuple before emitting `commentary.ready`. The generation proof also records measured in-database call latency. Production manifests enable both strict gates; failure emits `commentary.failed` instead of canned text.
+- Local Evidence: PAF full suite passes `45/45`, including rejection of a valid non-Select-AI LLM response; server full suite passes `94/94`, including rejection of a response merely labeled Select AI without operation proof; Kustomize output contains `PAF_REQUIRE_SELECT_AI_COMMENTARY=true`, `COMMENTARY_REQUIRE_SELECT_AI=true`, and Command A for both OCI GenAI and Select AI.
+- Acceptance: Public PAF and all end-game `commentary.ready` events must report `source=select-ai`, `llm_generated=true`, `select_ai_verified=true`, `generation_proof.operation=DBMS_CLOUD_AI.GENERATE:chat`, a finite `generation_proof.latency_ms`, `generation_proof.output_rewritten=false`, Command A model identity, exact canonical score, and no deterministic fallback.
+- Status: Fixed locally; public verification blocked on release commit/pipeline.
 
 ## STWL-QA-002
 

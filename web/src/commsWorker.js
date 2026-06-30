@@ -229,6 +229,10 @@ function init(wsURL, yourId, yourName, room, clientSessionId = null, debugWorker
     postMessage({ type: "commentary.pending", body: data });
   });
 
+  socket.on("commentary.failed", (data) => {
+    postMessage({ type: "commentary.failed", body: data });
+  });
+
   socket.on("commentary.history", (data) => {
     postMessage({ type: "commentary.history", body: data });
   });

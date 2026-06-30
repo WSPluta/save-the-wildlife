@@ -361,6 +361,6 @@ variable "paf_canvas_select_ai_agent_team" {
 
 variable "paf_canvas_genai_model_id" {
   type        = string
-  default     = "cohere.command-r-08-2024"
+  default     = "cohere.command-a-03-2025"
   description = "OCI Generative AI model id the Terraform-managed PAF Canvas installer should register for Canvas workflows."
 }

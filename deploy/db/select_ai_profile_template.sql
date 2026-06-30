@@ -18,7 +18,7 @@ BEGIN
       "provider": "oci",
       "credential_name": "OCI$RESOURCE_PRINCIPAL",
       "region": "uk-london-1",
-      "model": "cohere.command-r-08-2024",
+      "model": "cohere.command-a-03-2025",
       "oci_apiformat": "COHERE",
       "object_list": [
         { "owner": "' || USER || '", "name": "STWL_GAME_EVENTS" },
@@ -31,7 +31,7 @@ BEGIN
       ],
       "comments": true,
       "max_tokens": 512,
-      "temperature": 0
+      "temperature": 0.2
     }'
   );
 END;

@@ -81,6 +81,14 @@ export function normalizeRoomScores(value = {}) {
   return scores;
 }
 
+export function firstNonEmptyRoomScores(...candidates) {
+  for (const candidate of candidates) {
+    const scores = normalizeRoomScores(candidate);
+    if (Object.keys(scores).length > 0) return scores;
+  }
+  return {};
+}
+
 export function normalizeRoomStateRecord(room, state = {}, {
   defaultRoom = "ROOM-0001",
   durationSeconds = 60,
@@ -220,6 +228,10 @@ export function recomputeWorldSize(humans, worldScaleCfg) {
 
 export const DEFAULT_WORLD_BOUNDARY_BOAT_MARGIN = 1.25;
 export const DEFAULT_WORLD_BOUNDARY_SPEED_DAMPING = 0.35;
+export const DEFAULT_ITEM_SPAWN_EDGE_INSET = 1;
+export const DEFAULT_ITEM_SPAWN_EDGE_MARGIN = (
+  DEFAULT_WORLD_BOUNDARY_BOAT_MARGIN + DEFAULT_ITEM_SPAWN_EDGE_INSET
+);
 
 export function worldBoundaryExtents({
   worldSizeX = 128,
@@ -236,6 +248,40 @@ export function worldBoundaryExtents({
     halfZ: Math.max(0.1, height / 2 - margin),
     boatMargin: margin,
   };
+}
+
+export function clampItemPositionToPlayableWorld(position = {}, {
+  worldSizeX = 128,
+  worldSizeZ = 42,
+  edgeMargin = DEFAULT_ITEM_SPAWN_EDGE_MARGIN,
+} = {}) {
+  const extents = worldBoundaryExtents({
+    worldSizeX,
+    worldSizeZ,
+    boatMargin: edgeMargin,
+  });
+  const rawX = Number(position?.x);
+  const rawY = Number(position?.y);
+  const rawZ = Number(position?.z);
+  const x = Number.isFinite(rawX) ? rawX : 0;
+  const y = Number.isFinite(rawY) ? rawY : 0;
+  const z = Number.isFinite(rawZ) ? rawZ : 0;
+  const clampedX = clampNum(x, -extents.halfX, extents.halfX);
+  const clampedZ = clampNum(z, -extents.halfZ, extents.halfZ);
+  return {
+    x: clampedX,
+    y,
+    z: clampedZ,
+    adjusted: clampedX !== x || clampedZ !== z,
+    extents,
+  };
+}
+
+export function isItemPositionReachable(position = {}, options = {}) {
+  const normalized = clampItemPositionToPlayableWorld(position, options);
+  const x = Number(position?.x);
+  const z = Number(position?.z);
+  return Number.isFinite(x) && Number.isFinite(z) && !normalized.adjusted;
 }
 
 export function softClampWorldPosition({
@@ -441,12 +487,12 @@ function nearestDistanceSq2d(candidate, positions) {
   );
 }
 
-function worldAxisBounds(size) {
+function worldAxisBounds(size, edgeMargin = 0.5) {
   const span = Math.max(1, Math.floor(Number(size) || 1));
-  const half = (span - 1) / 2;
+  const half = Math.max(0.1, span / 2 - Math.max(0, Number(edgeMargin) || 0));
   return {
-    min: -Math.floor(half),
-    max: Math.ceil(half),
+    min: Math.ceil(-half),
+    max: Math.floor(half),
   };
 }
 
@@ -483,11 +529,12 @@ function findDeterministicSpawnCandidate({
   preferredPositions,
   worldSizeX,
   worldSizeZ,
+  edgeMargin,
   minDistanceSq,
   requirePreferredClear,
 }) {
-  const boundsX = worldAxisBounds(worldSizeX);
-  const boundsZ = worldAxisBounds(worldSizeZ);
+  const boundsX = worldAxisBounds(worldSizeX, edgeMargin);
+  const boundsZ = worldAxisBounds(worldSizeZ, edgeMargin);
   let best = null;
 
   for (let x = boundsX.min; x <= boundsX.max; x += 1) {
@@ -514,6 +561,7 @@ export function chooseSpawnPositionAwayFromPlayers({
   worldSizeZ = 42,
   clearRadius = DEFAULT_SPAWN_PLAYER_CLEAR_RADIUS,
   attempts = 24,
+  edgeMargin = DEFAULT_WORLD_BOUNDARY_BOAT_MARGIN,
 } = {}) {
   const coord = typeof coordinateFactory === "function"
     ? coordinateFactory
@@ -525,15 +573,18 @@ export function chooseSpawnPositionAwayFromPlayers({
   const tries = Math.max(1, Number(attempts) || 1);
   const radius = Math.max(0, Number(clearRadius) || 0);
   const minDistanceSq = radius * radius;
+  const boundsX = worldAxisBounds(worldSizeX, edgeMargin);
+  const boundsZ = worldAxisBounds(worldSizeZ, edgeMargin);
+  const boundedCandidate = (x, z) => ({
+    x: clampNum(Number(x), boundsX.min, boundsX.max),
+    y: 0,
+    z: clampNum(Number(z), boundsZ.min, boundsZ.max),
+  });
   let best = null;
   let bestRequiredClear = null;
 
   for (let i = 0; i < tries; i += 1) {
-    const candidate = {
-      x: coord(worldSizeX),
-      y: 0,
-      z: coord(worldSizeZ),
-    };
+    const candidate = boundedCandidate(coord(worldSizeX), coord(worldSizeZ));
     if (!Number.isFinite(candidate.x) || !Number.isFinite(candidate.z)) continue;
     if ((!requiredPositions.length && !preferredPositions.length) || radius <= 0) return candidate;
     const evaluated = evaluateSpawnCandidate(candidate, requiredPositions, preferredPositions);
@@ -551,6 +602,7 @@ export function chooseSpawnPositionAwayFromPlayers({
     preferredPositions,
     worldSizeX,
     worldSizeZ,
+    edgeMargin,
     minDistanceSq,
     requirePreferredClear: true,
   });
@@ -561,6 +613,7 @@ export function chooseSpawnPositionAwayFromPlayers({
     preferredPositions,
     worldSizeX,
     worldSizeZ,
+    edgeMargin,
     minDistanceSq,
     requirePreferredClear: false,
   });
@@ -569,7 +622,7 @@ export function chooseSpawnPositionAwayFromPlayers({
   if (bestRequiredClear) return bestRequiredClear.position;
   if (best) return best.position;
 
-  const fallback = { x: coord(worldSizeX), y: 0, z: coord(worldSizeZ) };
+  const fallback = boundedCandidate(coord(worldSizeX), coord(worldSizeZ));
   return Number.isFinite(fallback.x) && Number.isFinite(fallback.z)
     ? fallback
     : { x: 0, y: 0, z: 0 };
@@ -583,6 +636,7 @@ export function buildStartPositionItemRelocations({
   worldSizeZ = 42,
   clearRadius = DEFAULT_START_POSITION_ITEM_CLEAR_RADIUS,
   attempts = 48,
+  edgeMargin = DEFAULT_ITEM_SPAWN_EDGE_MARGIN,
 } = {}) {
   const start = {
     x: Number(startPosition?.x),
@@ -630,6 +684,7 @@ export function buildStartPositionItemRelocations({
       worldSizeZ,
       clearRadius: radius,
       attempts,
+      edgeMargin,
     });
     relocations.push({
       id: entry.id,
@@ -650,6 +705,7 @@ export function buildOpeningCollectiblePositions({
   minSpacing = 3.5,
   worldSizeX = 128,
   worldSizeZ = 42,
+  edgeMargin = DEFAULT_ITEM_SPAWN_EDGE_MARGIN,
 } = {}) {
   const start = {
     x: Number(startPosition?.x),
@@ -660,8 +716,8 @@ export function buildOpeningCollectiblePositions({
   const wanted = Math.max(0, Math.floor(Number(count) || 0));
   if (wanted <= 0) return [];
 
-  const boundsX = worldAxisBounds(worldSizeX);
-  const boundsZ = worldAxisBounds(worldSizeZ);
+  const boundsX = worldAxisBounds(worldSizeX, edgeMargin);
+  const boundsZ = worldAxisBounds(worldSizeZ, edgeMargin);
   const safeRadius = Math.max(0, Number(clearRadius) || 0);
   const radius = Math.max(safeRadius + 1.25, Number(ringRadius) || 8);
   const spacing = Math.max(0, Number(minSpacing) || 0);

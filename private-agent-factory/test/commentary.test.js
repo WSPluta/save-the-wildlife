@@ -248,7 +248,13 @@ test("uses Oracle AI Database in-db agent package when configured", async () => 
           result: JSON.stringify({
             ok: 1,
             source: "select-ai",
-            commentary: "Select AI saw a freeze powerup and 77 points.",
+            llm_generated: 1,
+            select_ai_profile: "STWL_GAMEPLAY_AI",
+            select_ai_model: "cohere.command-a-03-2025",
+            generation_operation: "DBMS_CLOUD_AI.GENERATE:chat",
+            generation_id: "GEN-SELECT-AI-77",
+            output_rewritten: 0,
+            commentary: "Ada used a freeze powerup to secure a lively 77-point finish.",
             summary: {
               session_id: "S-INDB",
               player_id: "P-INDB",
@@ -267,6 +273,7 @@ test("uses Oracle AI Database in-db agent package when configured", async () => 
   await withEnv({
     INDB_AGENT_ENABLED: "true",
     INDB_AGENT_AUTO_INIT: "false",
+    PAF_REQUIRE_LLM_COMMENTARY: "true",
     SELECT_AI_PROFILE: "STWL_GAMEPLAY_AI",
     SELECT_AI_AGENT_TEAM: "STWL_GAMEPLAY_COMMENTARY_TEAM",
   }, async () => {
@@ -280,8 +287,14 @@ test("uses Oracle AI Database in-db agent package when configured", async () => 
     );
 
     assert.equal(result.source, "select-ai");
-    assert.equal(result.commentary, "Select AI saw a freeze powerup and 77 points.");
+    assert.equal(result.commentary, "Ada used a freeze powerup to secure a lively 77-point finish.");
     assert.equal(result.summary.score, 77);
+    assert.equal(result.llm_generated, true);
+    assert.equal(result.select_ai_model, "cohere.command-a-03-2025");
+    assert.equal(result.generation_operation, "DBMS_CLOUD_AI.GENERATE:chat");
+    assert.equal(result.generation_id, "GEN-SELECT-AI-77");
+    assert.equal(Number.isFinite(result.latency_ms), true);
+    assert.equal(result.output_rewritten, false);
   });
 
   assert.equal(executeCalls.length, 1);
@@ -302,7 +315,7 @@ test("auto-initializes the commentary package plus Select AI profile and agent t
             result: JSON.stringify({
               ok: 1,
               source: "oracle-ai-database-agent",
-              commentary: "Agent team used SQL telemetry for a 64 point finish.",
+            commentary: "Ada kept the pace composed and finished with 64 points.",
             }),
           },
         };
@@ -318,7 +331,7 @@ test("auto-initializes the commentary package plus Select AI profile and agent t
     SELECT_AI_PROFILE: "STWL_GAMEPLAY_AI",
     SELECT_AI_AGENT_TEAM: "STWL_GAMEPLAY_COMMENTARY_TEAM",
     SELECT_AI_REGION: "uk-london-1",
-    SELECT_AI_MODEL: "cohere.command-r-08-2024",
+    SELECT_AI_MODEL: "cohere.command-a-03-2025",
     ORACLE_USER: "ADMIN",
   }, async () => {
     const result = await callInDbAgent(
@@ -331,7 +344,7 @@ test("auto-initializes the commentary package plus Select AI profile and agent t
     );
 
     assert.equal(result.source, "oracle-ai-database-agent");
-    assert.equal(result.commentary, "Agent team used SQL telemetry for a 64 point finish.");
+    assert.equal(result.commentary, "Ada kept the pace composed and finished with 64 points.");
   });
 
   assert.ok(executeCalls.some((sql) => /CREATE OR REPLACE PACKAGE STWL_COMMENTARY_PKG/i.test(sql)));
@@ -348,7 +361,7 @@ test("uses in-db agent output as the commentary when Canvas is not configured", 
           result: JSON.stringify({
             ok: true,
             source: "oracle-ai-database-agent",
-            commentary: "In-db agent called the freeze and the 31 point finish.",
+            commentary: "Ada fought through the freeze and closed on 31 points.",
           }),
         },
       };
@@ -358,6 +371,7 @@ test("uses in-db agent output as the commentary when Canvas is not configured", 
   await withEnv({
     INDB_AGENT_ENABLED: "true",
     INDB_AGENT_AUTO_INIT: "false",
+    PAF_REQUIRE_LLM_COMMENTARY: "true",
     PAF_CANVAS_RUN_ENDPOINT_URL: "",
     PAF_ENDPOINT_URL: "",
   }, async () => {
@@ -379,9 +393,61 @@ test("uses in-db agent output as the commentary when Canvas is not configured", 
       }
     );
     assert.equal(response.source, "oracle-ai-database-agent");
-    assert.equal(response.commentary, "In-db agent called the freeze and the 31 point finish.");
+    assert.equal(response.llm_generated, true);
+    assert.equal(response.commentary, "Ada fought through the freeze and closed on 31 points.");
     assert.equal(response.in_db_agent.source, "oracle-ai-database-agent");
     assert.equal(response.canvas, null);
+  });
+});
+
+test("strict live commentary rejects deterministic text when Select AI fails", async () => {
+  const oracleConnection = {
+    async execute() {
+      return {
+        outBinds: {
+          result: JSON.stringify({
+            ok: true,
+            source: "oracle-ai-database-deterministic",
+            llm_generated: 0,
+            llm_error: "ORA-20000: OCI Generative AI call failed",
+            commentary: "31 points and 4 clean pickups. Smooth telemetry, tidy finish.",
+          }),
+        },
+      };
+    },
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    PAF_REQUIRE_LLM_COMMENTARY: "true",
+    PAF_LIVE_LINE_INDB_FIRST: "true",
+    PAF_LIVE_LINE_FAST_RETURN: "true",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "off",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+  }, async () => {
+    await assert.rejects(
+      buildCommentary(
+        {
+          summary: {
+            session_id: "S-STRICT",
+            player_id: "P-STRICT",
+            player_name: "Ada",
+            score: 31,
+            trash_collected: 4,
+          },
+          output_format: "live_line",
+        },
+        {
+          skipOracleSummary: true,
+          oracleConnection,
+          oracledb: { BIND_OUT: 3003, STRING: 2001 },
+        }
+      ),
+      /llm_commentary_required:.*ORA-20000/
+    );
   });
 });
 
@@ -397,7 +463,7 @@ test("returns in-db commentary when Canvas exceeds the remaining commentary budg
           result: JSON.stringify({
             ok: true,
             source: "select-ai",
-            commentary: "Select AI grounded Ada's 55 point finish in DB evidence.",
+            commentary: "Ada turned eight clean pickups into a sharp 55-point finish.",
             summary: {
               session_id: "S-BUDGET",
               player_id: "P-BUDGET",
@@ -457,7 +523,7 @@ test("returns in-db commentary when Canvas exceeds the remaining commentary budg
 
     assert.ok(Date.now() - started < 500);
     assert.equal(response.source, "select-ai");
-    assert.equal(response.commentary, "Select AI grounded Ada's 55 point finish in DB evidence.");
+    assert.equal(response.commentary, "Ada turned eight clean pickups into a sharp 55-point finish.");
     assert.equal(response.warning, null);
     assert.match(response.diagnostics.warnings.join("; "), /paf_canvas:paf_canvas_timeout_/);
     assert.match(response.warnings.join("; "), /paf_canvas:paf_canvas_timeout_/);
@@ -1016,7 +1082,7 @@ test("uses in-db Select AI before configured live model fast path", async () => 
           result: JSON.stringify({
             ok: true,
             source: "select-ai",
-            commentary: "Select AI kept the live line grounded in collected trash.",
+            commentary: "Ada turned 3 trash pickups into a tidy 3-point finish.",
           }),
         },
       };
@@ -1076,7 +1142,7 @@ test("uses in-db Select AI before configured live model fast path", async () => 
 
     assert.ok(Date.now() - started < 700);
     assert.equal(response.source, "select-ai");
-    assert.equal(response.commentary, "Select AI kept the live line grounded in collected trash.");
+    assert.equal(response.commentary, "Ada turned 3 trash pickups into a tidy 3-point finish.");
     assert.equal(response.trace_id, "TRACE-BUDGETED-MODEL");
     assert.equal(response.model_route.primary.skipped, true);
     assert.equal(response.model_route.primary.error, "live_line_select_ai_first");
@@ -1097,7 +1163,7 @@ test("persists skipped model route traces when live model diagnostics time out",
             result: JSON.stringify({
               ok: true,
               source: "select-ai",
-              commentary: "Select AI kept Ada grounded on 42 after one freeze.",
+            commentary: "Ada absorbed one freeze and still closed on 42 points.",
             }),
           },
         };
@@ -1184,7 +1250,7 @@ test("starts deferred model route before slow in-db fallback completes", async (
           result: JSON.stringify({
             ok: true,
             source: "select-ai",
-            commentary: "Select AI keeps Ada grounded on 42 after one freeze.",
+            commentary: "Ada absorbs one freeze and still closes on 42 points.",
           }),
         },
       };
@@ -1244,7 +1310,7 @@ test("starts deferred model route before slow in-db fallback completes", async (
     );
 
     assert.equal(response.source, "select-ai");
-    assert.equal(response.commentary, "Select AI keeps Ada grounded on 42 after one freeze.");
+    assert.equal(response.commentary, "Ada absorbs one freeze and still closes on 42 points.");
     assert.equal(response.model_route.primary.runtime_mode, "upstream-llm");
     assert.equal(response.model_route.primary.ok, true);
     assert.equal(modelCalls.length, 2);
@@ -1390,7 +1456,7 @@ test("live-line fast return skips slow model route when in-db agent misses budge
   assert.equal(modelCalls, 0);
 });
 
-test("live-line fast return can select guarded Select AI output", async () => {
+test("guarded Select AI text is labeled as rewritten non-LLM output", async () => {
   const oracleConnection = {
     async execute() {
       return {
@@ -1457,9 +1523,73 @@ test("live-line fast return can select guarded Select AI output", async () => {
     assert.equal(response.ok, true);
     assert.equal(response.source, "select-ai-guarded");
     assert.equal(response.commentary, "Score 0. Keep an eye on those coordinates!");
+    assert.equal(response.llm_generated, false);
+    assert.equal(response.generation_mode, "deterministic-fallback");
     assert.equal(response.in_db_agent.source, "select-ai-guarded");
+    assert.equal(response.in_db_agent.output_rewritten, true);
     assert.equal(response.model_route.primary.skipped, true);
-    assert.match(response.warnings.join("; "), /select-ai:in_db_output_guarded/);
+    assert.match(response.warnings.join("; "), /select-ai:in_db_output_guarded_non_llm/);
+  });
+});
+
+test("strict commentary rejects rewritten Select AI text", async () => {
+  const oracleConnection = {
+    async execute() {
+      return {
+        outBinds: {
+          result: JSON.stringify({
+            ok: true,
+            source: "select-ai",
+            llm_generated: 1,
+            output_rewritten: 0,
+            commentary: "Ada wins after a legendary trail battle with 0 points!",
+            summary: {
+              session_id: "S-STRICT-REWRITE",
+              player_id: "P-STRICT-REWRITE",
+              player_name: "Ada",
+              score: 0,
+              trash_collected: 0,
+              marine_hits: 0,
+              trail_crosses: 0,
+              freezes: 0,
+              powerups: {},
+            },
+          }),
+        },
+      };
+    },
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    PAF_REQUIRE_LLM_COMMENTARY: "true",
+    PAF_LIVE_LINE_INDB_FIRST: "true",
+    PAF_LIVE_LINE_FAST_RETURN: "true",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "off",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+  }, async () => {
+    await assert.rejects(
+      buildCommentary(
+        {
+          summary: {
+            session_id: "S-STRICT-REWRITE",
+            player_id: "P-STRICT-REWRITE",
+            player_name: "Ada",
+            score: 0,
+          },
+          output_format: "live_line",
+        },
+        {
+          skipOracleSummary: true,
+          oracleConnection,
+          oracledb: { BIND_OUT: 3003, STRING: 2001 },
+        }
+      ),
+      /llm_commentary_required/
+    );
   });
 });
 
@@ -1474,7 +1604,13 @@ test("live-line Select AI path runs before generic Oracle summary fetch", async 
           result: JSON.stringify({
             ok: true,
             source: "select-ai",
-            commentary: "Ada finished on 9 points from recorded telemetry.",
+            llm_generated: 1,
+            select_ai_profile: "STWL_GAMEPLAY_AI",
+            select_ai_model: "cohere.command-a-03-2025",
+            generation_operation: "DBMS_CLOUD_AI.GENERATE:chat",
+            generation_id: "GEN-SELECT-AI-FIRST",
+            output_rewritten: 0,
+            commentary: "Ada made 9 points look sharp in a clean finish.",
             summary: {
               session_id: "S-SELECT-AI-FIRST",
               room_id: "ROOM-SELECT-AI-FIRST",
@@ -1496,6 +1632,8 @@ test("live-line Select AI path runs before generic Oracle summary fetch", async 
   await withEnv({
     INDB_AGENT_ENABLED: "true",
     INDB_AGENT_AUTO_INIT: "false",
+    PAF_REQUIRE_LLM_COMMENTARY: "true",
+    PAF_REQUIRE_SELECT_AI_COMMENTARY: "true",
     PAF_LIVE_LINE_INDB_FIRST: "true",
     PAF_LIVE_LINE_FAST_RETURN: "true",
     PAF_MODEL_FAST_PATH_ENABLED: "true",
@@ -1526,8 +1664,71 @@ test("live-line Select AI path runs before generic Oracle summary fetch", async 
 
     assert.equal(response.ok, true);
     assert.equal(response.source, "select-ai");
-    assert.equal(response.commentary, "Ada finished on 9 points from recorded telemetry.");
+    assert.equal(response.llm_generated, true);
+    assert.equal(response.select_ai_verified, true);
+    assert.equal(response.generation_proof.operation, "DBMS_CLOUD_AI.GENERATE:chat");
+    assert.equal(Number.isFinite(response.generation_proof.latency_ms), true);
+    assert.equal(response.generation_proof.output_rewritten, false);
+    assert.equal(response.commentary, "Ada made 9 points look sharp in a clean finish.");
     assert.equal(calls.length, 1);
+  });
+});
+
+test("production Select AI gate rejects a different model-backed source", async () => {
+  const oracleConnection = {
+    async execute() {
+      return {
+        outBinds: {
+          result: JSON.stringify({
+            ok: true,
+            source: "oracle-ai-database-agent",
+            llm_generated: 1,
+            generation_operation: "DBMS_CLOUD_AI_AGENT.RUN_TEAM",
+            output_rewritten: 0,
+            commentary: "Ada closed a measured run on exactly 9 points.",
+            summary: {
+              session_id: "S-NOT-SELECT-AI",
+              player_id: "P-NOT-SELECT-AI",
+              player_name: "Ada",
+              score: 9,
+            },
+          }),
+        },
+      };
+    },
+  };
+
+  await withEnv({
+    INDB_AGENT_ENABLED: "true",
+    INDB_AGENT_AUTO_INIT: "false",
+    PAF_REQUIRE_LLM_COMMENTARY: "true",
+    PAF_REQUIRE_SELECT_AI_COMMENTARY: "true",
+    PAF_LIVE_LINE_INDB_FIRST: "true",
+    PAF_LIVE_LINE_FAST_RETURN: "true",
+    PAF_MATCH_INTELLIGENCE_ENABLED: "false",
+    PAF_MODEL_ROUTE_MODE: "off",
+    PAF_CANVAS_RUN_ENDPOINT_URL: "",
+    PAF_ENDPOINT_URL: "",
+  }, async () => {
+    await assert.rejects(
+      buildCommentary(
+        {
+          summary: {
+            session_id: "S-NOT-SELECT-AI",
+            player_id: "P-NOT-SELECT-AI",
+            player_name: "Ada",
+            score: 9,
+          },
+          output_format: "live_line",
+        },
+        {
+          skipOracleSummary: true,
+          oracleConnection,
+          oracledb: { BIND_OUT: 3003, STRING: 2001 },
+        }
+      ),
+      /select_ai_commentary_required/
+    );
   });
 });
 
@@ -2172,9 +2373,10 @@ test("rejects unsupported Select AI commentary before returning room live line",
 
     assert.equal(response.source, "select-ai-guarded");
     assert.equal(response.in_db_agent.source, "select-ai-guarded");
+    assert.equal(response.llm_generated, false);
     assert.equal(response.commentary, "Wojtek scored 3 after speed powerup.");
     assert.ok(!/trail/i.test(response.commentary));
-    assert.match(response.warnings.join("; "), /select-ai:in_db_output_guarded/);
+    assert.match(response.warnings.join("; "), /select-ai:in_db_output_guarded_non_llm/);
   });
 });
 
@@ -2275,9 +2477,10 @@ test("rejects Select AI text that claims marine collection without marine eviden
 
     assert.equal(response.source, "select-ai-guarded");
     assert.equal(response.in_db_agent.source, "select-ai-guarded");
+    assert.equal(response.llm_generated, false);
     assert.equal(response.commentary, "Clean Run scored 12 after speed powerup.");
     assert.ok(!/marine/i.test(response.commentary));
-    assert.match(response.warnings.join("; "), /select-ai:in_db_output_guarded/);
+    assert.match(response.warnings.join("; "), /select-ai:in_db_output_guarded_non_llm/);
   });
 });
 
@@ -2463,7 +2666,7 @@ test("passes the in-db agent draft into Canvas and reports fallback source", asy
           result: JSON.stringify({
             ok: true,
             source: "select-ai",
-            commentary: "Select AI draft: freeze powerup, 2 crossings, 88 points.",
+            commentary: "Ada used a freeze powerup through 2 crossings and finished on 88 points.",
           }),
         },
       };
@@ -2471,7 +2674,7 @@ test("passes the in-db agent draft into Canvas and reports fallback source", asy
   };
   const requestJson = async (_url, options) => {
     const body = JSON.parse(options.body || "{}");
-    assert.match(body.message, /oracle_ai_database_draft=Select AI draft/);
+    assert.match(body.message, /oracle_ai_database_draft=Ada used a freeze powerup/);
     assert.match(body.message, /trail_crosses=2/);
     return {
       status: 200,
@@ -2529,6 +2732,12 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(packageSql, /stwl_game_events/i);
   assert.match(packageSql, /DBMS_CLOUD_AI_AGENT\.RUN_TEAM/i);
   assert.match(packageSql, /DBMS_CLOUD_AI\.GENERATE/i);
+  assert.match(packageSql, /one original, natural broadcast sentence/i);
+  assert.match(packageSql, /state the exact final score once/i);
+  assert.match(packageSql, /'llm_generated' VALUE CASE/i);
+  assert.match(packageSql, /'llm_error' VALUE COALESCE/i);
+  assert.match(packageSql, /'generation_operation' VALUE CASE/i);
+  assert.match(packageSql, /'output_rewritten' VALUE 0/i);
   assert.ok(
     packageSql.indexOf("v_text := select_ai_script") < packageSql.indexOf("v_text := agent_team_script"),
     "Select AI should be attempted before the agent team for fastest live commentary"
@@ -2554,6 +2763,7 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(profileSql, /STWL_GRAPH_EDGES/i);
   assert.match(profileSql, /STWL_REPLAY_CLIPS/i);
   assert.match(profileSql, /STWL_AGENT_MEMORIES/i);
+  assert.match(profileSql, /cohere\.command-a-03-2025/i);
 
   assert.match(teamSql, /DBMS_CLOUD_AI_AGENT\.CREATE_TOOL/i);
   assert.match(teamSql, /DBMS_CLOUD_AI_AGENT\.CREATE_AGENT/i);
@@ -2580,10 +2790,14 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
     agentTeamName: "STWL_GAMEPLAY_COMMENTARY_TEAM",
     selectAiObjectOwner: "ADMIN",
     selectAiRegion: "uk-london-1",
-    selectAiModel: "cohere.command-r-08-2024",
+    selectAiModel: "cohere.command-a-03-2025",
     selectAiApiFormat: "COHERE",
   }).join("\n");
   assert.match(generated, /DBMS_CLOUD_AI\.CREATE_PROFILE/i);
+  assert.match(generated, /DBMS_CLOUD_AI\.SET_ATTRIBUTE/i);
+  assert.match(generated, /cohere\.command-a-03-2025/i);
+  assert.match(generated, /attribute_name => 'temperature'/i);
+  assert.match(generated, /attribute_value => '0\.2'/i);
   assert.match(generated, /DBMS_CLOUD_AI_AGENT\.CREATE_TEAM/i);
   assert.match(generated, /DBMS_CLOUD_ADMIN\.ENABLE_RESOURCE_PRINCIPAL/i);
   assert.match(generated, /OCI\$RESOURCE_PRINCIPAL/i);

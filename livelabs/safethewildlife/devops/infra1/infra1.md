@@ -63,7 +63,7 @@ In this lab, you are going to deploy that foundational infrastructure that inclu
     <copy>export PAF_CANVAS_USE_MARKETPLACE_IMAGE=true</copy>
     <copy>export PAF_CANVAS_ACCEPT_MARKETPLACE_TERMS=true</copy>
     <copy>export PAF_CANVAS_SSH_PUBLIC_KEY="$(cat ~/.ssh/stwl-paf-canvas.pub)"</copy>
-    <copy>export PAF_CANVAS_GENAI_MODEL_ID=cohere.command-r-08-2024</copy>
+    <copy>export PAF_CANVAS_GENAI_MODEL_ID=cohere.command-a-03-2025</copy>
     <copy>export PAF_CANVAS_SELECT_AI_PROFILE=STWL_GAMEPLAY_AI</copy>
     <copy>export PAF_CANVAS_SELECT_AI_AGENT_TEAM=STWL_GAMEPLAY_COMMENTARY_TEAM</copy>
     ```
@@ -74,7 +74,7 @@ In this lab, you are going to deploy that foundational infrastructure that inclu
     <copy>export PAF_CANVAS_ENABLED=true</copy>
     <copy>export PAF_CANVAS_SSH_PUBLIC_KEY="$(cat ~/.ssh/stwl-paf-canvas.pub)"</copy>
     <copy>export PAF_CANVAS_IMAGE_OCID="ocid1.image.oc1...prebuilt-paf-image"</copy>
-    <copy>export PAF_CANVAS_GENAI_MODEL_ID=cohere.command-r-08-2024</copy>
+    <copy>export PAF_CANVAS_GENAI_MODEL_ID=cohere.command-a-03-2025</copy>
     <copy>export PAF_CANVAS_SELECT_AI_PROFILE=STWL_GAMEPLAY_AI</copy>
     <copy>export PAF_CANVAS_SELECT_AI_AGENT_TEAM=STWL_GAMEPLAY_COMMENTARY_TEAM</copy>
     ```
@@ -85,7 +85,7 @@ In this lab, you are going to deploy that foundational infrastructure that inclu
     <copy>export PAF_CANVAS_ENABLED=true</copy>
     <copy>export PAF_CANVAS_SSH_PUBLIC_KEY="$(cat ~/.ssh/stwl-paf-canvas.pub)"</copy>
     <copy>export PAF_CANVAS_INSTALL_SCRIPT_URL="https://objectstorage.../paf-install.sh"</copy>
-    <copy>export PAF_CANVAS_GENAI_MODEL_ID=cohere.command-r-08-2024</copy>
+    <copy>export PAF_CANVAS_GENAI_MODEL_ID=cohere.command-a-03-2025</copy>
     <copy>export PAF_CANVAS_SELECT_AI_PROFILE=STWL_GAMEPLAY_AI</copy>
     <copy>export PAF_CANVAS_SELECT_AI_AGENT_TEAM=STWL_GAMEPLAY_COMMENTARY_TEAM</copy>
     ```
@@ -98,7 +98,7 @@ In this lab, you are going to deploy that foundational infrastructure that inclu
     <copy>export PAF_CANVAS_CONTAINER_IMAGE_URI="container-registry.oracle.com/.../private-agent-factory:tag"</copy>
     <copy>export PAF_CANVAS_CONTAINER_NAME=oracle-applied-ai-label</copy>
     <copy>export PAF_CANVAS_CONTAINER_PORT=8080</copy>
-    <copy>export PAF_CANVAS_GENAI_MODEL_ID=cohere.command-r-08-2024</copy>
+    <copy>export PAF_CANVAS_GENAI_MODEL_ID=cohere.command-a-03-2025</copy>
     <copy>export PAF_CANVAS_SELECT_AI_PROFILE=STWL_GAMEPLAY_AI</copy>
     <copy>export PAF_CANVAS_SELECT_AI_AGENT_TEAM=STWL_GAMEPLAY_COMMENTARY_TEAM</copy>
     ```

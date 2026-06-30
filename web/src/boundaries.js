@@ -1,5 +1,6 @@
 export const WORLD_BOUNDARY_DEFAULTS = Object.freeze({
   boatMargin: 1.25,
+  itemEdgeInset: 1,
   markerSpacing: 12,
   mobileMarkerSpacing: 16,
   speedDamping: 0.35,

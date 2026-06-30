@@ -39,7 +39,7 @@ In this lab, you are going to deploy OCI DevOps components that include:
     ```bash
     <copy>export PAF_IMAGE_REPOSITORY=AUTO</copy>
     <copy>export PAF_VERSION=latest</copy>
-    <copy>export OCI_GENAI_MODEL_ID=cohere.command-r-08-2024</copy>
+    <copy>export OCI_GENAI_MODEL_ID=cohere.command-a-03-2025</copy>
     ```
 
     If the Foundation Infrastructure lab created a new PAF Canvas host, create a Vault secret for the matching SSH private key and enable automated Canvas import. This lets the deployment pipeline publish the `Save the Wildlife Commentator` flow and inject the game MCP endpoint into the Canvas `mcpServer` node.

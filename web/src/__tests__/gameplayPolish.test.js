@@ -31,7 +31,7 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/function finalScoreFromEndPayload\(endPayload = \{\}\)/);
     expect(script).toMatch(/finalScoreFromSources\(\{[\s\S]{0,160}playerId: yourId,[\s\S]{0,120}localScore,/);
     expect(script).toMatch(/const finalScore = finalScoreFromEndPayload\(endPayload\);/);
-    expect(script).toMatch(/finitePayloadNumber\(payload\.score, payload\.serverScore\)/);
+    expect(script).toMatch(/reconcilePickupScore\(\{[\s\S]{0,220}currentScore: localScore,[\s\S]{0,220}pendingScoreDelta:/);
     expect(script).not.toMatch(/Math\.max\(0,\s*Math\.round\(finalScoreFromEndPayload/);
   });
 
@@ -178,9 +178,16 @@ describe("gameplay polish regressions", () => {
   it("keeps item collisions pending until the server accepts or destroys the item", () => {
     expect(script).toMatch(/const pendingItemCollisions = new Map\(\);/);
     expect(script).toMatch(/function markItemCollisionPending\(itemId, itemType\)/);
+    expect(script).toMatch(/beginOptimisticPickupScore\(localScore, itemType/);
+    expect(script).toMatch(/rollbackPendingItemCollision\(itemId, "collected_by_other_player", payload\)/);
+    expect(script).toMatch(/function pendingOptimisticScoreDelta\(excludedItemId = null\)/);
+    expect(script).toMatch(/function rollbackAllPendingItemCollisions\(\)/);
+    expect(script).toMatch(/reconcilePickupScore\(\{/);
+    expect(script).toMatch(/requestToResultMs:/);
+    expect(script).toMatch(/hudLatencyMs: Math\.max\(0, hudUpdatedAt - now\)/);
+    expect(script).toMatch(/serverProcessingMs:/);
+    expect(script).toMatch(/const isNewItem = !items\[itemId\];/);
     expect(script).toMatch(/case "items\.collision\.result":/);
-    expect(script).toMatch(/latestPickupDebug = \{/);
-    expect(script).toMatch(/allowedRadius: Number\.isFinite\(Number\(body\.allowedRadius\)\)/);
     expect(script).toMatch(/applyConfirmedCollisionOutcome\(payload\);/);
     expect(script).toMatch(/removeItemFromScene\(payload\.itemId \|\| payload\.id\);/);
     expect(worker).toMatch(/socket\.timeout\(2500\)\.emit\("items\.collision"/);
@@ -482,7 +489,9 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/softClampToWorldBoundary\(player\.position, boundaries/);
     expect(script).toMatch(/playerSpeed \*= WORLD_BOUNDARY_DEFAULTS\.speedDamping;/);
     expect(script).not.toMatch(/player\.position\.copy\(lastPosition\)/);
-    expect(script).toMatch(/worldBoundary: worldBoundaryDebug,/);
+    expect(script).toMatch(/itemSpawnEdgeMargin/);
+    expect(script).toMatch(/unreachableItems,/);
+    expect(script).toMatch(/worldBoundary: \{[\s\S]{0,180}\.\.\.worldBoundaryDebug/);
   });
 
   it("pins result commentary score to one final game-over score", () => {
@@ -495,6 +504,12 @@ describe("gameplay polish regressions", () => {
     expect(script).toMatch(/case "game\.end":[\s\S]{0,260}endGame\(body \|\| \{\}\);/);
     expect(script).toMatch(/incomingState === "ENDED"[\s\S]{0,260}waitForAuthoritativeEndPayload\(\)/);
     expect(script).not.toMatch(/endGame\(\{ remaining: 0, timeRemaining: 0 \}\);/);
+  });
+
+  it("does not present deterministic fallback as successful live model commentary", () => {
+    expect(worker).toMatch(/socket\.on\("commentary\.failed"/);
+    expect(script).toMatch(/case "commentary\.failed":/);
+    expect(script).toMatch(/Live model commentary unavailable\./);
   });
 
   it("keeps the visible timer pinned after post-game instead of resetting to duration", () => {

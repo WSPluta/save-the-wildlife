@@ -5,6 +5,7 @@ import {
   DEFAULT_COLLISION_VALIDATE_RADIUS,
   DEFAULT_PICKUP_TOUCH_FORGIVENESS,
   DEFAULT_SERVER_AUTH_SPEED_LIMIT,
+  DEFAULT_ITEM_SPAWN_EDGE_MARGIN,
   MAX_PLAYER_SESSION_HISTORY,
   buildPlayerSessionProfile,
   fib,
@@ -13,6 +14,7 @@ import {
   resolveJoiningRoom,
   normalizePlayerName,
   normalizeRoomScores,
+  firstNonEmptyRoomScores,
   computeTargets,
   recomputeWorldSize,
   resolveAuthoritativeBoatTypes,
@@ -27,6 +29,8 @@ import {
   buildStartPositionItemRelocations,
   buildOpeningCollectiblePositions,
   isPositionWithinRadius2d,
+  clampItemPositionToPlayableWorld,
+  isItemPositionReachable,
   normalizeRoomStateRecord,
   normalizeStartPosition,
   normalizeStartPositions,
@@ -182,6 +186,14 @@ describe("canonical room state helpers", () => {
       updatedAt: 10,
     }, { defaultRoom: "ROOM-0001", durationSeconds: 60, now: 10 });
     expect(state.scores).toEqual({ p1: 4, p2: -1 });
+  });
+
+  it("skips empty score maps when selecting canonical game-end scores", () => {
+    expect(firstNonEmptyRoomScores({}, null, { p1: 3, p2: -1 }, { p1: 99 })).toEqual({
+      p1: 3,
+      p2: -1,
+    });
+    expect(firstNonEmptyRoomScores({}, null, [])).toEqual({});
   });
 
   it("uses per-player start positions when present and falls back safely", () => {
@@ -393,6 +405,9 @@ describe("production collision configuration", () => {
     expect(template).toContain(`COLLISION_VALIDATE_RADIUS=${DEFAULT_COLLISION_VALIDATE_RADIUS}`);
     expect(template).toContain(`PICKUP_TOUCH_FORGIVENESS=${DEFAULT_PICKUP_TOUCH_FORGIVENESS}`);
     expect(template).toContain("PAF_AGENT_TIMEOUT_MS=75000");
+    expect(template).toContain("COMMENTARY_REQUIRE_LLM=true");
+    expect(template).toContain("COMMENTARY_REQUIRE_SELECT_AI=true");
+    expect(template).toContain("COMMENTARY_LLM_RETRY_ATTEMPTS=3");
   });
 });
 
@@ -443,7 +458,7 @@ describe("authoritative multiplayer lifecycle", () => {
     expect(server).toMatch(/const latest = await readCanonicalRoomState\(wanted\);[\s\S]{0,180}latest\?\.state !== "ENDED"/);
     expect(server).toMatch(/emitRoomEndBroadcast\(wanted, endPayload\);/);
     expect(server).toMatch(/if \(state !== "ENDED"\) clearRoomEndRebroadcastTimers\(room\);/);
-    expect(server).toMatch(/if \(state === "ENDED"\) \{[\s\S]{0,260}emitRoomEndToLocalSockets\(room, endPayload\);[\s\S]{0,120}scheduleRoomEndRebroadcast\(room, endPayload\);/);
+    expect(server).toMatch(/if \(state === "ENDED"\) \{[\s\S]{0,900}emitRoomEndToLocalSockets\(room, endPayload\);[\s\S]{0,120}scheduleRoomEndRebroadcast\(room, endPayload\);/);
     expect(server).toMatch(/else if \(state === "ENDED"\) \{[\s\S]{0,120}socket\.emit\("game\.end", buildRoomEndPayload\(wanted/);
     expect(server).toMatch(/if \(Number\.isFinite\(Number\(extra\.remaining\)\)\) io\.to\(room\)\.emit\("game\.time", Number\(extra\.remaining\)\);/);
     expect(server).toMatch(/broadcastRoomState\(room, 'ENDED', \{[\s\S]{0,160}remaining: 0/);
@@ -452,11 +467,17 @@ describe("authoritative multiplayer lifecycle", () => {
   it("enriches gameplay events with canonical room scores before persistence", () => {
     const server = readFileSync("server.js", "utf8");
     expect(server).toMatch(/async function roomScoreForPlayer\(room, playerId/);
+    expect(server).toMatch(/const roomScoreUpdateChains = new Map\(\)/);
+    expect(server).toMatch(/const previous = roomScoreUpdateChains\.get\(updateKey\) \|\| Promise\.resolve\(\)/);
+    expect(server).toMatch(/roomScoreUpdateChains\.set\(updateKey, update\)/);
     expect(server).toMatch(/async function withCanonicalGameEventScore\(payload = \{\}, \{ room, playerId \} = \{\}\)/);
     expect(server).toMatch(/eventType === "game_over"[\s\S]{0,220}final_score: authoritative\.score/);
     expect(server).toMatch(/const eventPayload = await withCanonicalGameEventScore\(payload, \{/);
     expect(server).toMatch(/const result = await recordGameEvent\(eventPayload, \{/);
     expect(server).toMatch(/type: "powerup_collected"[\s\S]{0,180}score: powerupScore\?\.score/);
+    expect(server).toMatch(/serverProcessingMs: Math\.max\(0, serverAcceptedAt - serverReceivedAt\)/);
+    expect(server).toMatch(/clampItemPositionToPlayableWorld\(obj\.position/);
+    expect(server).toMatch(/relocated unreachable gameplay items/);
   });
 
   it("builds separated player starts and sends them to clients", () => {
@@ -548,6 +569,32 @@ describe("operator item metrics", () => {
 });
 
 describe("safe item spawning", () => {
+  it("keeps every item inside the boat-reachable world envelope", () => {
+    const clamped = clampItemPositionToPlayableWorld({ x: 500, y: 0, z: -500 }, {
+      worldSizeX: 128,
+      worldSizeZ: 42,
+    });
+
+    expect(clamped.adjusted).toBe(true);
+    expect(clamped.x).toBeCloseTo(61.75);
+    expect(clamped.z).toBeCloseTo(-18.75);
+    expect(isItemPositionReachable(clamped, { worldSizeX: 128, worldSizeZ: 42 })).toBe(true);
+  });
+
+  it("bounds random and fallback spawn candidates before distance selection", () => {
+    const position = chooseSpawnPositionAwayFromPlayers({
+      players: [],
+      worldSizeX: 64,
+      worldSizeZ: 21,
+      edgeMargin: DEFAULT_ITEM_SPAWN_EDGE_MARGIN,
+      coordinateFactory: () => 999,
+    });
+
+    expect(position.x).toBeLessThanOrEqual(29);
+    expect(position.z).toBeLessThanOrEqual(8);
+    expect(isItemPositionReachable(position, { worldSizeX: 64, worldSizeZ: 21 })).toBe(true);
+  });
+
   it("keeps spawned items away from active players when a safe candidate exists", () => {
     const coords = [0, 0, 1, 1, 7, 3];
     const position = chooseSpawnPositionAwayFromPlayers({

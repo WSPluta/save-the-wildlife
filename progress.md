@@ -2089,3 +2089,56 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
       - Gameplay: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-141735-timer-final/proof-gameplay-frame.png`.
       - Commentary: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-141735-timer-final/proof-commentary-frame.png`.
     - Visual inspection: commentary frame shows `Time: 0` on all gameplay panes, result cards show `Score: 0`, observability shows `AI Job ready` with `select-ai`, and buoy/rope boundaries remain visible.
+
+2026-06-29 public video-flow QA hardening:
+  - Used `$judge-agent` routing and kept the work scoped to the web-game recording/proof path.
+  - Fixed `scripts/record-stage-multiplayer-commentary-demo.mjs` so recorder clients drive continuously through the public match instead of moving for ~6 seconds and parking.
+  - Added motion QA gates to the recording report:
+    - per-player sampled distance,
+    - meaningful movement changes,
+    - boundary-sample ratio,
+    - proof-frame extraction against actual encoded video duration.
+  - Tightened scripted paths toward map center and added earlier edge recovery so the recording fails if boats look stuck on boundaries.
+  - Fixed `/admin/observability` demo-readiness:
+    - live player counts now fall back to real `player.state` room stream data when canonical room directory metrics lag,
+    - item cards use real `items.all` / item event data,
+    - state card now follows the visible admin state badge so final frames do not show contradictory RUNNING/WAITING/ENDED values.
+  - Validation:
+    - `node --check scripts/record-stage-multiplayer-commentary-demo.mjs` passed.
+    - `node --check web/src/script.js` passed after observability changes.
+    - `npm --prefix web run test:unit -- --run src/__tests__/adminLoadEvaluation.test.js` passed.
+    - `npm --prefix web run build` passed with existing large-asset warnings only.
+  - Public hotpatch:
+    - Copied fresh `web/dist` into live pod `web-595b486db-gw6t5`.
+    - Public HTML verified on `http://130.162.174.167/` with bundle `bundle.df29e1de8f937589476d.js`.
+  - Final accepted public recording:
+    - Directory: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-150835-video-flow-final5`.
+    - Video: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-150835-video-flow-final5/save-the-wildlife-same-room-competition-commentary-proof.mp4`.
+    - Report: `event-pack/save-the-wildlife-ai-database-demo/recording/output/stage-multiplayer-commentary-proof-20260629-150835-video-flow-final5/recording-report.md`.
+    - Contact sheet inspected: `.codex_tmp/video-flow-qa-20260629-151006/contact-sheet.jpg`.
+    - Report status: `PASS`.
+    - SHA-256: `9abd44434bc695bd9eefd8b1659fbc68d17fc80a92e670d59463944efe4ddcf5`.
+    - Motion proof: Alpha 69.26m, Bravo 44.93m, Charlie 78.22m; boundary ratios 0.08, 0.00, 0.15.
+    - Commentary proof: all three final lines came from `select-ai`; observability final frame shows `AI Job ready`, player/item counters, and latest commentary.
+
+2026-06-30 Select AI commentary provenance hardening:
+  - Found an honesty bug: a rejected Select AI sentence could be rewritten with deterministic wording and still be labeled `select-ai-guarded` / model-generated.
+  - Production strict mode now accepts only direct, unmodified model output from an explicit model-backed source. Rewritten guard output is labeled `llm_generated=false`; strict mode rejects it and retries/fails visibly.
+  - The in-database prompt now asks for one original, natural broadcast sentence, the player name, and the exact canonical final score while banning system/meta language and unsupported mechanics.
+  - Select AI output is rejected when it omits the exact score, exceeds the character limit, contains profanity/meta language, or invents evidence. The deterministic SQL sentence remains available only as a non-production fallback and cannot be presented as successful AI commentary.
+  - Added generation proof fields: Select AI profile/model, `DBMS_CLOUD_AI.GENERATE:chat`, generation id, and `output_rewritten`.
+  - Updated production profile defaults to Command A with low non-zero temperature (`0.2`) for natural phrasing without weakening evidence gates.
+  - Strengthened public probes to require `source=select-ai`, `llm_generated=true`, direct generation operation, unmodified output, and matching UI/state/event/commentary scores.
+  - Focused validation so far: PAF 44/44 tests passed; server score/commentary focused tests 69/69 passed; syntax checks passed.
+  - TODO: run full web/server/PAF/build/Kustomize gates, deploy new versioned images through OCI DevOps, and prove direct Select AI commentary plus reachable items on the public URL.
+  - Full gates completed: server 94/94, web 89/89, PAF 45/45, web production build, Kustomize render, and scoped `git diff --check` all pass.
+  - Release versions prepared: web `0.0.104`, server `0.0.72`, PAF `0.0.32`.
+  - Applied the OCI DevOps Terraform command-artifact update with `0 add, 9 update, 0 destroy`; the deployment command now renders Command A. A follow-up plan shows no command-spec change, only the provider's recurring repository-id drift on eight image artifacts.
+  - Current public PAF still proves an actual Select AI call (`source=select-ai`) but runs PAF `0.0.31` / Command R and lacks the new explicit generation-proof fields. Public rollout remains pending.
+  - Git staging is blocked by this Codex workspace's read-only `.git`; elevated staging approval did not complete. The scoped files remain unstaged and must be committed/pushed before running the build pipeline.
+  - Fresh local candidate browser matrix passed all 12 Chrome/WebKit desktop/mobile trash/turtle/powerup scenarios. HUD score feedback was `0 ms`, authority reconciliation was `2-22 ms`, `scoreSource=server_room_state`, `maxUnreachableItems=0`, and browser/frame gates passed. Evidence: `.codex_tmp/qa-local-candidate-20260630-item-score-reachability/latest.md`.
+  - Tightened the production contract from generic LLM output to direct Select AI only. PAF and ws-server now independently require `source=select-ai`, `llm_generated=true`, `DBMS_CLOUD_AI.GENERATE:chat`, and an unmodified output; any Canvas, endpoint, agent-team, guarded, or deterministic response fails visibly instead of appearing as AI commentary.
+  - Added `select_ai_verified` to the API/event proof and observability label, plus strict public probe assertions. Focused validation passed: PAF `45/45`, server `69/69`, web `40/40`, syntax checks, and Kustomize render with both Select AI enforcement flags and Command A.
+  - Final post-gate rerun passed the complete server `94/94`, web `89/89`, and PAF `45/45` suites; production webpack emitted `bundle.c536dd51b7f99d457873.js` with only the existing asset-size warnings; scoped diff integrity passed.
+  - Added measured in-database generation latency to the Select AI proof and concise observability label. Public acceptance now proves both the direct model call and its elapsed time rather than inferring speed from UI timing.
+  - Current public pre-deploy audit: lobby/admin/canonical 60-second timer passes; SQL telemetry and PAF context correctly include powerup, trail, freeze, coordinates, and final score `7`; the old PAF `0.0.31` correctly fails the strengthened proof because it has no `llm_generated`, `select_ai_verified`, operation, rewrite, or generation-latency fields. Evidence: `.codex_tmp/qa-public-predeploy-20260630-timer/latest.md` and `.codex_tmp/qa-public-predeploy-20260630-select-ai-proof/latest.md`.

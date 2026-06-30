@@ -199,8 +199,17 @@ describe("admin load evaluation view", () => {
     expect(script).toMatch(/observeWorkerEvent/);
     expect(script).toMatch(/Commentary job received/);
     expect(script).toMatch(/setObservabilityLatestCommentary/);
+    expect(script).toMatch(/function commentaryGenerationLabel/);
+    expect(script).toMatch(/payload\.select_ai_verified === true/);
+    expect(script).toMatch(/proof\.select_ai_verified === true/);
+    expect(script).toMatch(/DBMS_CLOUD_AI\.GENERATE:chat/);
+    expect(script).toMatch(/\["Select AI", modelLabel, "direct", latencyLabel\]/);
     expect(script).toMatch(/latestGlobalObservabilityMetrics/);
     expect(script).toMatch(/latestRoomObservabilityMetrics/);
+    expect(script).toMatch(/liveObservabilityPlayers/);
+    expect(script).toMatch(/liveObservabilityRoomState/);
+    expect(script).toMatch(/function strongestObservabilityPlayers/);
+    expect(script).toMatch(/case "player\.state":/);
     expect(script).toMatch(/function stableObservabilityRooms\(\)/);
     expect(script).toMatch(/function deriveStableObservabilityRooms\(globalRooms = \{\}\)/);
     expect(script).toMatch(/function hasFreshCanonicalObservability\(\)/);

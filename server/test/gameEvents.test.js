@@ -6,6 +6,8 @@ import {
   __setOracleConnectionForTests,
   buildCommentary,
   deterministicCommentary,
+  isDirectSelectAiCommentary,
+  isModelBackedCommentarySource,
   normalizeGameEvent,
   recordGameEvent,
   recordPlayerSessionProfile,
@@ -15,6 +17,31 @@ import {
 describe("game event telemetry", () => {
   beforeEach(() => {
     __resetGameEventsForTests();
+  });
+
+  it("distinguishes model-backed commentary from deterministic fallback", () => {
+    expect(isModelBackedCommentarySource("select-ai")).toBe(true);
+    expect(isModelBackedCommentarySource("select-ai-guarded")).toBe(false);
+    expect(isModelBackedCommentarySource("oracle-ai-database-agent")).toBe(true);
+    expect(isModelBackedCommentarySource("paf-canvas")).toBe(true);
+    expect(isModelBackedCommentarySource("deterministic-fallback")).toBe(false);
+    expect(isModelBackedCommentarySource("request-summary")).toBe(false);
+    expect(isDirectSelectAiCommentary({
+      source: "select-ai",
+      llm_generated: true,
+      generation_proof: {
+        operation: "DBMS_CLOUD_AI.GENERATE:chat",
+        output_rewritten: false,
+      },
+    })).toBe(true);
+    expect(isDirectSelectAiCommentary({
+      source: "oci-base",
+      llm_generated: true,
+      generation_proof: {
+        operation: "DBMS_CLOUD_AI.GENERATE:chat",
+        output_rewritten: false,
+      },
+    })).toBe(false);
   });
 
   it("normalizes supported gameplay events with coordinates and metadata", () => {
@@ -302,12 +329,29 @@ describe("game event telemetry", () => {
   it("reads PAF commentary config at request time", async () => {
     const previousBaseUrl = process.env.PAF_AGENT_BASE_URL;
     const previousTimeoutMs = process.env.PAF_AGENT_TIMEOUT_MS;
-    const server = createServer((req, res) => {
+    const previousRequireLlm = process.env.COMMENTARY_REQUIRE_LLM;
+    const previousRequireSelectAi = process.env.COMMENTARY_REQUIRE_SELECT_AI;
+    const requestBodies = [];
+    const server = createServer(async (req, res) => {
       expect(req.url).toBe("/api/commentary");
+      let rawBody = "";
+      for await (const chunk of req) rawBody += chunk;
+      requestBodies.push(JSON.parse(rawBody));
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         commentary: "Oracle path commentary.",
-        source: "oci-base",
+        source: "select-ai",
+        llm_generated: true,
+        generation_proof: {
+          llm_generated: true,
+          select_ai_verified: true,
+          source: "select-ai",
+          operation: "DBMS_CLOUD_AI.GENERATE:chat",
+          profile: "STWL_GAMEPLAY_AI",
+          model_id: "cohere.command-a-03-2025",
+          generation_id: "GEN-SERVER-44",
+          output_rewritten: false,
+        },
         trace_id: "TRACE-SERVER",
         route_mode: "shadow",
         primary_provider: "oci-base",
@@ -333,22 +377,74 @@ describe("game event telemetry", () => {
     const { port } = server.address();
     process.env.PAF_AGENT_BASE_URL = `http://127.0.0.1:${port}`;
     process.env.PAF_AGENT_TIMEOUT_MS = "1000";
+    process.env.COMMENTARY_REQUIRE_LLM = "true";
+    process.env.COMMENTARY_REQUIRE_SELECT_AI = "true";
 
     try {
       const sessionId = `S-PAF-${Date.now()}-${Math.random()}`;
       await recordGameEvent({ type: "game_over", sessionId, roomId: "ROOM-PAF", playerId: "P-PAF", score: 44 });
       const response = await buildCommentary(sessionId, "P-PAF");
-      expect(response.source).toBe("oci-base");
+      expect(response.source).toBe("select-ai");
+      expect(response.llm_generated).toBe(true);
+      expect(response.select_ai_verified).toBe(true);
       expect(response.commentary).toBe("Oracle path commentary.");
       expect(response.trace_id).toBe("TRACE-SERVER");
       expect(response.model_route.candidate.model_id).toBe("stwl-ft-v1");
       expect(response.eval_scores.verdict).toBe("candidate_ready");
+      expect(requestBodies[0].require_llm).toBe(true);
+      expect(requestBodies[0].require_select_ai).toBe(true);
     } finally {
       await new Promise((resolve) => server.close(resolve));
       if (previousBaseUrl == null) delete process.env.PAF_AGENT_BASE_URL;
       else process.env.PAF_AGENT_BASE_URL = previousBaseUrl;
       if (previousTimeoutMs == null) delete process.env.PAF_AGENT_TIMEOUT_MS;
       else process.env.PAF_AGENT_TIMEOUT_MS = previousTimeoutMs;
+      if (previousRequireLlm == null) delete process.env.COMMENTARY_REQUIRE_LLM;
+      else process.env.COMMENTARY_REQUIRE_LLM = previousRequireLlm;
+      if (previousRequireSelectAi == null) delete process.env.COMMENTARY_REQUIRE_SELECT_AI;
+      else process.env.COMMENTARY_REQUIRE_SELECT_AI = previousRequireSelectAi;
+    }
+  });
+
+  it("rejects a Select AI label without direct generation proof", async () => {
+    const previous = {
+      baseUrl: process.env.PAF_AGENT_BASE_URL,
+      timeoutMs: process.env.PAF_AGENT_TIMEOUT_MS,
+      requireLlm: process.env.COMMENTARY_REQUIRE_LLM,
+      requireSelectAi: process.env.COMMENTARY_REQUIRE_SELECT_AI,
+      attempts: process.env.COMMENTARY_LLM_RETRY_ATTEMPTS,
+    };
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        commentary: "Ada finished on exactly 12 points.",
+        source: "select-ai",
+        llm_generated: true,
+      }));
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address();
+    process.env.PAF_AGENT_BASE_URL = `http://127.0.0.1:${port}`;
+    process.env.PAF_AGENT_TIMEOUT_MS = "1000";
+    process.env.COMMENTARY_REQUIRE_LLM = "true";
+    process.env.COMMENTARY_REQUIRE_SELECT_AI = "true";
+    process.env.COMMENTARY_LLM_RETRY_ATTEMPTS = "1";
+
+    try {
+      const sessionId = `S-PAF-UNPROVEN-${Date.now()}-${Math.random()}`;
+      await recordGameEvent({ type: "game_over", sessionId, roomId: "ROOM-PAF", playerId: "P-PAF", score: 12 });
+      await expect(buildCommentary(sessionId, "P-PAF")).rejects.toThrow(/paf_commentary_not_direct_select_ai/);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      const restore = (name, value) => {
+        if (value == null) delete process.env[name];
+        else process.env[name] = value;
+      };
+      restore("PAF_AGENT_BASE_URL", previous.baseUrl);
+      restore("PAF_AGENT_TIMEOUT_MS", previous.timeoutMs);
+      restore("COMMENTARY_REQUIRE_LLM", previous.requireLlm);
+      restore("COMMENTARY_REQUIRE_SELECT_AI", previous.requireSelectAi);
+      restore("COMMENTARY_LLM_RETRY_ATTEMPTS", previous.attempts);
     }
   });
 });

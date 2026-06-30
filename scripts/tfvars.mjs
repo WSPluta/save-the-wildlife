@@ -232,7 +232,7 @@ async function envTFvars() {
   const pafCanvasContainerPort = process.env.PAF_CANVAS_CONTAINER_PORT || "8080";
   const pafCanvasSelectAiProfile = process.env.PAF_CANVAS_SELECT_AI_PROFILE || "STWL_GAMEPLAY_AI";
   const pafCanvasSelectAiAgentTeam = process.env.PAF_CANVAS_SELECT_AI_AGENT_TEAM || "STWL_GAMEPLAY_COMMENTARY_TEAM";
-  const pafCanvasGenaiModelId = process.env.PAF_CANVAS_GENAI_MODEL_ID || process.env.OCI_GENAI_MODEL_ID || "cohere.command-r-08-2024";
+  const pafCanvasGenaiModelId = process.env.PAF_CANVAS_GENAI_MODEL_ID || process.env.OCI_GENAI_MODEL_ID || "cohere.command-a-03-2025";
 
   try {
     let { exitCode, stderr } =
@@ -346,7 +346,7 @@ async function devopsTFvars() {
 
   const pafImageRepository = process.env.PAF_IMAGE_REPOSITORY || "AUTO";
   const pafVersion = process.env.PAF_VERSION || "latest";
-  const genaiModelId = process.env.OCI_GENAI_MODEL_ID || "cohere.command-r-08-2024";
+  const genaiModelId = process.env.OCI_GENAI_MODEL_ID || "cohere.command-a-03-2025";
   const pafMcpEnabled = process.env.PAF_MCP_ENABLED || "true";
   const defaultPafMcpPublicUrl = process.env.STWL_BASE_URL ? `${process.env.STWL_BASE_URL.replace(/\/+$/, "")}/paf/mcp` : "";
   const pafMcpPublicUrl = process.env.PAF_MCP_PUBLIC_URL || defaultPafMcpPublicUrl;
