@@ -341,9 +341,9 @@
 - Actual Result: All 12 trash/turtle/powerup scenarios completed without browser errors and with healthy frame budgets, but the deployed client exposed no optimistic score application, HUD latency, request-to-result latency, server processing time, or canonical score source. Trash and turtle score changes therefore remain tied to the asynchronous authority response and fail the 50 ms immediate-feedback gate.
 - Local Fix: Candidate web `0.0.104` applies a reversible optimistic score for trash/turtle contact, then reconciles or rolls back from the authoritative collision response. Candidate server `0.0.72` serializes per-player room score updates and returns canonical score/source/timing fields.
 - Local Evidence: `.codex_tmp/qa-local-candidate-20260630-item-score-reachability/latest.md` passes all 12 Chrome/WebKit desktop/mobile trash/turtle/powerup cases with HUD latency `0 ms`, authority reconciliation `2-22 ms`, `scoreSource=server_room_state`, no browser errors, and healthy frame pacing; `.codex_tmp/qa-score-burst-local-after-end-fix/latest.md` preserves concurrent scores `1,2,3` and final score `3`.
-- Public Evidence: `.codex_tmp/qa-public-baseline-20260630-item-score/latest.md` and `latest.json`.
+- Public Evidence: `.codex_tmp/qa-release-c849f27e-item-score-reachability-rerun/latest.md` passes all 12 Chrome/WebKit desktop/mobile scenarios on web `0.0.104` and ws-server `0.0.72`: HUD latency is `0 ms`, every authoritative result arrives within `2500 ms`, and every result reports `scoreSource=server_room_state`.
 - Acceptance: Deploy web `0.0.104` and ws-server `0.0.72`, then require all 12 public scenarios to report HUD latency `<=50 ms`, reconciliation `<=2500 ms`, `scoreSource=server_room_state`, and the correct final score.
-- Status: Fixed locally; public verification blocked on release commit/pipeline.
+- Status: Verified fixed on public deployment.
 
 ## STWL-QA-021
 
@@ -355,9 +355,9 @@
 - Actual Result: The deployed bundle does not expose `worldBoundary.unreachableItems` or `itemSpawnEdgeMargin`, so none of the 12 public scenarios can prove that visible items are inside the boat-clamped play area. This matches the reported failure mode where distant objects remain visible after the boat reaches its movement limit.
 - Local Fix: Candidate server `0.0.72` spawns inside a shared item edge margin, clamps opening/refill positions, repairs stale cached positions, and rehomes items before broadcasting a smaller world. Candidate web `0.0.104` reports per-item reachability and the current unreachable count.
 - Local Evidence: `.codex_tmp/qa-local-candidate-20260630-item-score-reachability/latest.md` reports `maxUnreachableItems=0` with a `2.25` world-unit spawn margin in all 12 browser/device/item scenarios while every interaction passes.
-- Public Evidence: `.codex_tmp/qa-public-baseline-20260630-item-score/latest.md` shows the reachability gate missing/failing in all 12 current-production scenarios.
+- Public Evidence: `.codex_tmp/qa-release-c849f27e-item-score-reachability-rerun/latest.md` reports `maxUnreachableItems=0` and successful trash, turtle, and powerup interactions in all 12 public Chrome/WebKit desktop/mobile scenarios.
 - Acceptance: After deployment, all 12 public scenarios must report `maxUnreachableItems=0` throughout RUNNING and still collect trash, hit turtles, and collect powerups.
-- Status: Fixed locally; public verification blocked on release commit/pipeline.
+- Status: Verified fixed on public deployment.
 
 ## STWL-QA-022
 

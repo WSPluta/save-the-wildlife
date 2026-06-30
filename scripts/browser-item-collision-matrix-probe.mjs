@@ -349,6 +349,33 @@ function successForKind({ itemKind, initialScore, initialCount, final }) {
   return false;
 }
 
+function pickupResultMatchesKind(result, itemKind) {
+  if (!result || result.ok !== true) return false;
+  const itemType = String(result.itemType || result.powerupType || "").toLowerCase();
+  const scoreDelta = Number(result.scoreDelta);
+  if (itemKind === "trash") {
+    return itemType.includes("trash") || scoreDelta > 0;
+  }
+  if (itemKind === "powerup") {
+    return itemType.startsWith("powerup_") || Boolean(result.powerupType);
+  }
+  if (itemKind === "turtle") {
+    return itemType.includes("turtle") || itemType.includes("marine") || scoreDelta < 0;
+  }
+  return false;
+}
+
+function pickupResultKey(result) {
+  if (!result || typeof result !== "object") return null;
+  return [
+    result.itemId || result.id || "unknown",
+    result.itemType || result.powerupType || "unknown",
+    result.transport || "unknown",
+    result.requestToResultMs ?? "unknown",
+    result.ok === true ? "ok" : (result.error || "failed"),
+  ].join(":");
+}
+
 async function driveToItem(page, { itemKind, isMobile, maxDriveMs }) {
   const held = new Map();
   const pointerDown = { current: false };
@@ -364,11 +391,22 @@ async function driveToItem(page, { itemKind, isMobile, maxDriveMs }) {
   let lastDistance = Number(target?.distance ?? Infinity);
   let joystick = isMobile ? await readJoystick(page) : null;
   let joystickVisible = !isMobile || rectVisible(joystick);
+  const pickupResults = [];
+  const pickupResultKeys = new Set();
+  const rememberPickupResult = (state) => {
+    const result = state?.pickups?.lastResult || null;
+    const key = pickupResultKey(result);
+    if (!key || pickupResultKeys.has(key)) return;
+    pickupResultKeys.add(key);
+    pickupResults.push(result);
+  };
+  rememberPickupResult(initial);
   const started = Date.now();
 
   while (Date.now() - started < maxDriveMs) {
     final = await readState(page).catch(() => final);
     if (!final || final.mode !== "RUNNING" || !final.player) break;
+    rememberPickupResult(final);
     samples.push(final);
 
     collected = successForKind({ itemKind, initialScore, initialCount, final });
@@ -423,12 +461,16 @@ async function driveToItem(page, { itemKind, isMobile, maxDriveMs }) {
   await releaseKeys(page, held);
   await releaseJoystick(page, pointerDown);
   const settleStarted = Date.now();
-  while (Date.now() - settleStarted < 1800) {
+  while (Date.now() - settleStarted < 3200) {
     final = await readState(page).catch(() => final);
+    rememberPickupResult(final);
     collected = collected || successForKind({ itemKind, initialScore, initialCount, final });
-    if (collected) break;
+    if (pickupResults.some((result) => pickupResultMatchesKind(result, itemKind))) break;
     await sleep(120);
   }
+  const authoritativePickupResult = [...pickupResults]
+    .reverse()
+    .find((result) => pickupResultMatchesKind(result, itemKind)) || null;
   return {
     itemKind,
     collected,
@@ -443,6 +485,8 @@ async function driveToItem(page, { itemKind, isMobile, maxDriveMs }) {
     initial,
     final,
     samples,
+    pickupResults,
+    authoritativePickupResult,
     joystickVisible,
   };
 }
@@ -542,11 +586,11 @@ async function runScenario({ playwright, engineName, scenario, itemKind, baseUrl
       initialCount: drive.initialCount,
       finalCount: drive.finalCount,
       lastDistance: Number(Number(drive.lastDistance).toFixed(3)),
-      lastPickupResult: drive.final?.pickups?.lastResult || null,
+      lastPickupResult: drive.authoritativePickupResult || drive.final?.pickups?.lastResult || null,
       powerUps: drive.final?.powerUps || null,
     });
     const pickupRequest = drive.final?.pickups?.lastRequest || null;
-    const pickupResult = drive.final?.pickups?.lastResult || null;
+    const pickupResult = drive.authoritativePickupResult || null;
     const scoreBearingPickup = itemKind === "trash" || itemKind === "turtle";
     const hudLatencyMs = Number(pickupRequest?.hudLatencyMs);
     const requestToResultMs = Number(pickupResult?.requestToResultMs);
