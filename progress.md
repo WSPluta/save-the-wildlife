@@ -2150,3 +2150,11 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Strict Select AI probe exposed retained deployment drift: the live PAF container had `INDB_AGENT_AUTO_INIT=false`, so Oracle AI Database retained an older commentary package without generation operation/id fields. Strict mode correctly failed closed with HTTP 500.
   - Corrected the live env to `INDB_AGENT_AUTO_INIT=true`; the upgraded package then returned direct Command A output with exact score `7`, `DBMS_CLOUD_AI.GENERATE:chat`, a generation id, `output_rewritten=false`, and measured latency.
   - Prepared PAF `0.0.33`: explicit auto-init override, one bounded Select AI corrective retry, stricter freeze causality/outcome prompting, and rejection of unsupported win/opponent claims. Immutable follow-up pipeline rollout is pending commit.
+
+2026-06-30 immediate pickup-feel hardening:
+  - Public web `0.0.104` proved `0ms` optimistic HUD scoring, but objects remained visible during the `0.6-1.2s` authority round trip, which still made collection feel delayed.
+  - Prepared web `0.0.105` with reversible visual pickup feedback: instanced trash, instanced powerups, and pooled turtle meshes disappear in the contact frame while server authority remains unchanged; rejection, timeout, rival collection, and match reset restore the visual and provisional score.
+  - Added `pickupVisual.js` plus behavior tests for each render path and enhanced the browser matrix to preserve matching request/result history and require object-feedback latency `<=50ms`.
+  - Validation passed: focused pickup tests `39/39`, full web suite `94/94`, production webpack build, and all 12 local Chrome/WebKit desktop/mobile pickup scenarios. HUD/object feedback measured `0-1ms`, authority remained canonical, all items were reachable, and frame budgets passed.
+  - Public multiplayer remained healthy on web `0.0.104`: three human clients shared one room; WebKit and mobile observers saw `7.9` world units of smooth remote movement with zero large jumps.
+  - Combined immutable release target is web `0.0.105`, server `0.0.72`, and PAF `0.0.33`; GitHub push and OCI DevOps rollout remain pending.

@@ -389,6 +389,19 @@
 - Follow-up Fix: PAF `0.0.33` explicitly sets `INDB_AGENT_AUTO_INIT=true`, upgrades the in-database package, gives Select AI one bounded model retry after validation failure, and rejects unsupported outcome/causality claims such as a win or freezing an opponent when those facts are absent.
 - Follow-up Status: Source fix tested locally; live env temporarily corrected for verification; immutable PAF `0.0.33` pipeline rollout pending commit.
 
+## STWL-QA-024
+
+- ID: STWL-QA-024
+- Title: Collected object remains visible while canonical score acknowledgement is in flight
+- Severity: P0
+- Area: Gameplay / Pickup Feedback / Cross-browser
+- Environment: Public `http://130.162.174.167`, web `0.0.104`, ws-server `0.0.72`, Chrome and WebKit desktop/mobile, 2026-06-30.
+- Actual Result: HUD score feedback is immediate, but the contacted trash, turtle, or powerup remains rendered for roughly `0.6-1.2s` until the public server acknowledgement arrives. The delayed disappearance makes a successful pickup feel unresponsive even when the score is already provisional.
+- Fix: Web `0.0.105` hides the matching instanced object or pooled mesh in the contact frame and retains the server-authoritative request. Rejection, timeout, rival collection, and match reset restore the exact visual and provisional score; acceptance removes it normally.
+- Local Evidence: `.codex_tmp/qa-local-web105-immediate-object-feedback-final/latest.md` passes all 12 Chrome/WebKit desktop/mobile trash/turtle/powerup scenarios with HUD and object feedback at `0-1ms`, canonical reconciliation, `maxUnreachableItems=0`, and healthy frame budgets. `pickupVisual.test.js` behavior-tests hide/restore for both instanced pools and pooled meshes.
+- Acceptance: Deploy web `0.0.105`; all 12 public scenarios must report HUD and object latency `<=50ms`, canonical authority within `2500ms`, no visual loss after rejection/timeout, no unreachable items, and no browser errors.
+- Status: Fixed and verified locally; public OCI deployment pending.
+
 ## STWL-QA-002
 
 - ID: STWL-QA-002

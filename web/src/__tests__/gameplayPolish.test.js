@@ -35,6 +35,19 @@ describe("gameplay polish regressions", () => {
     expect(script).not.toMatch(/Math\.max\(0,\s*Math\.round\(finalScoreFromEndPayload/);
   });
 
+  it("hides collected objects immediately and restores them when authority rejects the pickup", () => {
+    expect(script).toMatch(/import \{ hidePickupVisual, restorePickupVisual \} from "\.\/pickupVisual";/);
+    expect(script).toMatch(/let hidePendingItemVisual = \(\) => \(\{ hidden: false, mode: null \}\);/);
+    expect(script).toMatch(/let restorePendingItemVisual = \(\) => false;/);
+    expect(script).toMatch(/const visualState = hidePendingItemVisual\(itemId, itemType\);/);
+    expect(script).toMatch(/visualHidden: visualState\?\.hidden === true,/);
+    expect(script).toMatch(/visualLatencyMs: Math\.max\(0, visualHiddenAt - visualStartedAt\),/);
+    expect(script).toMatch(/return hidePickupVisual\(itemId, \{[\s\S]{0,180}releaseTrashInstance,[\s\S]{0,80}releasePowerupInstance,/);
+    expect(script).toMatch(/return restorePickupVisual\(itemId, visualState, \{[\s\S]{0,180}setTrashInstance,[\s\S]{0,80}setPowerupInstance,/);
+    expect(script).toMatch(/restorePendingItemVisual\(itemId, entry\?\.visualState\);/);
+    expect(script).toMatch(/const visualRestored = restorePendingItemVisual\(itemId, pending\?\.visualState\);/);
+  });
+
   it("starts gameplay telemetry when game.on follows an early RUNNING state", () => {
     expect(script).toMatch(/const shouldStartGameplayTelemetry = gameState !== "RUNNING" \|\| !currentSessionId;/);
     expect(script).toMatch(/if \(shouldStartGameplayTelemetry\) \{[\s\S]{0,180}resetGameplayTelemetry\(\);[\s\S]{0,120}emitGameplayEvent\("game_started"/);

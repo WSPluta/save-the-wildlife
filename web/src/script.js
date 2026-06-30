@@ -31,6 +31,7 @@ import {
   reconcilePickupScore,
   rollbackOptimisticPickupScore,
 } from "./pickupScore";
+import { hidePickupVisual, restorePickupVisual } from "./pickupVisual";
 import "./style.css";
 import * as lobby from "./lobby";
 import { normalizeRoomId } from "./util";
@@ -223,6 +224,8 @@ let clearPowerupInstances = () => {};
 let releaseTrashInstance = () => {};
 let releasePowerupInstance = () => {};
 let createItemMeshForScene = () => null;
+let hidePendingItemVisual = () => ({ hidden: false, mode: null });
+let restorePendingItemVisual = () => false;
 let releaseRemoteBoatVisual = () => {};
 let ensureBotRosterVisualsForScene = () => {};
 let ensureRemotePlayerVisualForScene = () => null;
@@ -2406,6 +2409,9 @@ function markItemCollisionPending(itemId, itemType) {
   const optimistic = beginOptimisticPickupScore(localScore, itemType, {
     shielded: !!powerUpState.shield,
   });
+  const visualStartedAt = Date.now();
+  const visualState = hidePendingItemVisual(itemId, itemType);
+  const visualHiddenAt = Date.now();
   pendingItemCollisions.set(itemId, {
     at: now,
     itemType,
@@ -2413,6 +2419,7 @@ function markItemCollisionPending(itemId, itemType) {
     optimisticAt: optimistic.applied ? now : null,
     optimisticApplied: optimistic.applied,
     optimisticDelta: optimistic.delta,
+    visualState,
   });
   if (optimistic.applied) {
     localScore = optimistic.score;
@@ -2429,6 +2436,9 @@ function markItemCollisionPending(itemId, itemType) {
       hudLatencyMs: Math.max(0, hudUpdatedAt - now),
       optimisticApplied: optimistic.applied,
       optimisticDelta: optimistic.delta,
+      visualHidden: visualState?.hidden === true,
+      visualHiddenAt,
+      visualLatencyMs: Math.max(0, visualHiddenAt - visualStartedAt),
       score: localScore,
     },
     lastResult: latestPickupDebug.lastResult || null,
@@ -2440,6 +2450,7 @@ function clearStalePendingItemCollisions(now = Date.now()) {
   for (const [itemId, entry] of pendingItemCollisions.entries()) {
     if (!entry || now - entry.at > COLLISION_PENDING_TIMEOUT_MS) {
       localScore = rollbackOptimisticPickupScore(localScore, entry);
+      restorePendingItemVisual(itemId, entry?.visualState);
       pendingItemCollisions.delete(itemId);
       updateLocalScoreDisplays();
       latestPickupDebug = {
@@ -2471,8 +2482,9 @@ function pendingOptimisticScoreDelta(excludedItemId = null) {
 }
 
 function rollbackAllPendingItemCollisions() {
-  for (const entry of pendingItemCollisions.values()) {
+  for (const [itemId, entry] of pendingItemCollisions.entries()) {
     localScore = rollbackOptimisticPickupScore(localScore, entry);
+    restorePendingItemVisual(itemId, entry?.visualState);
   }
   pendingItemCollisions.clear();
   updateLocalScoreDisplays();
@@ -2482,6 +2494,7 @@ function rollbackPendingItemCollision(itemId, error = "rejected", payload = {}) 
   if (!itemId) return null;
   const pending = pendingItemCollisions.get(itemId);
   localScore = rollbackOptimisticPickupScore(localScore, pending);
+  const visualRestored = restorePendingItemVisual(itemId, pending?.visualState);
   pendingItemCollisions.delete(itemId);
   updateLocalScoreDisplays();
   const settledAt = Date.now();
@@ -2495,6 +2508,7 @@ function rollbackPendingItemCollision(itemId, error = "rejected", payload = {}) 
       error,
       requestToResultMs: pending?.at ? Math.max(0, settledAt - pending.at) : null,
       optimisticApplied: !!pending?.optimisticApplied,
+      visualRestored,
       score: localScore,
     },
   };
@@ -2735,6 +2749,9 @@ function clearPowerUpRuntime() {
 }
 
 function clearMatchVisualState({ removeItems = false } = {}) {
+  for (const [itemId, entry] of pendingItemCollisions.entries()) {
+    restorePendingItemVisual(itemId, entry?.visualState);
+  }
   pendingItemCollisions.clear();
   scoredItemCollisions.clear();
   clearCullingDebugHelpers(scene);
@@ -3614,6 +3631,27 @@ async function init() {
     trashInstances.mesh.instanceMatrix.needsUpdate = true;
     if (trashInstances.detailMesh) trashInstances.detailMesh.instanceMatrix.needsUpdate = true;
     trashInstances.free.push(idx);
+  };
+
+  hidePendingItemVisual = function (itemId) {
+    return hidePickupVisual(itemId, {
+      trashInstances,
+      powerupInstances,
+      itemMeshes,
+      releaseTrashInstance,
+      releasePowerupInstance,
+    });
+  };
+
+  restorePendingItemVisual = function (itemId, visualState = {}) {
+    return restorePickupVisual(itemId, visualState, {
+      items,
+      trashInstances,
+      powerupInstances,
+      itemMeshes,
+      setTrashInstance,
+      setPowerupInstance,
+    });
   };
 
   // Object pooling for wildlife

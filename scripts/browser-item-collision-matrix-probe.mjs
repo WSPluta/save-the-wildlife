@@ -349,20 +349,24 @@ function successForKind({ itemKind, initialScore, initialCount, final }) {
   return false;
 }
 
-function pickupResultMatchesKind(result, itemKind) {
-  if (!result || result.ok !== true) return false;
-  const itemType = String(result.itemType || result.powerupType || "").toLowerCase();
-  const scoreDelta = Number(result.scoreDelta);
+function pickupEvidenceMatchesKind(evidence, itemKind) {
+  if (!evidence) return false;
+  const itemType = String(evidence.itemType || evidence.powerupType || "").toLowerCase();
+  const scoreDelta = Number(evidence.scoreDelta ?? evidence.optimisticDelta);
   if (itemKind === "trash") {
     return itemType.includes("trash") || scoreDelta > 0;
   }
   if (itemKind === "powerup") {
-    return itemType.startsWith("powerup_") || Boolean(result.powerupType);
+    return itemType.startsWith("powerup_") || Boolean(evidence.powerupType);
   }
   if (itemKind === "turtle") {
     return itemType.includes("turtle") || itemType.includes("marine") || scoreDelta < 0;
   }
   return false;
+}
+
+function pickupResultMatchesKind(result, itemKind) {
+  return result?.ok === true && pickupEvidenceMatchesKind(result, itemKind);
 }
 
 function pickupResultKey(result) {
@@ -393,6 +397,8 @@ async function driveToItem(page, { itemKind, isMobile, maxDriveMs }) {
   let joystickVisible = !isMobile || rectVisible(joystick);
   const pickupResults = [];
   const pickupResultKeys = new Set();
+  const pickupRequests = [];
+  const pickupRequestKeys = new Set();
   const rememberPickupResult = (state) => {
     const result = state?.pickups?.lastResult || null;
     const key = pickupResultKey(result);
@@ -400,13 +406,23 @@ async function driveToItem(page, { itemKind, isMobile, maxDriveMs }) {
     pickupResultKeys.add(key);
     pickupResults.push(result);
   };
+  const rememberPickupRequest = (state) => {
+    const request = state?.pickups?.lastRequest || null;
+    if (!request || typeof request !== "object") return;
+    const key = [request.itemId || "unknown", request.requestedAt ?? "unknown"].join(":");
+    if (pickupRequestKeys.has(key)) return;
+    pickupRequestKeys.add(key);
+    pickupRequests.push(request);
+  };
   rememberPickupResult(initial);
+  rememberPickupRequest(initial);
   const started = Date.now();
 
   while (Date.now() - started < maxDriveMs) {
     final = await readState(page).catch(() => final);
     if (!final || final.mode !== "RUNNING" || !final.player) break;
     rememberPickupResult(final);
+    rememberPickupRequest(final);
     samples.push(final);
 
     collected = successForKind({ itemKind, initialScore, initialCount, final });
@@ -464,6 +480,7 @@ async function driveToItem(page, { itemKind, isMobile, maxDriveMs }) {
   while (Date.now() - settleStarted < 3200) {
     final = await readState(page).catch(() => final);
     rememberPickupResult(final);
+    rememberPickupRequest(final);
     collected = collected || successForKind({ itemKind, initialScore, initialCount, final });
     if (pickupResults.some((result) => pickupResultMatchesKind(result, itemKind))) break;
     await sleep(120);
@@ -471,6 +488,12 @@ async function driveToItem(page, { itemKind, isMobile, maxDriveMs }) {
   const authoritativePickupResult = [...pickupResults]
     .reverse()
     .find((result) => pickupResultMatchesKind(result, itemKind)) || null;
+  const authoritativePickupRequest = [...pickupRequests]
+    .reverse()
+    .find((request) => (
+      request.itemId === authoritativePickupResult?.itemId ||
+      pickupEvidenceMatchesKind(request, itemKind)
+    )) || null;
   return {
     itemKind,
     collected,
@@ -486,6 +509,8 @@ async function driveToItem(page, { itemKind, isMobile, maxDriveMs }) {
     final,
     samples,
     pickupResults,
+    pickupRequests,
+    authoritativePickupRequest,
     authoritativePickupResult,
     joystickVisible,
   };
@@ -589,7 +614,7 @@ async function runScenario({ playwright, engineName, scenario, itemKind, baseUrl
       lastPickupResult: drive.authoritativePickupResult || drive.final?.pickups?.lastResult || null,
       powerUps: drive.final?.powerUps || null,
     });
-    const pickupRequest = drive.final?.pickups?.lastRequest || null;
+    const pickupRequest = drive.authoritativePickupRequest || drive.final?.pickups?.lastRequest || null;
     const pickupResult = drive.authoritativePickupResult || null;
     const scoreBearingPickup = itemKind === "trash" || itemKind === "turtle";
     const hudLatencyMs = Number(pickupRequest?.hudLatencyMs);
@@ -606,6 +631,17 @@ async function runScenario({ playwright, engineName, scenario, itemKind, baseUrl
       scoreBearingPickup,
       optimisticApplied: pickupRequest?.optimisticApplied ?? null,
       hudLatencyMs: Number.isFinite(hudLatencyMs) ? hudLatencyMs : null,
+      thresholdMs: 50,
+    });
+    const visualLatencyMs = Number(pickupRequest?.visualLatencyMs);
+    const visualFeedbackPassed = pickupRequest?.visualHidden === true &&
+      Number.isFinite(visualLatencyMs) &&
+      visualLatencyMs <= 50;
+    checks.push({
+      name: "pickup object feedback is immediate",
+      status: visualFeedbackPassed ? "pass" : "fail",
+      visualHidden: pickupRequest?.visualHidden ?? null,
+      visualLatencyMs: Number.isFinite(visualLatencyMs) ? visualLatencyMs : null,
       thresholdMs: 50,
     });
     const reconciliationPassed = pickupResult?.ok === true &&
@@ -728,9 +764,10 @@ async function main() {
       lines.push(`  - Last pickup: ${JSON.stringify(interaction.lastPickupResult || {})}`);
     }
     const feedback = (entry.checks || []).find((check) => check.name === "pickup score feedback is immediate");
+    const visualFeedback = (entry.checks || []).find((check) => check.name === "pickup object feedback is immediate");
     const reconciliation = (entry.checks || []).find((check) => check.name === "pickup score reconciles with server authority");
-    if (feedback || reconciliation) {
-      lines.push(`  - Pickup latency: HUD ${feedback?.hudLatencyMs ?? "-"}ms; authority ${reconciliation?.requestToResultMs ?? "-"}ms; server ${reconciliation?.serverProcessingMs ?? "-"}ms`);
+    if (feedback || visualFeedback || reconciliation) {
+      lines.push(`  - Pickup latency: HUD ${feedback?.hudLatencyMs ?? "-"}ms; object ${visualFeedback?.visualLatencyMs ?? "-"}ms; authority ${reconciliation?.requestToResultMs ?? "-"}ms; server ${reconciliation?.serverProcessingMs ?? "-"}ms`);
     }
     if (entry.compute) {
       lines.push(`  - FPS avg/p95 frame: ${entry.compute.fps?.avg ?? "-"} / ${entry.compute.frameMs?.p95 ?? "-"}ms`);
