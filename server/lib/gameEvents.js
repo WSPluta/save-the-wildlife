@@ -223,6 +223,8 @@ async function ensureOracleSchema(connection) {
            AND COALESCE(JSON_VALUE(metadata_json, '$.score_source'), JSON_VALUE(metadata_json, '$.scoreSource')) = 'server_room_state'
           THEN occurred_at
         END NULLS FIRST),
+        MAX(CASE WHEN event_type = 'game_over' AND score <> 0 THEN score END)
+          KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type = 'game_over' AND score <> 0 THEN occurred_at END NULLS FIRST),
         MAX(CASE WHEN event_type <> 'game_over' AND score IS NOT NULL THEN score END)
           KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type <> 'game_over' AND score IS NOT NULL THEN occurred_at END NULLS FIRST),
         MAX(CASE WHEN event_type = 'game_over' THEN score END)

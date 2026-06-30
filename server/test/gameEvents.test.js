@@ -190,6 +190,7 @@ describe("game event telemetry", () => {
     expect(ddl).toMatch(/CREATE\s+TABLE\s+stwl_player_sessions/i);
     expect(ddl).toMatch(/sessions_json\s+CLOB\s+CHECK\s*\(\s*sessions_json\s+IS\s+JSON\s*\)/i);
     expect(ddl).toMatch(/score_source'\), JSON_VALUE\(metadata_json, '\$\.scoreSource'\)\) = 'server_room_state'/i);
+    expect(ddl).toMatch(/event_type = 'game_over' AND score <> 0 THEN score/i);
     expect(ddl).toMatch(/event_type <> 'game_over' AND score IS NOT NULL/i);
     expect(ddl).toMatch(/CREATE OR REPLACE TRIGGER stwl_game_events_score_guard/i);
     expect(ddl).toMatch(/BEFORE INSERT ON stwl_game_events/i);
@@ -198,6 +199,7 @@ describe("game event telemetry", () => {
     expect(ddl).not.toMatch(/COMMENT ON VIEW stwl_session_summary/i);
     expect(runtime).toMatch(/score: finiteNumber\(rawScore, null\)/);
     expect(runtime).toMatch(/CREATE OR REPLACE TRIGGER stwl_game_events_score_guard/i);
+    expect(runtime).toMatch(/event_type = 'game_over' AND score <> 0 THEN score/i);
     expect(runtime).toMatch(/COMMENT ON TABLE stwl_session_summary/i);
     const playerSessionDdl = runtime.match(/CREATE TABLE stwl_player_sessions \(([\s\S]*?)\)`;/)?.[1] || "";
     expect(playerSessionDdl.match(/\broom_id\s+VARCHAR2\(64\)/gi)).toHaveLength(1);

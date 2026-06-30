@@ -1903,6 +1903,8 @@ END STWL_COMMENTARY_PKG;`,
                     AND COALESCE(JSON_VALUE(e.metadata_json, '$.score_source'), JSON_VALUE(e.metadata_json, '$.scoreSource')) = 'server_room_state'
                    THEN e.occurred_at
                  END NULLS FIRST),
+                 MAX(CASE WHEN e.event_type = 'game_over' AND e.score <> 0 THEN e.score END)
+                   KEEP (DENSE_RANK LAST ORDER BY CASE WHEN e.event_type = 'game_over' AND e.score <> 0 THEN e.occurred_at END NULLS FIRST),
                  MAX(CASE WHEN e.event_type <> 'game_over' AND e.score IS NOT NULL THEN e.score END)
                    KEEP (DENSE_RANK LAST ORDER BY CASE WHEN e.event_type <> 'game_over' AND e.score IS NOT NULL THEN e.occurred_at END NULLS FIRST),
                  MAX(CASE WHEN e.event_type = 'game_over' THEN e.score END)
@@ -1990,9 +1992,25 @@ END STWL_COMMENTARY_PKG;`,
     RETURN 'Use only this Save the Wildlife SQL telemetry JSON. Return exactly one short commentator sentence under 200 characters and no prefix. Never invent events. Do not use the words trail, crossing, freeze, frozen, powerup, shield, magnet, speed, boost, win, victory, policy, or trained unless the JSON has a non-zero matching count. If score and pickups are zero, say only the recorded score/pickup result or coordinates. JSON: ' || p_summary;
   END;
 
+  FUNCTION score_safe_text(p_text IN VARCHAR2, p_summary IN CLOB) RETURN BOOLEAN IS
+    v_text VARCHAR2(32767) := LOWER(NVL(p_text, ''));
+    v_score VARCHAR2(64) := JSON_VALUE(p_summary, '$.score');
+    v_score_pattern VARCHAR2(128);
+  BEGIN
+    IF v_score IS NULL THEN
+      RETURN TRUE;
+    END IF;
+    IF NOT REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(score|scored|points?|finished|ending|ended)([^[:alnum:]_]|$)', 'i') THEN
+      RETURN TRUE;
+    END IF;
+    v_score_pattern := REPLACE(v_score, '-', '\-');
+    RETURN REGEXP_LIKE(v_text, '(^|[^[:digit:]-])' || v_score_pattern || '([^[:digit:]]|$)');
+  END;
+
   FUNCTION select_ai_script(p_summary IN CLOB, p_profile IN VARCHAR2, p_max_chars IN NUMBER) RETURN VARCHAR2 IS
     v_result CLOB;
     v_prompt CLOB := build_prompt(p_summary);
+    v_text   VARCHAR2(4000);
   BEGIN
     IF p_profile IS NULL THEN
       RETURN NULL;
@@ -2005,7 +2023,11 @@ END STWL_COMMENTARY_PKG;`,
           action       => 'chat'
         );
       END;]' USING OUT v_result, IN v_prompt, IN p_profile;
-    RETURN clamp_text(v_result, p_max_chars);
+    v_text := clamp_text(v_result, p_max_chars);
+    IF NOT score_safe_text(v_text, p_summary) THEN
+      RETURN NULL;
+    END IF;
+    RETURN v_text;
   EXCEPTION
     WHEN OTHERS THEN
       RETURN NULL;
@@ -2015,6 +2037,7 @@ END STWL_COMMENTARY_PKG;`,
     v_result CLOB;
     v_prompt CLOB := build_prompt(p_summary);
     v_params VARCHAR2(4000);
+    v_text   VARCHAR2(4000);
   BEGIN
     IF p_team_name IS NULL THEN
       RETURN NULL;
@@ -2028,7 +2051,11 @@ END STWL_COMMENTARY_PKG;`,
           params       => :params
         );
       END;]' USING OUT v_result, IN p_team_name, IN v_prompt, IN v_params;
-    RETURN clamp_text(v_result, p_max_chars);
+    v_text := clamp_text(v_result, p_max_chars);
+    IF NOT score_safe_text(v_text, p_summary) THEN
+      RETURN NULL;
+    END IF;
+    RETURN v_text;
   EXCEPTION
     WHEN OTHERS THEN
       RETURN NULL;
@@ -2734,6 +2761,8 @@ async function getOracleSummary(sessionId, playerId, options = {}) {
              AND COALESCE(JSON_VALUE(metadata_json, '$.score_source'), JSON_VALUE(metadata_json, '$.scoreSource')) = 'server_room_state'
             THEN occurred_at
           END NULLS FIRST),
+          MAX(CASE WHEN event_type = 'game_over' AND score <> 0 THEN score END)
+            KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type = 'game_over' AND score <> 0 THEN occurred_at END NULLS FIRST),
           MAX(CASE WHEN event_type <> 'game_over' AND score IS NOT NULL THEN score END)
             KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type <> 'game_over' AND score IS NOT NULL THEN occurred_at END NULLS FIRST),
           MAX(CASE WHEN event_type = 'game_over' THEN score END)
@@ -2859,6 +2888,8 @@ async function resolveLatestOracleIdentityForRoom(connection, roomId) {
               AND COALESCE(JSON_VALUE(metadata_json, '$.score_source'), JSON_VALUE(metadata_json, '$.scoreSource')) = 'server_room_state'
              THEN occurred_at
            END NULLS FIRST),
+           MAX(CASE WHEN event_type = 'game_over' AND score <> 0 THEN score END)
+             KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type = 'game_over' AND score <> 0 THEN occurred_at END NULLS FIRST),
            MAX(CASE WHEN event_type <> 'game_over' AND score IS NOT NULL THEN score END)
              KEEP (DENSE_RANK LAST ORDER BY CASE WHEN event_type <> 'game_over' AND score IS NOT NULL THEN occurred_at END NULLS FIRST),
            MAX(CASE WHEN event_type = 'game_over' THEN score END)
