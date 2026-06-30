@@ -236,9 +236,55 @@ async function ensureOracleSchema(connection) {
       SUM(CASE WHEN event_type = 'player_frozen' THEN 1 ELSE 0 END) AS freezes
     FROM stwl_game_events
     GROUP BY session_id, room_id, player_id`);
+  await executeIgnoring(`CREATE OR REPLACE TRIGGER stwl_game_events_score_guard
+    BEFORE INSERT ON stwl_game_events
+    FOR EACH ROW
+    WHEN (NEW.event_type = 'game_over')
+    DECLARE
+      v_latest_score stwl_game_events.score%TYPE;
+      v_score_source VARCHAR2(128);
+    BEGIN
+      BEGIN
+        SELECT COALESCE(
+                 JSON_VALUE(:NEW.metadata_json, '$.score_source'),
+                 JSON_VALUE(:NEW.metadata_json, '$.scoreSource')
+               )
+          INTO v_score_source
+          FROM dual;
+      EXCEPTION
+        WHEN OTHERS THEN
+          v_score_source := NULL;
+      END;
+
+      IF NVL(v_score_source, 'client') <> 'server_room_state'
+         AND (:NEW.score IS NULL OR :NEW.score = 0) THEN
+        BEGIN
+          SELECT score
+            INTO v_latest_score
+            FROM (
+              SELECT score
+                FROM stwl_game_events
+               WHERE session_id = :NEW.session_id
+                 AND player_id = :NEW.player_id
+                 AND event_type <> 'game_over'
+                 AND score IS NOT NULL
+                 AND occurred_at <= :NEW.occurred_at
+               ORDER BY occurred_at DESC, id DESC
+            )
+           WHERE ROWNUM = 1;
+
+          IF v_latest_score IS NOT NULL THEN
+            :NEW.score := v_latest_score;
+          END IF;
+        EXCEPTION
+          WHEN NO_DATA_FOUND THEN
+            NULL;
+        END;
+      END IF;
+    END;`);
   await executeIgnoring("COMMENT ON TABLE stwl_game_events IS 'Save the Wildlife gameplay timeline used by Oracle Private Agent Factory and Select AI demos.'");
   await executeIgnoring("COMMENT ON TABLE stwl_player_sessions IS 'Canonical Save the Wildlife player display names and browser/game session history for multiplayer identity tracking.'");
-  await executeIgnoring("COMMENT ON VIEW stwl_session_summary IS 'Derived per-session gameplay summary for deterministic commentary prompts and Select AI demos.'");
+  await executeIgnoring("COMMENT ON TABLE stwl_session_summary IS 'Derived per-session gameplay summary for deterministic commentary prompts and Select AI demos.'");
 }
 
 async function persistOracle(event) {
