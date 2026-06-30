@@ -2754,6 +2754,13 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(packageSql, /FOR v_attempt IN 1 \.\. 2 LOOP/i);
   assert.match(packageSql, /previous sentence failed validation/i);
   assert.match(packageSql, /select_ai_output_unsupported_outcome_or_causality/i);
+  assert.match(packageSql, /FUNCTION evidence_safe_text/i);
+  assert.match(packageSql, /select_ai_output_unsupported_game_fact/i);
+  assert.match(packageSql, /Do not mention any metric, event, mechanic, or history whose JSON value is zero, null, empty, or absent/i);
+  assert.match(packageSql, /\$\.powerups\.powerup_shield/i);
+  assert.match(packageSql, /\$\.powerups\.powerup_speed/i);
+  assert.match(packageSql, /\$\.powerups\.powerup_magnet/i);
+  assert.match(packageSql, /\$\.powerups\.powerup_freeze/i);
   assert.match(packageSql, /freezes count means this player was frozen/i);
   assert.ok(
     packageSql.indexOf("v_text := select_ai_script") < packageSql.indexOf("v_text := agent_team_script"),
@@ -2773,6 +2780,9 @@ test("ships SQL assets for Select AI profile and in-database agent workflow", ()
   assert.match(runtimePackageSql, /FOR v_attempt IN 1 \.\. 2 LOOP/i);
   assert.match(runtimePackageSql, /previous sentence failed validation/i);
   assert.match(runtimePackageSql, /select_ai_output_unsupported_outcome_or_causality/i);
+  assert.match(runtimePackageSql, /FUNCTION evidence_safe_text/i);
+  assert.match(runtimePackageSql, /select_ai_output_unsupported_game_fact/i);
+  assert.match(runtimePackageSql, /Do not mention any metric, event, mechanic, or history whose JSON value is zero, null, empty, or absent/i);
   assert.match(pafManifest, /name:\s*INDB_AGENT_AUTO_INIT\s*\n\s*value:\s*"true"/i);
 
   assert.match(profileSql, /DBMS_CLOUD_ADMIN\.ENABLE_RESOURCE_PRINCIPAL/i);

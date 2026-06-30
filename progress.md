@@ -2158,3 +2158,11 @@ Original prompt: [$develop-web-game](/Users/wojtekpluta/.codex/skills/develop-we
   - Validation passed: focused pickup tests `39/39`, full web suite `94/94`, production webpack build, and all 12 local Chrome/WebKit desktop/mobile pickup scenarios. HUD/object feedback measured `0-1ms`, authority remained canonical, all items were reachable, and frame budgets passed.
   - Public multiplayer remained healthy on web `0.0.104`: three human clients shared one room; WebKit and mobile observers saw `7.9` world units of smooth remote movement with zero large jumps.
   - Combined immutable release target is web `0.0.105`, server `0.0.72`, and PAF `0.0.33`; GitHub push and OCI DevOps rollout remain pending.
+
+2026-06-30 Select AI zero-evidence retry hardening:
+  - Public three-player result QA exposed two genuine Select AI sentences that mentioned absent facts (for example, "no marine hits or trail crosses"). The JavaScript evidence gate correctly rejected them, but the PL/SQL package had already returned them without using its second generation attempt.
+  - Added `evidence_safe_text` to both the deployable and embedded `STWL_COMMENTARY_PKG` bodies. It rejects references to zero/absent trash, marine hits, trails, freezes, individual powerups, and prior-best history before a sentence leaves Oracle AI Database.
+  - Strengthened the second-attempt prompt so Select AI never describes absent metrics, including negated statements. Direct, unmodified Select AI output remains mandatory; no deterministic text is relabeled as LLM commentary.
+  - Prepared PAF `0.0.34` and pinned SQL-asset tests for the new evidence validator and retry instruction.
+  - Validation passed: PAF `45/45`, Node syntax, Kustomize strict Select AI/auto-init wiring, and scoped diff integrity.
+  - TODO: commit/push PAF `0.0.34`, run OCI DevOps build/deploy, then rerun three-player commentary, public pickup matrix, multiplayer movement, and canonical timer acceptance.

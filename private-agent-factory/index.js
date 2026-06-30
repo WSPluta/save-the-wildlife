@@ -2065,6 +2065,55 @@ END STWL_COMMENTARY_PKG;`,
     RETURN REGEXP_LIKE(v_text, '(^|[^[:digit:]-])' || v_score_pattern || '($|[^[:digit:]])');
   END;
 
+  FUNCTION evidence_safe_text(p_text IN VARCHAR2, p_summary IN CLOB) RETURN BOOLEAN IS
+    v_text            VARCHAR2(32767) := LOWER(NVL(p_text, ''));
+    v_trash           NUMBER := NVL(JSON_VALUE(p_summary, '$.trash_collected' RETURNING NUMBER DEFAULT 0 ON ERROR), 0);
+    v_hits            NUMBER := NVL(JSON_VALUE(p_summary, '$.marine_hits' RETURNING NUMBER DEFAULT 0 ON ERROR), 0);
+    v_trails          NUMBER := NVL(JSON_VALUE(p_summary, '$.trail_crosses' RETURNING NUMBER DEFAULT 0 ON ERROR), 0);
+    v_freezes         NUMBER := NVL(JSON_VALUE(p_summary, '$.freezes' RETURNING NUMBER DEFAULT 0 ON ERROR), 0);
+    v_shield          NUMBER := NVL(JSON_VALUE(p_summary, '$.powerups.powerup_shield' RETURNING NUMBER DEFAULT 0 ON ERROR), 0);
+    v_speed           NUMBER := NVL(JSON_VALUE(p_summary, '$.powerups.powerup_speed' RETURNING NUMBER DEFAULT 0 ON ERROR), 0);
+    v_magnet          NUMBER := NVL(JSON_VALUE(p_summary, '$.powerups.powerup_magnet' RETURNING NUMBER DEFAULT 0 ON ERROR), 0);
+    v_freeze_powerup  NUMBER := NVL(JSON_VALUE(p_summary, '$.powerups.powerup_freeze' RETURNING NUMBER DEFAULT 0 ON ERROR), 0);
+    v_powerups        VARCHAR2(4000) := REGEXP_REPLACE(NVL(JSON_QUERY(p_summary, '$.powerups'), '{}'), '[[:space:]]+', '');
+    v_prior           VARCHAR2(64) := JSON_VALUE(p_summary, '$.prior_best_score');
+  BEGIN
+    IF v_trash <= 0 AND REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(trash|pickup|pickups)([^[:alnum:]_]|$)', 'i') THEN
+      RETURN FALSE;
+    END IF;
+    IF v_hits <= 0 AND REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(marine|turtle|turtles)([^[:alnum:]_]|$)', 'i') THEN
+      RETURN FALSE;
+    END IF;
+    IF v_trails <= 0 AND REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(trail|trails|cross|crossed|crosses|crossing|crossings)([^[:alnum:]_]|$)', 'i') THEN
+      RETURN FALSE;
+    END IF;
+    IF v_freezes <= 0 AND v_freeze_powerup <= 0
+       AND REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(freeze|freezes|frozen|freezing)([^[:alnum:]_]|$)', 'i') THEN
+      RETURN FALSE;
+    END IF;
+    IF v_powerups = '{}' AND REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(powerup|powerups|power-up|power-ups|boost|boosts)([^[:alnum:]_]|$)', 'i') THEN
+      RETURN FALSE;
+    END IF;
+    IF v_shield <= 0 AND REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(shield|shields)([^[:alnum:]_]|$)', 'i') THEN
+      RETURN FALSE;
+    END IF;
+    IF v_speed <= 0 AND REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(speed)([^[:alnum:]_]|$)', 'i') THEN
+      RETURN FALSE;
+    END IF;
+    IF v_magnet <= 0 AND REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(magnet|magnets|magnetic)([^[:alnum:]_]|$)', 'i') THEN
+      RETURN FALSE;
+    END IF;
+    IF v_freeze_powerup <= 0
+       AND REGEXP_LIKE(v_text, '(freeze[^[:alnum:]_]+(powerup|power-up|boost)|(powerup|power-up)[^[:alnum:]_]+freeze)', 'i') THEN
+      RETURN FALSE;
+    END IF;
+    IF v_prior IS NULL
+       AND REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(prior best|personal best|record score|new record)([^[:alnum:]_]|$)', 'i') THEN
+      RETURN FALSE;
+    END IF;
+    RETURN TRUE;
+  END;
+
   FUNCTION profile_model(p_profile IN VARCHAR2) RETURN VARCHAR2 IS
     v_model VARCHAR2(4000);
   BEGIN
@@ -2120,6 +2169,8 @@ END STWL_COMMENTARY_PKG;`,
         p_error := 'select_ai_output_meta_commentary';
       ELSIF REGEXP_LIKE(v_text, '(^|[^[:alnum:]_])(win|wins|won|victory|champion|opponent|opponents|rival|rivals|froze|freezing)([^[:alnum:]_]|$)', 'i') THEN
         p_error := 'select_ai_output_unsupported_outcome_or_causality';
+      ELSIF NOT evidence_safe_text(v_text, p_summary) THEN
+        p_error := 'select_ai_output_unsupported_game_fact';
       ELSIF NOT score_safe_text(v_text, p_summary) THEN
         p_error := 'select_ai_output_missing_or_wrong_final_score';
       ELSE
@@ -2129,7 +2180,7 @@ END STWL_COMMENTARY_PKG;`,
 
       v_prompt := build_prompt(p_summary) ||
         ' Correction: the previous sentence failed validation (' || p_error ||
-        '). Generate a new sentence. It must include the exact player name and exact final numeric score from the JSON.';
+        '). Generate a new sentence. It must include the exact player name and exact final numeric score from the JSON. Do not mention any metric, event, mechanic, or history whose JSON value is zero, null, empty, or absent, even to say it did not happen.';
     END LOOP;
     RETURN NULL;
   EXCEPTION
