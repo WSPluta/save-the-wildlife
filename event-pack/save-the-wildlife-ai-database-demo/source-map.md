@@ -68,6 +68,19 @@ Use this to answer technical follow-up questions.
 | Event validation and persistence shape are tested | `server/test/gameEvents.test.js` |
 | Mobile joystick behavior is tested | `web/src/__tests__/mobileControls.test.js` |
 
+## Production Memory Patterns
+
+Use this section when the audience asks how the game pattern becomes a real enterprise agent system.
+
+| Claim | Source |
+|---|---|
+| Tenant scope is structurally different from user, agent, and thread scope | [production-agent-memory-patterns.md](production-agent-memory-patterns.md); source draft: *From Prompt to Persistence: Designing Multi-Tenant Agent Memory Schemas for SaaS* |
+| Row-level policy should enforce tenant boundaries below the model | [production-agent-memory-patterns.md](production-agent-memory-patterns.md); production pseudocode adapted from the multi-tenant memory draft |
+| Memory should be typed before retrieval | [production-agent-memory-patterns.md](production-agent-memory-patterns.md); source draft: *From RAG to Memory Systems: Building Stateful AI Architecture* |
+| Structured rows are truth and vector indexes are acceleration | [production-agent-memory-patterns.md](production-agent-memory-patterns.md) |
+| Promotion gates decide which traces become durable memory or training examples | [production-agent-memory-patterns.md](production-agent-memory-patterns.md); `STWL_MODEL_TRACES`, `STWL_MODEL_EVALS`, `STWL_TRAINING_EXAMPLES` |
+| Context should be reassembled every turn rather than accumulated forever | [production-agent-memory-patterns.md](production-agent-memory-patterns.md) |
+
 ## Model AI Proof Matrix
 
 Use this section when an AI engineer asks what is proven live versus what is still intentionally gated.
@@ -142,15 +155,15 @@ Expected current presenter verdict is `ready_with_caveats`, because the smoke se
 
 | Talk point | Notebook |
 |---|---|
-| Agent = Model + Harness | `/Users/wojtekpluta/Downloads/enterprise_data_agent_heavyweight.ipynb` |
-| Scenario-first harness design | `/Users/wojtekpluta/Downloads/enterprise_data_agent_heavyweight.ipynb` |
-| Semantic tool retrieval and skillbox | `/Users/wojtekpluta/Downloads/enterprise_data_agent_heavyweight.ipynb` |
-| Tool-output offload | `/Users/wojtekpluta/Downloads/enterprise_data_agent_heavyweight.ipynb` |
-| Identity-aware authorization | `/Users/wojtekpluta/Downloads/enterprise_data_agent_heavyweight.ipynb` |
-| Memory types and context engineering | `/Users/wojtekpluta/Downloads/memory_context_engineering_agents.ipynb` |
-| Programmatic vs agentic memory operations | `/Users/wojtekpluta/Downloads/memory_context_engineering_agents.ipynb` |
-| Long-conversation memory comparison | `/Users/wojtekpluta/Downloads/oracle_agent_memory_long_conversations (1).ipynb` |
-| Scoped retrieval does not leak | `/Users/wojtekpluta/Downloads/oracle_agent_memory_long_conversations (1).ipynb` |
+| Agent = Model + Harness | *Enterprise Data Agent (Heavyweight)*; see [notebook-cta-map.md](notebook-cta-map.md) |
+| Scenario-first harness design | *Enterprise Data Agent (Heavyweight)*; see [notebook-cta-map.md](notebook-cta-map.md) |
+| Semantic tool retrieval and skillbox | *Enterprise Data Agent (Heavyweight)*; see [notebook-cta-map.md](notebook-cta-map.md) |
+| Tool-output offload | *Enterprise Data Agent (Heavyweight)*; see [notebook-cta-map.md](notebook-cta-map.md) |
+| Identity-aware authorization | *Enterprise Data Agent (Heavyweight)*; see [notebook-cta-map.md](notebook-cta-map.md) |
+| Memory types and context engineering | *Memory and Context Engineering for Agents*; see [notebook-cta-map.md](notebook-cta-map.md) |
+| Programmatic vs agentic memory operations | *Memory and Context Engineering for Agents*; see [notebook-cta-map.md](notebook-cta-map.md) |
+| Long-conversation memory comparison | *Oracle Agent Memory for Long Conversations*; see [notebook-cta-map.md](notebook-cta-map.md) |
+| Scoped retrieval does not leak | *Oracle Agent Memory for Long Conversations*; see [notebook-cta-map.md](notebook-cta-map.md) |
 
 ## Technical Sound Bites With Proof
 

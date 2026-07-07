@@ -118,7 +118,19 @@ CTA each notebook: build the harness, engineer memory/context, prove scoped retr
 
 Point advanced builders to [bot-data-and-ollama-training-runbook.md](bot-data-and-ollama-training-runbook.md) for the secure OCI A10/Ollama retraining path.
 
-## Slide 10 - "CTA: Build Agents Around Truth"
+## Slide 10 - "Select AI Fast Path"
+
+**Claim:** For live commentary, the fastest useful path is close to the data.
+
+**Visual:** Code callout:
+`SQL summary -> Select AI profile -> <=200 char live line`
+
+**Speaker notes:**
+Use the measured public smoke proof: Select AI returned the live commentary path in about 1.1 seconds after the latest deployment, with the earlier smoke at about 1.57 seconds, while the older external model orchestration path was roughly 36 seconds. Do not say "no model." Say: same recorded telemetry, fewer hops, less orchestration, lower latency. Richer model routing can still run as a shadow or recap path.
+
+**Proof boundary:** This is a demo measurement, not a universal benchmark. Tie the claim to the public endpoint receipt and response metadata.
+
+## Slide 11 - "CTA: Build Agents Around Truth"
 
 **Claim:** Modern enterprise agents need governed memory, deterministic tools, and bounded generation.
 

@@ -63,6 +63,35 @@ const FFPROBE_CANDIDATES = [
   "ffprobe",
 ].filter(Boolean);
 const PROFANITY_BLOCKLIST = ["fuck", "shit", "bitch", "bastard", "asshole", "cunt"];
+const STAGE_DRIVER_KEYS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD"];
+const STAGE_DRIVER_STEP_MS = 320;
+const STAGE_DRIVER_SAMPLE_MS = 1000;
+const STAGE_DRIVER_WAYPOINTS = [
+  [
+    { x: -18, z: 2.8 },
+    { x: 0, z: 3.3 },
+    { x: 18, z: 2.7 },
+    { x: 23, z: -2.6 },
+    { x: 5, z: -3.3 },
+    { x: -19, z: -2.8 },
+  ],
+  [
+    { x: 18, z: -2.8 },
+    { x: -2, z: -3.3 },
+    { x: -22, z: -2.6 },
+    { x: -17, z: 2.9 },
+    { x: 4, z: 3.3 },
+    { x: 22, z: 2.2 },
+  ],
+  [
+    { x: 0, z: -3.3 },
+    { x: 21, z: -2.8 },
+    { x: 23, z: 2.7 },
+    { x: 2, z: 3.4 },
+    { x: -22, z: 2.6 },
+    { x: -15, z: -3.0 },
+  ],
+];
 
 function argValue(name, fallback) {
   const flag = `--${name}`;
@@ -269,6 +298,168 @@ function keyEventShape(code) {
   return { code, key: keyByCode[code] || code };
 }
 
+function finiteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizeAngleRadians(value) {
+  let angle = finiteNumber(value, 0);
+  while (angle > Math.PI) angle -= Math.PI * 2;
+  while (angle < -Math.PI) angle += Math.PI * 2;
+  return angle;
+}
+
+function playerPositionFromState(state) {
+  const player = state?.player || {};
+  const x = Number(player.x);
+  const z = Number(player.z);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  return { x, z, rotY: finiteNumber(player.rotY, 0), speed: finiteNumber(player.speed, 0) };
+}
+
+function distance2d(a, b) {
+  if (!a || !b) return 0;
+  return Math.hypot(finiteNumber(a.x) - finiteNumber(b.x), finiteNumber(a.z) - finiteNumber(b.z));
+}
+
+function isNearBoundary(state, position = playerPositionFromState(state)) {
+  if (!position) return false;
+  const boundary = state?.worldBoundary || {};
+  if (boundary.hit === true) return true;
+  const halfX = Number(boundary.halfX);
+  const halfZ = Number(boundary.halfZ);
+  if (!Number.isFinite(halfX) || !Number.isFinite(halfZ)) return false;
+  return Math.abs(position.x) > halfX - 3.2 || Math.abs(position.z) > halfZ - 2.2;
+}
+
+function shouldRecoverForStageDriver(state, position = playerPositionFromState(state)) {
+  if (!position) return false;
+  const boundary = state?.worldBoundary || {};
+  if (boundary.hit === true) return true;
+  const halfX = Number(boundary.halfX);
+  const halfZ = Number(boundary.halfZ);
+  if (!Number.isFinite(halfX) || !Number.isFinite(halfZ)) return false;
+  return Math.abs(position.x) > halfX - 5.5 || Math.abs(position.z) > halfZ - 4.5;
+}
+
+function createMotionTracker(client) {
+  return {
+    label: client.label,
+    name: client.name,
+    samples: [],
+    distance: 0,
+    meaningfulChanges: 0,
+    boundarySamples: 0,
+    staleSamples: 0,
+    lastPosition: null,
+    startedAt: Date.now(),
+    endedAt: null,
+  };
+}
+
+function appendMotionSample(tracker, state) {
+  const position = playerPositionFromState(state);
+  if (!position) {
+    tracker.staleSamples += 1;
+    return;
+  }
+  const now = Date.now();
+  if (tracker.lastPosition) {
+    const delta = distance2d(position, tracker.lastPosition);
+    tracker.distance += delta;
+    if (delta >= 0.18) tracker.meaningfulChanges += 1;
+    else tracker.staleSamples += 1;
+  }
+  if (isNearBoundary(state, position)) tracker.boundarySamples += 1;
+  tracker.lastPosition = { ...position, at: now };
+  tracker.samples.push({
+    at: now,
+    x: Number(position.x.toFixed(2)),
+    z: Number(position.z.toFixed(2)),
+    rotY: Number(position.rotY.toFixed(3)),
+    speed: Number(position.speed.toFixed(3)),
+    boundary: isNearBoundary(state, position),
+  });
+  if (tracker.samples.length > 120) tracker.samples.shift();
+}
+
+function summarizeMotionTracker(tracker) {
+  const samples = tracker.samples || [];
+  const durationSeconds = Math.max(1, ((tracker.endedAt || Date.now()) - tracker.startedAt) / 1000);
+  const boundaryRatio = samples.length ? tracker.boundarySamples / samples.length : 1;
+  const distance = Number((tracker.distance || 0).toFixed(2));
+  const averageSpeed = Number((distance / durationSeconds).toFixed(2));
+  const status = samples.length >= 10 &&
+    distance >= 18 &&
+    tracker.meaningfulChanges >= 8 &&
+    boundaryRatio <= 0.55
+    ? "pass"
+    : "fail";
+  return {
+    label: tracker.label,
+    name: tracker.name,
+    status,
+    samples: samples.length,
+    distance,
+    averageSpeed,
+    meaningfulChanges: tracker.meaningfulChanges,
+    boundarySamples: tracker.boundarySamples,
+    boundaryRatio: Number(boundaryRatio.toFixed(2)),
+    staleSamples: tracker.staleSamples,
+    first: samples[0] || null,
+    last: samples[samples.length - 1] || null,
+  };
+}
+
+function chooseStageDriverWaypoint(client, state, clientIndex) {
+  const position = playerPositionFromState(state) || { x: 0, z: 0, rotY: 0 };
+  const boundary = state?.worldBoundary || {};
+  const halfX = Number.isFinite(Number(boundary.halfX)) ? Math.max(6, Number(boundary.halfX) - 7) : 22;
+  const halfZ = Number.isFinite(Number(boundary.halfZ)) ? Math.max(2.8, Number(boundary.halfZ) - 7) : 3.3;
+  if (!client.driverState) {
+    client.driverState = {
+      index: clientIndex % STAGE_DRIVER_WAYPOINTS[clientIndex % STAGE_DRIVER_WAYPOINTS.length].length,
+      changedAt: Date.now(),
+    };
+  }
+  const waypoints = STAGE_DRIVER_WAYPOINTS[clientIndex % STAGE_DRIVER_WAYPOINTS.length];
+  const current = waypoints[client.driverState.index % waypoints.length];
+  const target = {
+    x: Math.max(-halfX, Math.min(halfX, current.x)),
+    z: Math.max(-halfZ, Math.min(halfZ, current.z)),
+  };
+  if (distance2d(position, target) < 3.2 || Date.now() - client.driverState.changedAt > 8000) {
+    client.driverState.index = (client.driverState.index + 1) % waypoints.length;
+    client.driverState.changedAt = Date.now();
+  }
+  if (shouldRecoverForStageDriver(state, position)) return { x: 0, z: 0, boundaryRecovery: true };
+  const next = waypoints[client.driverState.index % waypoints.length];
+  return {
+    x: Math.max(-halfX, Math.min(halfX, next.x)),
+    z: Math.max(-halfZ, Math.min(halfZ, next.z)),
+    boundaryRecovery: false,
+  };
+}
+
+function chooseStageDriverKeys(client, state, clientIndex) {
+  const position = playerPositionFromState(state);
+  if (!position) return ["ArrowUp"];
+  const target = chooseStageDriverWaypoint(client, state, clientIndex);
+  const desiredYaw = Math.atan2(target.x - position.x, target.z - position.z);
+  const yawDelta = normalizeAngleRadians(desiredYaw - position.rotY);
+  const keys = [];
+  const hardTurn = Math.abs(yawDelta) > 1.65;
+  const steeringKey = yawDelta > 0 ? "ArrowRight" : "ArrowLeft";
+  if (Math.abs(yawDelta) > 0.08) keys.push(steeringKey);
+  if (target.boundaryRecovery && hardTurn) {
+    keys.push("ArrowDown");
+  } else {
+    keys.push("ArrowUp");
+  }
+  return keys.length ? keys : ["ArrowUp"];
+}
+
 async function installGameOverlay(page, { label, name, room, roster }) {
   return { ok: true, label, name, room, roster };
 }
@@ -374,21 +565,30 @@ async function setPageKeys(page, keys, value) {
 }
 
 async function releaseStageKeys(page) {
-  await setPageKeys(page, ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD"], false).catch(() => {});
+  await setPageKeys(page, STAGE_DRIVER_KEYS, false).catch(() => {});
 }
 
-async function driveClient(client, fallbackDurationMs) {
+async function driveClient(client, { durationMs, signal, clientIndex = 0, tracker = null } = {}) {
   await client.page.click("canvas", { timeout: 5000 }).catch(() => {});
-  const pathSteps = Array.isArray(client.path) && client.path.length
-    ? client.path
-    : [{ keys: ["ArrowUp"], ms: fallbackDurationMs }];
-  for (const step of pathSteps) {
-    const keys = Array.isArray(step.keys) ? step.keys : ["ArrowUp"];
+  const started = Date.now();
+  let nextSampleAt = 0;
+  while (!signal?.stop && Date.now() - started < Math.max(1000, Number(durationMs || 0))) {
+    const state = await readState(client.page).catch(() => null);
+    if (tracker && Date.now() >= nextSampleAt) {
+      appendMotionSample(tracker, state);
+      nextSampleAt = Date.now() + STAGE_DRIVER_SAMPLE_MS;
+    }
+    const keys = chooseStageDriverKeys(client, state, clientIndex);
+    await releaseStageKeys(client.page);
     await setPageKeys(client.page, keys, true);
-    await sleep(Math.max(120, Number(step.ms || 0)));
-    await setPageKeys(client.page, keys, false).catch(() => {});
+    await sleep(STAGE_DRIVER_STEP_MS + clientIndex * 35);
   }
   await releaseStageKeys(client.page);
+  if (tracker) {
+    tracker.endedAt = Date.now();
+    const finalState = await readState(client.page).catch(() => null);
+    appendMotionSample(tracker, finalState);
+  }
 }
 
 function summarizeHumanRemotes(state, ownName, allNames) {
@@ -613,12 +813,37 @@ function probeVideo(ffprobe, filePath) {
   return JSON.parse(result.stdout || "{}");
 }
 
+function videoDurationSeconds(media = {}) {
+  const formatDuration = Number(media?.format?.duration);
+  if (Number.isFinite(formatDuration) && formatDuration > 0) return formatDuration;
+  const streamDuration = (media?.streams || [])
+    .map((stream) => Number(stream.duration))
+    .find((value) => Number.isFinite(value) && value > 0);
+  return streamDuration || 0;
+}
+
+async function extractProofFrame(ffmpeg, videoPath, outputPath, atSeconds) {
+  run(ffmpeg, [
+    "-y",
+    "-ss", Math.max(0.1, Number(atSeconds || 0)).toFixed(3),
+    "-i", videoPath,
+    "-frames:v", "1",
+    "-update", "1",
+    outputPath,
+  ]);
+  return pathExists(outputPath);
+}
+
 async function main() {
   const baseUrl = normalizeBaseUrl(argValue("base-url", DEFAULT_BASE_URL));
   const outputDir = argValue("output-dir", DEFAULT_OUTPUT_DIR);
   const room = argValue("room", `DEMO-STAGE-${Date.now().toString().slice(-6)}`);
   const timeoutMs = Number(argValue("timeout-ms", "180000"));
-  const driveMs = Number(argValue("drive-ms", "6000"));
+  const requestedDriveMs = Number(argValue("drive-ms", "0"));
+  const driveMs = Math.max(
+    Number.isFinite(requestedDriveMs) ? requestedDriveMs : 0,
+    (GAMEPLAY_SEGMENT_SECONDS - 4) * 1000,
+  );
   const outputVideoName = "save-the-wildlife-same-room-competition-commentary-proof.mp4";
   const videosDir = path.join(outputDir, "videos");
   const rawDir = path.join(outputDir, "raw");
@@ -629,9 +854,12 @@ async function main() {
   const emittedGameEvents = [];
   const socketEvents = [];
   const stageLedger = [];
+  let motionSummaries = [];
   let browser = null;
   let monitorSocket = null;
   let observability = null;
+  let driverAbort = null;
+  let driverTasks = [];
 
   await fs.rm(outputDir, { recursive: true, force: true });
   await fs.mkdir(videosDir, { recursive: true });
@@ -754,9 +982,18 @@ async function main() {
     });
     await appendObservabilityLedger(observability, stageLedger, `Item mix visible: ${countBefore.trash} trash, ${countBefore.turtles} turtles, ${countBefore.powerups} powerups`, { color: "#c9f7f2" });
 
-    await Promise.all(clients.map((client) => driveClient(client, driveMs)));
-    await appendObservabilityLedger(observability, stageLedger, "Scripted player paths completed in the public room", { color: "#20d5c2" });
-    await sleep(1000);
+    driverAbort = { stop: false };
+    for (const client of clients) client.motionTracker = createMotionTracker(client);
+    driverTasks = clients.map((client, idx) =>
+      driveClient(client, {
+        durationMs: driveMs,
+        signal: driverAbort,
+        clientIndex: idx,
+        tracker: client.motionTracker,
+      })
+    );
+    await appendObservabilityLedger(observability, stageLedger, "Continuous player driving active for video QA", { color: "#20d5c2" });
+    await sleep(6500);
 
     const afterDrive = {};
     for (const client of clients) {
@@ -1002,6 +1239,19 @@ async function main() {
 
     await sleep(9000);
     const gameplayCaptureEndedAt = Date.now();
+    if (driverAbort) driverAbort.stop = true;
+    if (driverTasks.length) await Promise.allSettled(driverTasks);
+    motionSummaries = clients.map((client) => summarizeMotionTracker(client.motionTracker || createMotionTracker(client)));
+    checks.push({
+      name: "recording keeps player boats moving throughout gameplay",
+      status: motionSummaries.every((summary) => summary.status === "pass") ? "pass" : "fail",
+      minimumDistance: 18,
+      maximumBoundaryRatio: 0.55,
+      summaries: motionSummaries,
+    });
+    await appendObservabilityLedger(observability, stageLedger, `Motion QA: ${motionSummaries.filter((summary) => summary.status === "pass").length}/${clients.length} players stayed active`, {
+      color: motionSummaries.every((summary) => summary.status === "pass") ? "#20d5c2" : "#ffcc66",
+    });
     checks.push({
       name: "commentary is available for the real observability view",
       status: summaries.length === clients.length ? "pass" : "fail",
@@ -1041,14 +1291,27 @@ async function main() {
     const outputVideo = path.join(outputDir, outputVideoName);
     buildGameplayComposite(ffmpeg, rawVideoPaths, outputVideo, trimOffsets, gameplayDurationSeconds);
 
-    const countdownFrame = path.join(outputDir, "proof-countdown-frame.png");
-    run(ffmpeg, ["-y", "-ss", "1.200", "-i", outputVideo, "-frames:v", "1", "-update", "1", countdownFrame]);
-    const gameplayFrame = path.join(outputDir, "proof-gameplay-frame.png");
-    run(ffmpeg, ["-y", "-ss", "00:00:15", "-i", outputVideo, "-frames:v", "1", "-update", "1", gameplayFrame]);
-    const commentaryFrame = path.join(outputDir, "proof-commentary-frame.png");
-    run(ffmpeg, ["-y", "-ss", Math.max(1, gameplayDurationSeconds - 5).toFixed(3), "-i", outputVideo, "-frames:v", "1", "-update", "1", commentaryFrame]);
-
     const media = probeVideo(ffprobe, outputVideo);
+    const actualVideoDurationSeconds = videoDurationSeconds(media) || gameplayDurationSeconds;
+    const countdownFrame = path.join(outputDir, "proof-countdown-frame.png");
+    const countdownFrameOk = await extractProofFrame(ffmpeg, outputVideo, countdownFrame, Math.min(1.2, Math.max(0.2, actualVideoDurationSeconds - 0.5)));
+    const gameplayFrame = path.join(outputDir, "proof-gameplay-frame.png");
+    const gameplayFrameAt = Math.max(6, Math.min(actualVideoDurationSeconds - 8, actualVideoDurationSeconds * 0.45));
+    const gameplayFrameOk = await extractProofFrame(ffmpeg, outputVideo, gameplayFrame, gameplayFrameAt);
+    const commentaryFrame = path.join(outputDir, "proof-commentary-frame.png");
+    const commentaryFrameAt = Math.max(1, actualVideoDurationSeconds - 4);
+    const commentaryFrameOk = await extractProofFrame(ffmpeg, outputVideo, commentaryFrame, commentaryFrameAt);
+    checks.push({
+      name: "proof frames extracted from actual encoded video",
+      status: countdownFrameOk && gameplayFrameOk && commentaryFrameOk ? "pass" : "fail",
+      actualVideoDurationSeconds,
+      frameTimes: {
+        countdown: Number(Math.min(1.2, Math.max(0.2, actualVideoDurationSeconds - 0.5)).toFixed(3)),
+        gameplay: Number(gameplayFrameAt.toFixed(3)),
+        commentary: Number(commentaryFrameAt.toFixed(3)),
+      },
+      frames: { countdownFrame, gameplayFrame, commentaryFrame },
+    });
     const failed = checks.filter((check) => checkStatus(check.status) === "fail");
     const result = {
       status: failed.length ? "fail" : "pass",
@@ -1074,10 +1337,12 @@ async function main() {
       },
       pickupEvents,
       commentary: summaries,
+      motion: motionSummaries,
       stageLedger,
       checks,
       socketEvents: socketEvents.slice(-80),
       gameplayDurationSeconds,
+      actualVideoDurationSeconds,
       generatedAt: new Date().toISOString(),
     };
     await fs.writeFile(path.join(outputDir, "recording-report.json"), `${JSON.stringify(result, null, 2)}\n`);
@@ -1095,6 +1360,7 @@ async function main() {
       `- Fourth browser: public /admin/observability`,
       `- Video flow: countdown -> multiplayer gameplay + real observability -> commentary ready`,
       `- Gameplay duration: ${gameplayDurationSeconds.toFixed(1)} seconds`,
+      `- Encoded video duration: ${actualVideoDurationSeconds.toFixed(1)} seconds`,
       `- Trim offsets: ${trimOffsets.map((value) => value.toFixed(3)).join(", ")} seconds`,
       "",
       "## Checks",
@@ -1106,12 +1372,17 @@ async function main() {
       "## Commentary",
       ...summaries.map((summary) => `- ${summary.player_name}: "${summary.text}" (${summary.source}, ${summary.length} chars)`),
       "",
+      "## Motion QA",
+      ...motionSummaries.map((summary) => `- ${summary.label}: ${summary.status.toUpperCase()} ${summary.distance}m over ${summary.samples} samples, boundary ratio ${summary.boundaryRatio}`),
+      "",
       "## Stage Ledger",
       ...stageLedger.map((entry) => `- ${entry.at}: ${entry.text}`),
     ];
     await fs.writeFile(path.join(outputDir, "recording-report.md"), `${lines.join("\n")}\n`);
     if (failed.length) process.exitCode = 1;
   } finally {
+    if (driverAbort) driverAbort.stop = true;
+    if (driverTasks.length) await Promise.allSettled(driverTasks).catch(() => {});
     if (monitorSocket) monitorSocket.disconnect();
     if (observability?.context) await observability.context.close().catch(() => {});
     if (browser) await browser.close().catch(() => {});

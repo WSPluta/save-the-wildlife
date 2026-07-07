@@ -10,6 +10,7 @@ npm run check:conference-demo:transport
 npm run check:conference-demo:game
 npm run check:conference-demo:stage
 npm run check:model-ai-demo:proof
+npm run check:paf-canvas-mcp
 ```
 
 Open these receipts:
@@ -19,6 +20,7 @@ Open these receipts:
 - `.codex_tmp/conference-stage-brief/latest.md`
 - `.codex_tmp/conference-preflight/latest.md`
 - `.codex_tmp/model-ai-readiness/proof-bundle.md`
+- `.codex_tmp/paf-canvas-mcp-proof/latest.md`
 - [source-map.md](source-map.md)
 
 ## Current Presenter Posture
@@ -39,8 +41,10 @@ Do not turn `ready_with_caveats` into a problem. For AI engineers, the caveat is
 | Oracle AI Database is the match-intelligence layer | `.codex_tmp/conference-preflight/latest.md`; `/paf/api/context`; `deploy/db/stwl_match_intelligence.sql`; `deploy/db/stwl_commentary_pkg.sql` | "SQL gives the facts, JSON carries flexible payloads, graph explains relationships, and vector memory is available when similar moments exist." | "Replay or vector evidence exists for this smoke call when the receipt says `0`." |
 | Commentary is grounded and bounded | `/paf/api/commentary`; `.codex_tmp/conference-preflight/latest.md`: length, warning, source, fallback, runtime mode, trace persisted | "The sentence is short because the harness applies policy and evidence boundaries." | "The line is safe because the model promised it." |
 | Canvas and PAF are part of the deployed agent surface | `/paf/healthz`; `deploy/k8s/base/private-agent-factory/private-agent-factory.yaml`; `deploy/k8s/base/ingress/paf-ingress.yaml`; [architecture.md](architecture.md) | "Canvas is the business-facing agent surface; the deployed harness connects it to governed gameplay evidence." | "Canvas produced this exact line" unless the response metadata proves it. |
+| PAF Canvas can read live gameplay data through MCP | `npm run check:paf-canvas-mcp`; `/paf/mcp`; `manifests/private-agent-factory/save-the-wildlife-commentary-canvas-flow.json`; `scripts/import_paf_canvas_flow.py` | "The Canvas flow has a read-only MCP tool surface backed by the same Oracle AI Database telemetry." | "The current public deployment has MCP" until the receipt is ready. |
 | Select AI and in-database agents are part of the Oracle AI Database story | `/paf/healthz`; `deploy/db/select_ai_profile_template.sql`; `deploy/db/stwl_commentary_pkg.sql`; [demo-runbook.md](demo-runbook.md) | "Select AI is the presenter-facing natural-language path; runtime summaries stay deterministic first." | "Runtime depends on vague LLM SQL generation." |
 | The harness is the engineering pattern | [ai-engineer-presenter-card.md](ai-engineer-presenter-card.md); [source-map.md](source-map.md); `.codex_tmp/model-ai-readiness/proof-bundle.md` | "Agent equals model plus harness. The model emits tokens; the harness owns tools, memory, policy, fallback, trace, and live broadcast." | "One big prompt is the architecture." |
+| The production memory pattern is tenant-scoped and typed | [production-agent-memory-patterns.md](production-agent-memory-patterns.md); [source-map.md](source-map.md) | "The demo uses room/session scope; the production pattern adds tenant-scoped typed memory, row-level policy, promotion gates, and context cards." | "The current game tenancy has full multi-tenant RLS installed" unless separately verified. |
 | Scale and model-route proof exist | `.codex_tmp/model-ai-readiness/proof-bundle.md`; `/admin/ai-learning`; `npm run check:model-ai-demo:proof` | "Tier 1000 proves the harness and adapter handoff. Strict upstream is the gate for the two-live-LLM claim." | "Two live private LLM runtimes are serving" until strict upstream passes. |
 | This is a production-shaped gaming template | [architecture.md](architecture.md); [source-map.md](source-map.md); replay and match-intelligence tables | "The production path pairs telemetry with event-aligned clip manifests and governed memory." | "The demo ingests and summarizes raw unbounded video." |
 | The notebooks are CTAs, not stage proof | [notebook-cta-map.md](notebook-cta-map.md) | "The game is the front door; the notebooks are the developer path into harness, memory, and long-conversation patterns." | "The notebooks are required for the live game path to work." |

@@ -42,6 +42,7 @@ dump.rdb
 *.tfstate
 *.tfstate.*
 *.tfvars
+*.tfplan
 override.tf
 override.tf.json
 *_override.tf
@@ -83,6 +84,7 @@ wallet.zip
 deploy/**/application.properties
 deploy/**/application.env
 deploy/k8s/overlays/prod/kustomization.yaml
+deploy/k8s/overlays/devops/kustomization.yaml
 
 ### STS ###
 .apt_generated
@@ -118,3 +120,15 @@ out/
 *.bkp
 blog.txt
 oracle-devrel-save-the-wildlife-8a5edab282632443.txt
+
+# Local Codex and browser-run evidence (may contain OCI responses or credentials)
+.codex_tmp/
+--base-url/
+http:/
+debugLog/
+test-results/
+*.inspect.ndjson
+
+# Generated browser receipts and deck iterations; existing tracked fixtures remain tracked
+output/
+outputs/

@@ -27,9 +27,12 @@ By the end, AI developers should understand four things:
 - [current-proof-snapshot.md](current-proof-snapshot.md): runtime deploy proof, live image tags, green receipts, and gated claims.
 - [final-readiness-audit.md](final-readiness-audit.md): current go/no-go audit mapping the objective to proof receipts and caveats.
 - [continual-learning-operating-model.md](continual-learning-operating-model.md): production-grade continual learning model for token, structured, weight, and skill spaces.
+- [production-agent-memory-patterns.md](production-agent-memory-patterns.md): production-oriented memory, tenancy, RLS, promotion-gate, and context-card patterns adapted from the two long-form agent memory drafts.
+- [telemetry-to-agent-memory-blueprint.md](telemetry-to-agent-memory-blueprint.md): AI-engineer blueprint for how gameplay events land in Oracle AI Database, become agent memory/context, and feed the OCI DevOps learning loop.
 - [bot-data-and-ollama-training-runbook.md](bot-data-and-ollama-training-runbook.md): deployed bot data generation, training export, and secure OCI A10/Ollama proof path.
 - [18-minute-stage-script.md](18-minute-stage-script.md): read-aloud rehearsal script with stage actions, proof boundaries, and timing rescue.
 - [architecture.md](architecture.md): current post-Redis runtime topology and commentary sequence.
+- [advanced-gdd-aie-demo-goal.md](advanced-gdd-aie-demo-goal.md): advanced game and goal design document for the AIE demo use case, milestones, AI behavior contract, and acceptance gates.
 - [slide-outline.md](slide-outline.md): 10-slide deck spine with visual direction and speaker notes.
 - [save-the-wildlife-ai-engineer-demo-deck.pptx](../../outputs/save-the-wildlife-ai-engineer-demo-deck.pptx): editable 10-slide stage deck generated from this event pack.
 - [deck-presenter-notes.md](deck-presenter-notes.md): slide-by-slide timing, talk track, proof cue, and claim boundary for the deck.
@@ -68,6 +71,10 @@ The larger lesson is Canvas plus harness. Canvas is where business users can sha
 - One-command stage brief:
   - `npm run check:conference-demo:stage`
   - receipt: `.codex_tmp/conference-stage-brief/latest.md`
+- PAF Canvas MCP proof:
+  - `npm run check:paf-canvas-mcp`
+  - receipt: `.codex_tmp/paf-canvas-mcp-proof/latest.md`
+  - proves the deployed `/paf/mcp` endpoint advertises Canvas-callable Oracle AI Database tools and can return live context/commentary evidence.
 - Current public game smoke: use `.codex_tmp/conference-stage-brief/latest.md` as the authority
 - Current public conference preflight: `ready_with_caveats`
 - One-command preflight:

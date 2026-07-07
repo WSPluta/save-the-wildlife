@@ -54,6 +54,9 @@ Look at the fields, not just the sentence. `source`, `fallback_source`, `model_r
 
 **Expected current caveat:** the smoke response can be valid with `canvas:null`, `in_db_agent:null`, and `runtime_mode=behavior-adapter`. That is a trust signal, not a failure.
 
+**Speed proof if `source=select-ai`:**
+This is the fast path: same SQL-backed telemetry, fewer orchestration hops, lower latency. Our latest public direct call measured about 1.1 seconds on Select AI, with the earlier smoke at about 1.57 seconds, versus roughly 36 seconds on the older external model route. Do not say "no model call"; say "Select AI is the low-latency live path."
+
 ## Slide 6 - Canvas Shapes, Harness Proves
 
 **Action:** Show health:

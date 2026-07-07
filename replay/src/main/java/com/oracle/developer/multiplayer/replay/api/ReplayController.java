@@ -71,7 +71,12 @@ public class ReplayController {
                 ok.put("noop", true);
                 return ResponseEntity.accepted().body(ok);
             }
-            sodaRepository.insertDocument(collection, json);
+            String sodaWarning = null;
+            try {
+                sodaRepository.insertDocument(collection, json);
+            } catch (Exception sodaError) {
+                sodaWarning = sodaError.getMessage();
+            }
             String manifestWarning = null;
             try {
                 sodaRepository.insertClipManifest(body, json);
@@ -81,6 +86,9 @@ public class ReplayController {
             Map<String, Object> ok = new HashMap<>();
             ok.put("ok", true);
             ok.put("collection", collection);
+            if (sodaWarning != null) {
+                ok.put("sodaWarning", sodaWarning);
+            }
             if (manifestWarning != null) {
                 ok.put("manifestWarning", manifestWarning);
             }
@@ -133,14 +141,15 @@ class SodaRepository {
             "begin\n" +
             "  c := dbms_soda.open_collection(:1);\n" +
             "  if c is null then\n" +
-            "    c := dbms_soda.create_collection(:1);\n" +
+            "    c := dbms_soda.create_collection(:2);\n" +
             "  end if;\n" +
-            "  c.insert(dbms_soda.document_t.parse(:2));\n" +
+            "  c.insert_one(dbms_soda.document_t.parse(:3));\n" +
             "end;";
         try (Connection conn = dataSource.getConnection();
              CallableStatement cs = conn.prepareCall(plsql)) {
             cs.setString(1, collectionName);
-            cs.setString(2, json);
+            cs.setString(2, collectionName);
+            cs.setString(3, json);
             cs.execute();
         }
     }

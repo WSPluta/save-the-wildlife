@@ -100,6 +100,12 @@ fallback is present, trace is persisted.
 **Boundary:** If `canvas:null`, do not say Canvas produced the line. If
 `in_db_agent:null`, do not say the in-db agent produced it.
 
+**Speed proof:** When the public receipt shows `source=select-ai`, call out the
+latency difference carefully: the Select AI fast path returned in about 1.1
+seconds after the latest deployment, with the earlier smoke at about 1.57
+seconds. The older external model orchestration path was roughly 36 seconds.
+Say "same recorded telemetry, fewer hops, lower latency," not "no model."
+
 ## Slide 6: Canvas Shapes. Harness Proves.
 
 **Time:** 8:15-9:45

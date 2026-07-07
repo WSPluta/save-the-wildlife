@@ -1,11 +1,6 @@
 {
-  "url": "http://130.162.174.167/?name=MobilePolish&room=MOBILE-911095&autostart=1",
-  "room": "MOBILE-911095",
-  "error": "page.waitForFunction: Timeout 120000ms exceeded.",
-  "errors": [
-    {
-      "type": "pageerror",
-      "text": "globalThis.crypto?.randomUUID is not a function"
-    }
-  ]
+  "url": "http://127.0.0.1:8080/?name=MobilePolish&room=MOBILE-291754&autostart=1",
+  "room": "MOBILE-291754",
+  "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:8080/?name=MobilePolish&room=MOBILE-291754&autostart=1\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:8080/?name=MobilePolish&room=MOBILE-291754&autostart=1\", waiting until \"domcontentloaded\"\u001b[22m\n",
+  "errors": []
 }

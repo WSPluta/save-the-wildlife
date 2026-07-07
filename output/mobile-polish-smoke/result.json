@@ -1,30 +1,157 @@
 {
-  "url": "http://127.0.0.1:8080/?name=MobilePolish&room=MOBILE-230991&autostart=1",
-  "room": "MOBILE-230991",
+  "url": "http://130.162.174.167/?name=MobilePolish&room=MOBILE-745031&autostart=1",
+  "room": "MOBILE-745031",
   "result": {
     "state": {
       "mode": "RUNNING",
       "coordinateSystem": "World origin is center; +x right, +z forward, +y up",
       "player": {
-        "x": 0,
+        "x": 22,
         "y": 0,
-        "z": 0
+        "z": 5,
+        "rotY": 0,
+        "speed": 0
       },
+      "serverAuthEnabled": true,
+      "authLagMs": 0,
       "score": 0,
-      "timeRemaining": 178,
-      "playersVisible": 0,
-      "itemsVisible": 29,
-      "trashInstances": 11,
-      "powerupInstances": 5,
-      "turtlesVisible": 1,
-      "turtleSamples": [
+      "timeRemaining": 179,
+      "playersVisible": 8,
+      "botsVisible": 5,
+      "botsKnown": 5,
+      "botRenderMode": "demo-visible",
+      "botSamples": [
         {
-          "x": -2.392,
-          "y": -0.06,
-          "z": 11.799,
-          "rotY": 2.319
+          "id": "bot-da5jhCt1n2Xz3aKDg8crtX",
+          "name": "bot-da5jhCt1n2Xz3aKDg8crtX",
+          "botPolicy": null,
+          "x": 0,
+          "y": 0,
+          "z": 5.5,
+          "rotY": 3.142,
+          "scale": 0.28
+        },
+        {
+          "id": "bot-czqqExLFTJadXQ9sNy5iUL",
+          "name": "bot-czqqExLFTJadXQ9sNy5iUL",
+          "botPolicy": null,
+          "x": 4.844,
+          "y": 0,
+          "z": 4.844,
+          "rotY": 3.927,
+          "scale": 0.28
+        },
+        {
+          "id": "bot-83q8MqWMXfJfnjJtEbCdCz",
+          "name": "bot-83q8MqWMXfJfnjJtEbCdCz",
+          "botPolicy": null,
+          "x": 8.2,
+          "y": 0,
+          "z": 0,
+          "rotY": 4.712,
+          "scale": 0.28
+        },
+        {
+          "id": "bot-8ARDkAVVpy3jSzf2QB5gVE",
+          "name": "bot-8ARDkAVVpy3jSzf2QB5gVE",
+          "botPolicy": null,
+          "x": 3.889,
+          "y": 0,
+          "z": -3.889,
+          "rotY": 5.498,
+          "scale": 0.28
+        },
+        {
+          "id": "bot-gcfFSuutuP9wBLxxKGqUy7",
+          "name": "bot-gcfFSuutuP9wBLxxKGqUy7",
+          "botPolicy": null,
+          "x": 0,
+          "y": 0,
+          "z": -6.85,
+          "rotY": 6.283,
+          "scale": 0.28
         }
       ],
+      "botRosterVisual": {
+        "mode": "demo-visible",
+        "hasBoatModel": true,
+        "infoCount": 0,
+        "botIds": 0,
+        "existing": 0,
+        "created": 0,
+        "error": null
+      },
+      "itemsVisible": 21,
+      "trashInstances": 7,
+      "trashSamples": [
+        {
+          "id": "cmUWcGdb1jyKB8taMtdEKJ",
+          "x": 11,
+          "y": 0,
+          "z": 2,
+          "distance": 11.402
+        },
+        {
+          "id": "h8nsjZcgqYHmMvi9vcPTCu",
+          "x": 9,
+          "y": 0,
+          "z": 2,
+          "distance": 13.342
+        },
+        {
+          "id": "t3zXw3yDfigSSJZffeVJvw",
+          "x": 9,
+          "y": 0,
+          "z": 0,
+          "distance": 13.928
+        },
+        {
+          "id": "bsNjhEjheZHsK1C9T8NhPx",
+          "x": 5,
+          "y": 0,
+          "z": 0,
+          "distance": 17.72
+        },
+        {
+          "id": "ugmizZ9Zvv8EvLYahFNCv5",
+          "x": 2,
+          "y": 0,
+          "z": -2,
+          "distance": 21.19
+        }
+      ],
+      "powerupInstances": 2,
+      "environmentPropsVisible": 8,
+      "turtlesVisible": 0,
+      "turtleSamples": [],
+      "camera": {
+        "mobile": true,
+        "distanceToPlayer": 2.487,
+        "relativeY": 1.16,
+        "lookHeight": 0.24,
+        "lookForward": 0.32,
+        "fov": 68
+      },
+      "boatFeel": {
+        "y": 0.088,
+        "surfaceY": 0,
+        "waterlineClearance": 0.076,
+        "pitch": -0.008,
+        "roll": 0,
+        "wake": 0
+      },
+      "wakeRipples": {
+        "visible": 0,
+        "capacity": 12
+      },
+      "waterlineContact": {
+        "visible": true,
+        "y": 0.012,
+        "surfaceY": 0,
+        "opacity": 0.11,
+        "seatDepth": -0.076,
+        "waterlineClearance": 0.076
+      },
       "powerUps": {
         "speed": 1,
         "shield": false,
